@@ -39,6 +39,7 @@ canvas{display:block;position:absolute;top:0;left:0;z-index:1}
 </div>
 <div id="hud">
 <div id="crosshair"></div>
+<div id="fpsCounter" style="position:absolute;bottom:80px;left:50%;transform:translateX(-50%);font-size:10px;color:rgba(255,255,255,0.5);text-shadow:1px 1px #000"></div>
 <div id="armorBar" style="position:absolute;bottom:67px;left:50%;transform:translateX(-50%);width:220px;height:10px;background:rgba(0,0,0,0.6);border-radius:3px;display:none"><div id="armorFill" style="height:100%;border-radius:3px;background:#5588ff;width:0%"></div><div id="armorTxt" style="position:absolute;width:100%;text-align:center;top:-1px;font-size:8px;text-shadow:1px 1px #000"></div></div>
 <div id="hunger"><div id="hungerFill"></div><div id="hungerTxt"></div></div>
 <div id="score"></div>
@@ -130,6 +131,8 @@ let ws=null,myId=null,myColor='pink',state='join',serverPlayers=[],serverFoods=[
 let yaw=0,pitch=0,locked=false,keys={},lastMoveMsg=0;
 let jumpVel=0,jumpH=0;
 let adsActive=false;
+let fpsFrames=0,fpsLast=performance.now(),fpsDisplay=0;
+let pingVal=0,pingLast=0;
 let killfeed=[],projData=[],projMeshes={};
 let cowMeshes={},mapBuilt=false;
 let serverZone={x:0,y:0,w:MW,h:MH},mapFeatures={walls:[],mud:[],ponds:[],portals:[],shelters:[]};
@@ -493,6 +496,7 @@ function handleMsg(msg){
   if(msg.type==='state'){
     serverPlayers=msg.players;
     if(msg.zone)serverZone=msg.zone;
+    if(pingLast>0){pingVal=pingVal*0.8+(performance.now()-pingLast)*0.2;pingLast=0;}
   }
   if(msg.type==='food'){
     const f=msg.food||msg;
@@ -1207,6 +1211,12 @@ function loop(ts){
   const dt=Math.min((ts-last)/1000,0.1);last=ts;
   const time=ts/1000;
 
+  // FPS counter
+  fpsFrames++;
+  const fpsNow=performance.now();
+  if(fpsNow-fpsLast>=1000){fpsDisplay=fpsFrames;fpsFrames=0;fpsLast=fpsNow;}
+  document.getElementById('fpsCounter').textContent=fpsDisplay+'fps | '+Math.round(pingVal)+'ms';
+
   if(state!=='playing'){ren.render(scene,cam);return;}
   tickMusic();
 
@@ -1239,7 +1249,7 @@ function loop(ts){
     if(keys['KeyA']||keys['ArrowLeft']){mx-=right.x;mz-=right.z;}
     if(keys['KeyD']||keys['ArrowRight']){mx+=right.x;mz+=right.z;}
     const len=Math.hypot(mx,mz);
-    if(len>0)send({type:'move',dx:mx/len,dy:mz/len});
+    if(len>0){send({type:'move',dx:mx/len,dy:mz/len});pingLast=performance.now();}
     else send({type:'move',dx:0,dy:0});
   }
 
