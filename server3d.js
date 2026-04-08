@@ -271,7 +271,7 @@ function fireBot(bot, ax, ay) {
     bot.hunger -= 8;
     bot.attackCooldown = 2.5 * cdMult;
     const projId = foodIdCounter++;
-    const proj = { id: projId, ownerId: bot.id, x: bot.x + ax * 40, y: bot.y + ay * 40, vx: ax * 1400 * velMult, vy: ay * 1400 * velMult, life: 1.5, dmg: 25 * dmgMult };
+    const proj = { id: projId, ownerId: bot.id, x: bot.x + ax * 40, y: bot.y + ay * 40, vx: ax * 2800 * velMult, vy: ay * 2800 * velMult, life: 1.5, dmg: 25 * dmgMult };
     projectiles.push(proj);
     broadcast({ type: 'projectile', id: projId, ownerId: bot.id, x: proj.x, y: proj.y, vx: proj.vx, vy: proj.vy, color: bot.color, bolty: true });
   }
@@ -1036,7 +1036,7 @@ wss.on('connection', (ws) => {
         player.attackCooldown = 2.5 * cdMult;
         const projId = foodIdCounter++;
         const dmg = 25 * player.perks.damage * dmgMult;
-        const proj = { id: projId, ownerId: player.id, x: player.x + ax * 40, y: player.y + ay * 40, vx: ax * 1400 * velMult, vy: ay * 1400 * velMult, life: 1.5, dmg, piercing: wp.piercing };
+        const proj = { id: projId, ownerId: player.id, x: player.x + ax * 40, y: player.y + ay * 40, vx: ax * 2800 * velMult, vy: ay * 2800 * velMult, life: 1.5, dmg, piercing: wp.piercing };
         projectiles.push(proj);
         broadcast({ type: 'projectile', id: projId, ownerId: player.id, x: proj.x, y: proj.y, vx: proj.vx, vy: proj.vy, color: player.color, bolty: true });
       } else if (weapon === 'cowtank' && player.hunger > Math.max(5, 10 - hungerDiscount)) {

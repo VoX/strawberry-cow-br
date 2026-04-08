@@ -1231,7 +1231,7 @@ function loop(ts){
   // Update projectiles
   for(const p of projData){
     p.x+=p.vx*dt;p.y+=p.vy*dt;
-    if(p.vy3d!==undefined){p.y3d+=p.vy3d*dt;p.vy3d-=20*dt;if(p.y3d<1)p.y3d=1;} // 90% reduced gravity
+    if(p.vy3d!==undefined){p.y3d+=p.vy3d*dt;if(!p.bolty)p.vy3d-=20*dt;if(p.y3d<1)p.y3d=1;} // no gravity on bolty
     if(!projMeshes[p.id]){
       const sz=p.cowtank?4:p.bolty?3:1.5;
       const c=COL[p.color]||0xffff00;
