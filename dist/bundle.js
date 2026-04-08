@@ -1,17 +1,59 @@
+var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
 var __esm = (fn, res) => function __init() {
   return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
 };
 var __commonJS = (cb, mod) => function __require() {
   return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
 };
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+  // If the importer is in node compatibility mode or this is not an ESM
+  // file that has been converted to a CommonJS file using a Babel-
+  // compatible transform (i.e. "__esModule" has not been set), then set
+  // "default" to the CommonJS "module.exports" for node compatibility.
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  mod
+));
+
+// shared/constants.js
+var require_constants = __commonJS({
+  "shared/constants.js"(exports, module) {
+    var MAP_W2 = 2e3;
+    var MAP_H2 = 1500;
+    var COLORS2 = ["pink", "blue", "green", "gold", "purple"];
+    var FOOD_TYPES2 = [
+      { name: "strawberry", hunger: 15, pts: 10 },
+      { name: "cake", hunger: 30, pts: 25 },
+      { name: "pizza", hunger: 20, pts: 15 },
+      { name: "icecream", hunger: 25, pts: 20 },
+      { name: "donut", hunger: 18, pts: 12 },
+      { name: "cupcake", hunger: 22, pts: 18 },
+      { name: "cookie", hunger: 12, pts: 8 }
+    ];
+    var WEAPON_TYPES2 = ["shotgun", "burst", "bolty", "shotgun", "burst", "bolty", "cowtank"];
+    module.exports = { MAP_W: MAP_W2, MAP_H: MAP_H2, COLORS: COLORS2, FOOD_TYPES: FOOD_TYPES2, WEAPON_TYPES: WEAPON_TYPES2 };
+  }
+});
 
 // client/config.js
-var MW, MH, CH, COL, WPCOL, PERKS;
+var import_constants, MW, MH, CH, COL, WPCOL, PERKS;
 var init_config = __esm({
   "client/config.js"() {
-    MW = 2e3;
-    MH = 1500;
+    import_constants = __toESM(require_constants());
+    MW = import_constants.MAP_W;
+    MH = import_constants.MAP_H;
     CH = 35;
     COL = { pink: 16746666, blue: 8956671, green: 8978312, gold: 16768324, purple: 13404415 };
     WPCOL = { shotgun: 16729156, burst: 4500223, bolty: 16755200, cowtank: 4521796 };
