@@ -665,8 +665,10 @@ function handleMsg(msg){
   }
   if(msg.type==='weaponPickup'){
     clientWeapons=clientWeapons.filter(w=>w.id!==msg.pickupId);
-    if(msg.playerId===myId)killfeed.unshift({txt:'Picked up '+(msg.weapon||'weapon')+'!',t:3});
-    else killfeed.unshift({txt:(msg.name||'?')+' picked up '+(msg.weapon||'weapon'),t:3});
+    const _wn={shotgun:'Benelli',burst:'LR-300',bolty:'L96',cowtank:'LAW'};
+    const wpName=_wn[msg.weapon]||msg.weapon||'weapon';
+    if(msg.playerId===myId)killfeed.unshift({txt:'Picked up '+wpName+'!',t:3});
+    else killfeed.unshift({txt:(msg.name||'?')+' picked up '+wpName,t:3});
   }
   if(msg.type==='weaponSpawn'){clientWeapons.push({id:msg.id,x:msg.x,y:msg.y,weapon:msg.weapon});}
   if(msg.type==='weaponDrop'){
@@ -693,7 +695,6 @@ const PERKS=[
   {id:'regen',name:'Regeneration',desc:'slow hunger regen'},
   {id:'fastfire',name:'Trigger Job',desc:'-25% cooldown'},
   {id:'cheapshot',name:'Eco Mag',desc:'-33% shot hunger cost'},
-  {id:'extraproj',name:'Split Chamber',desc:'+1 projectile'},
   {id:'bigbore',name:'Hollow Points',desc:'+20% damage'},
   {id:'kevlar',name:'Kevlar',desc:'-20% damage taken'},
   {id:'dashcd',name:'Quick Hoof',desc:'-40% dash cooldown'},
@@ -898,7 +899,7 @@ function buildViewmodel(type){
     const loader=new FBXLoader();
     loader.load('models/M16_ps1.fbx',fbx=>{
       fbx.scale.set(0.08,0.08,0.08);
-      fbx.rotation.set(-Math.PI/2,Math.PI,-Math.PI/2);
+      fbx.rotation.set(0,Math.PI,-Math.PI/2);
       fbx.position.set(0,-2,-4);
       const grayMat=new THREE.MeshBasicMaterial({color:0x333333});
       fbx.traverse(c=>{if(c.isMesh)c.material=grayMat;});
@@ -1246,7 +1247,8 @@ function loop(ts){
       // Label
       const lc=document.createElement('canvas');lc.width=128;lc.height=32;
       const lctx=lc.getContext('2d');lctx.font='bold 20px Segoe UI';lctx.textAlign='center';
-      lctx.fillStyle='#fff';lctx.fillText(w.weapon.toUpperCase(),64,22);
+      const _wpLabels={shotgun:'BENELLI',burst:'LR-300',bolty:'L96',cowtank:'LAW'};
+      lctx.fillStyle='#fff';lctx.fillText(_wpLabels[w.weapon]||w.weapon.toUpperCase(),64,22);
       const ltex=new THREE.CanvasTexture(lc);ltex.minFilter=THREE.LinearFilter;
       const ls=new THREE.Sprite(new THREE.SpriteMaterial({map:ltex,transparent:true,depthTest:false}));
       ls.position.set(0,28,0);ls.scale.set(30,8,1);g.add(ls);
