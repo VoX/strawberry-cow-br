@@ -898,7 +898,7 @@ function buildViewmodel(type){
     const loader=new FBXLoader();
     loader.load('models/M16_ps1.fbx',fbx=>{
       fbx.scale.set(0.08,0.08,0.08);
-      fbx.rotation.set(0,Math.PI,Math.PI/2);
+      fbx.rotation.set(-Math.PI/2,Math.PI,-Math.PI/2);
       fbx.position.set(0,-2,-4);
       const grayMat=new THREE.MeshBasicMaterial({color:0x333333});
       fbx.traverse(c=>{if(c.isMesh)c.material=grayMat;});
@@ -911,29 +911,27 @@ function buildViewmodel(type){
       body.position.set(0,-0.2,-3);vmGroup.add(body);
     });
   }else if(type==='bolty'){
-    // Bolt-action — long barrel, wood stock, scope, bolt handle
-    const barrel=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,22,8),dark);
-    barrel.rotation.x=Math.PI/2;barrel.position.set(0,0.2,-12);vmGroup.add(barrel);
-    // Wooden stock — long
-    const stock=new THREE.Mesh(new THREE.BoxGeometry(2.2,2.5,14),wood);
-    stock.position.set(0,-0.5,0);vmGroup.add(stock);
-    // Bolt handle
-    const bolt=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.3,2,6),metal);
-    bolt.rotation.z=Math.PI/2;bolt.position.set(1.5,0.5,-2);vmGroup.add(bolt);
-    const boltKnob=new THREE.Mesh(new THREE.SphereGeometry(0.5,6,6),metal);
-    boltKnob.position.set(2.5,0.5,-2);vmGroup.add(boltKnob);
-    // Scope — long tube with mounts
-    const scopeBody=new THREE.Mesh(new THREE.CylinderGeometry(0.8,0.8,8,8),black);
-    scopeBody.rotation.x=Math.PI/2;scopeBody.position.set(0,2,-3);vmGroup.add(scopeBody);
-    const scopeObj=new THREE.Mesh(new THREE.CylinderGeometry(1,0.8,1.5,8),black);
-    scopeObj.rotation.x=Math.PI/2;scopeObj.position.set(0,2,-7);vmGroup.add(scopeObj);
-    const lens=new THREE.Mesh(new THREE.CircleGeometry(0.7,8),new THREE.MeshBasicMaterial({color:0x4488ff}));
-    lens.position.set(0,2,-7.8);vmGroup.add(lens);
-    // Scope mounts
-    const mount1=new THREE.Mesh(new THREE.BoxGeometry(0.8,1,0.8),metal);
-    mount1.position.set(0,1.2,-1);vmGroup.add(mount1);
-    const mount2=new THREE.Mesh(new THREE.BoxGeometry(0.8,1,0.8),metal);
-    mount2.position.set(0,1.2,-5);vmGroup.add(mount2);
+    // Bolty — load Sniper FBX model
+    const loader2=new FBXLoader();
+    loader2.load('models/Sniper.fbx',fbx=>{
+      fbx.scale.set(0.08,0.08,0.08);
+      fbx.rotation.set(-Math.PI/2,Math.PI,-Math.PI/2);
+      fbx.position.set(0,-2,-4);
+      // Black-green gradient material
+      fbx.traverse(c=>{if(c.isMesh){
+        c.material=new THREE.ShaderMaterial({
+          vertexShader:'varying vec3 vPos;void main(){vPos=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+          fragmentShader:'varying vec3 vPos;void main(){float t=clamp((vPos.y+20.0)/40.0,0.0,1.0);vec3 col=mix(vec3(0.1,0.15,0.1),vec3(0.05,0.05,0.05),t);gl_FragColor=vec4(col,1.0);}'
+        });
+      }});
+      vmGroup.add(fbx);
+    },undefined,()=>{
+      // Fallback
+      const barrel=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,22,8),dark);
+      barrel.rotation.x=Math.PI/2;barrel.position.set(0,0,-12);vmGroup.add(barrel);
+      const stock=new THREE.Mesh(new THREE.BoxGeometry(2,2,12),wood);
+      stock.position.set(0,-0.5,0);vmGroup.add(stock);
+    });
   }else if(type==='cowtank'){
     // M72 LAW — collapsible tube launcher
     const outerTube=new THREE.Mesh(new THREE.CylinderGeometry(2.2,2.2,16,10),olive);
