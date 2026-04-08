@@ -1,16 +1,82 @@
 var __getOwnPropNames = Object.getOwnPropertyNames;
+var __esm = (fn, res) => function __init() {
+  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+};
 var __commonJS = (cb, mod) => function __require() {
   return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
 };
+
+// client/config.js
+var MW, MH, CH, COL, PERKS;
+var init_config = __esm({
+  "client/config.js"() {
+    MW = 2e3;
+    MH = 1500;
+    CH = 35;
+    COL = { pink: 16746666, blue: 8956671, green: 8978312, gold: 16768324, purple: 13404415 };
+    PERKS = [
+      { id: "speed", name: "Swift Hooves", desc: "+15% speed" },
+      { id: "extrahunger", name: "Big Belly", desc: "+40 max hunger" },
+      { id: "xpboost", name: "Quick Learner", desc: "+50% XP" },
+      { id: "fastfire", name: "Trigger Job", desc: "-25% cooldown" },
+      { id: "cheapshot", name: "Eco Mag", desc: "-33% shot hunger cost" },
+      { id: "bigbore", name: "Hollow Points", desc: "+20% damage" },
+      { id: "kevlar", name: "Kevlar", desc: "+25 max armor" },
+      { id: "dashcd", name: "Quick Hoof", desc: "-40% dash cooldown" },
+      { id: "tiny", name: "Tiny Mode", desc: "smaller + faster" },
+      { id: "cowstrike", name: "Cowstrike", desc: "bomb the map" }
+    ];
+  }
+});
+
+// client/state.js
+var S, state_default;
+var init_state = __esm({
+  "client/state.js"() {
+    init_config();
+    S = {
+      ws: null,
+      myId: null,
+      myColor: "pink",
+      state: "join",
+      serverPlayers: [],
+      serverFoods: [],
+      yaw: 0,
+      pitch: 0,
+      locked: false,
+      keys: {},
+      lastMoveMsg: 0,
+      jumpVel: 0,
+      jumpH: 0,
+      adsActive: false,
+      fpsFrames: 0,
+      fpsLast: performance.now(),
+      fpsDisplay: 0,
+      pingVal: 0,
+      pingLast: 0,
+      killfeed: [],
+      projData: [],
+      projMeshes: {},
+      cowMeshes: {},
+      mapBuilt: false,
+      serverZone: { x: 0, y: 0, w: MW, h: MH },
+      mapFeatures: { walls: [], mud: [], ponds: [], portals: [], shelters: [] },
+      clientWeapons: [],
+      pendingLevelUps: 0,
+      perkMenuOpen: false,
+      masterVol: 0.5
+    };
+    state_default = S;
+  }
+});
 
 // client/index.js
 import * as THREE from "three";
 import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
 var require_index = __commonJS({
   "client/index.js"() {
-    var MW = 2e3;
-    var MH = 1500;
-    var CH = 35;
+    init_config();
+    init_state();
     var actx = null;
     function initAudio() {
       if (actx) return;
@@ -23,7 +89,7 @@ var require_index = __commonJS({
       o.type = type || "sine";
       o.frequency.setValueAtTime(freq, t);
       o.frequency.exponentialRampToValueAtTime(freq * 0.3, t + dur);
-      const v = (vol || 0.1) * (typeof masterVol !== "undefined" ? masterVol : 0.5);
+      const v = (vol || 0.1) * (typeof state_default.masterVol !== "undefined" ? state_default.masterVol : 0.5);
       g.gain.setValueAtTime(v, t);
       g.gain.exponentialRampToValueAtTime(1e-3, t + dur);
       o.connect(g);
@@ -135,7 +201,7 @@ var require_index = __commonJS({
     var noteDur = 0.22;
     var noteIdx = 0;
     function tickMusic() {
-      if (!actx || !musicPlaying || state !== "playing") return;
+      if (!actx || !musicPlaying || state_default.state !== "playing") return;
       const t = actx.currentTime;
       if (t < nextNoteTime - 0.05) return;
       const note = oldMac[noteIdx % oldMac.length];
@@ -146,7 +212,7 @@ var require_index = __commonJS({
       const o = actx.createOscillator(), g = actx.createGain();
       o.type = "triangle";
       o.frequency.value = freq;
-      const v = 0.04 * (typeof masterVol !== "undefined" ? masterVol : 0.5);
+      const v = 0.04 * (typeof state_default.masterVol !== "undefined" ? state_default.masterVol : 0.5);
       g.gain.setValueAtTime(v, t);
       g.gain.setValueAtTime(v, t + noteDur * 0.7);
       g.gain.exponentialRampToValueAtTime(1e-3, t + noteDur * 0.95);
@@ -164,32 +230,6 @@ var require_index = __commonJS({
       b.start(t);
       b.stop(t + noteDur);
     }
-    var ws = null;
-    var myId = null;
-    var myColor = "pink";
-    var state = "join";
-    var serverPlayers = [];
-    var serverFoods = [];
-    var yaw = 0;
-    var pitch = 0;
-    var locked = false;
-    var keys = {};
-    var lastMoveMsg = 0;
-    var jumpVel = 0;
-    var jumpH = 0;
-    var adsActive = false;
-    var fpsFrames = 0;
-    var fpsLast = performance.now();
-    var fpsDisplay = 0;
-    var pingVal = 0;
-    var pingLast = 0;
-    var killfeed = [];
-    var projData = [];
-    var projMeshes = {};
-    var cowMeshes = {};
-    var mapBuilt = false;
-    var serverZone = { x: 0, y: 0, w: MW, h: MH };
-    var mapFeatures = { walls: [], mud: [], ponds: [], portals: [], shelters: [] };
     var scene = new THREE.Scene();
     var cam = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 1, 6100);
     cam.position.set(MW / 2, CH, MH / 2);
@@ -349,36 +389,35 @@ var require_index = __commonJS({
     buildFenceLine(fenceS);
     buildFenceLine(fenceW);
     buildFenceLine(fenceE);
-    var COL = { pink: 16746666, blue: 8956671, green: 8978312, gold: 16768324, purple: 13404415 };
     ren.domElement.style.cursor = "pointer";
     ren.domElement.addEventListener("click", () => {
       initAudio();
-      if (state !== "playing") return;
-      if (!locked) {
+      if (state_default.state !== "playing") return;
+      if (!state_default.locked) {
         ren.domElement.requestPointerLock();
         return;
       }
       doAttack();
     });
     document.addEventListener("pointerlockchange", () => {
-      locked = !!document.pointerLockElement;
-      if (locked) document.getElementById("lockMsg").style.display = "none";
-      else if (state === "playing") setTimeout(() => {
-        if (!locked && state === "playing") document.getElementById("lockMsg").style.display = "block";
+      state_default.locked = !!document.pointerLockElement;
+      if (state_default.locked) document.getElementById("lockMsg").style.display = "none";
+      else if (state_default.state === "playing") setTimeout(() => {
+        if (!state_default.locked && state_default.state === "playing") document.getElementById("lockMsg").style.display = "block";
       }, 2e3);
     });
     document.addEventListener("mousemove", (e) => {
-      if (!locked) return;
-      const sens = adsActive ? 4e-4 : 2e-3;
-      yaw -= e.movementX * sens;
-      pitch -= e.movementY * sens;
-      pitch = Math.max(-1.2, Math.min(1.2, pitch));
+      if (!state_default.locked) return;
+      const sens = state_default.adsActive ? 4e-4 : 2e-3;
+      state_default.yaw -= e.movementX * sens;
+      state_default.pitch -= e.movementY * sens;
+      state_default.pitch = Math.max(-1.2, Math.min(1.2, state_default.pitch));
     });
     document.addEventListener("mousedown", (e) => {
-      if (e.button === 2 && locked && state === "playing") {
-        const me = serverPlayers.find((p) => p.id === myId);
+      if (e.button === 2 && state_default.locked && state_default.state === "playing") {
+        const me = state_default.serverPlayers.find((p) => p.id === state_default.myId);
         if (me && me.alive && me.weapon === "bolty") {
-          adsActive = true;
+          state_default.adsActive = true;
           cam.fov = 12.5;
           cam.updateProjectionMatrix();
           document.getElementById("scopeOverlay").style.display = "block";
@@ -389,7 +428,7 @@ var require_index = __commonJS({
     });
     document.addEventListener("mouseup", (e) => {
       if (e.button === 2) {
-        adsActive = false;
+        state_default.adsActive = false;
         cam.fov = 75;
         cam.updateProjectionMatrix();
         document.getElementById("scopeOverlay").style.display = "none";
@@ -445,7 +484,7 @@ var require_index = __commonJS({
         drawDp(0, 0);
       }, { passive: false });
       setInterval(() => {
-        if (state === "playing" && Math.abs(tdx) + Math.abs(tdy) > 0.1) {
+        if (state_default.state === "playing" && Math.abs(tdx) + Math.abs(tdy) > 0.1) {
           const fwd = new THREE.Vector3(0, 0, -1);
           fwd.applyQuaternion(cam.quaternion);
           fwd.y = 0;
@@ -456,9 +495,9 @@ var require_index = __commonJS({
           const len = Math.hypot(mx, mz);
           if (len > 0) {
             send({ type: "move", dx: mx / len, dy: mz / len });
-            pingLast = performance.now();
+            state_default.pingLast = performance.now();
           }
-        } else if (state === "playing") {
+        } else if (state_default.state === "playing") {
           send({ type: "move", dx: 0, dy: 0 });
         }
       }, 50);
@@ -473,9 +512,9 @@ var require_index = __commonJS({
         if (e.target === dp) return;
         const t = e.touches[e.touches.length - 1];
         const dx = t.clientX - lastTouchX, dy = t.clientY - lastTouchY;
-        yaw -= dx * 4e-3;
-        pitch -= dy * 4e-3;
-        pitch = Math.max(-1.2, Math.min(1.2, pitch));
+        state_default.yaw -= dx * 4e-3;
+        state_default.pitch -= dy * 4e-3;
+        state_default.pitch = Math.max(-1.2, Math.min(1.2, state_default.pitch));
         lastTouchX = t.clientX;
         lastTouchY = t.clientY;
       }, { passive: true });
@@ -490,21 +529,21 @@ var require_index = __commonJS({
     }
     addEventListener("keydown", (e) => {
       if (document.activeElement && document.activeElement.tagName === "INPUT") return;
-      keys[e.code] = true;
-      if ((e.code === "ShiftLeft" || e.code === "ShiftRight") && state === "playing") doDash();
+      state_default.keys[e.code] = true;
+      if ((e.code === "ShiftLeft" || e.code === "ShiftRight") && state_default.state === "playing") doDash();
       if (e.code === "Space") {
         e.preventDefault();
-        if (jumpH < 1) jumpVel = 120;
+        if (state_default.jumpH < 1) state_default.jumpVel = 120;
       }
-      if (e.code === "KeyQ" && state === "playing") send({ type: "dropWeapon" });
-      if (perkMenuOpen && window._perkChoices) {
+      if (e.code === "KeyQ" && state_default.state === "playing") send({ type: "dropWeapon" });
+      if (state_default.perkMenuOpen && window._perkChoices) {
         if (e.code === "Digit1" && window._perkChoices[0]) window.pickPerk(window._perkChoices[0].id);
         if (e.code === "Digit2" && window._perkChoices[1]) window.pickPerk(window._perkChoices[1].id);
         if (e.code === "Digit3" && window._perkChoices[2]) window.pickPerk(window._perkChoices[2].id);
       }
     });
     addEventListener("keyup", (e) => {
-      keys[e.code] = false;
+      state_default.keys[e.code] = false;
     });
     function doAttack() {
       const dir = new THREE.Vector3(0, 0, -1);
@@ -521,8 +560,8 @@ var require_index = __commonJS({
     }
     function connect() {
       const proto = location.protocol === "https:" ? "wss" : "ws";
-      ws = new WebSocket(proto + "://" + location.host + "/strawberrycow-fps-ws/");
-      ws.onopen = () => {
+      state_default.ws = new WebSocket(proto + "://" + location.host + "/strawberrycow-fps-ws/");
+      state_default.ws.onopen = () => {
         console.log("connected");
         const ss = document.getElementById("serverStatus");
         if (ss) {
@@ -530,8 +569,8 @@ var require_index = __commonJS({
           ss.style.color = "#88ff88";
         }
       };
-      ws.onmessage = (e) => handleMsg(JSON.parse(e.data));
-      ws.onclose = () => {
+      state_default.ws.onmessage = (e) => handleMsg(JSON.parse(e.data));
+      state_default.ws.onclose = () => {
         const ss = document.getElementById("serverStatus");
         if (ss) {
           ss.textContent = "\u274C server offline";
@@ -539,7 +578,7 @@ var require_index = __commonJS({
         }
         setTimeout(connect, 2e3);
       };
-      ws.onerror = () => {
+      state_default.ws.onerror = () => {
         const ss = document.getElementById("serverStatus");
         if (ss) {
           ss.textContent = "\u274C server offline";
@@ -548,7 +587,7 @@ var require_index = __commonJS({
       };
     }
     function send(m) {
-      if (ws && ws.readyState === 1) ws.send(JSON.stringify(m));
+      if (state_default.ws && state_default.ws.readyState === 1) state_default.ws.send(JSON.stringify(m));
     }
     try {
       const sn = localStorage.getItem("cowName3d");
@@ -563,12 +602,12 @@ var require_index = __commonJS({
       }
     } catch (e) {
     }
-    var masterVol = parseFloat(document.getElementById("volSlider").value) / 100;
+    state_default.masterVol = parseFloat(document.getElementById("volSlider").value) / 100;
     document.getElementById("botsCheck").addEventListener("change", (e) => {
       send({ type: "toggleBots" });
     });
     document.getElementById("volSlider").addEventListener("input", (e) => {
-      masterVol = e.target.value / 100;
+      state_default.masterVol = e.target.value / 100;
       document.getElementById("volLbl").textContent = e.target.value + "%";
       try {
         localStorage.setItem("cowVol3d", e.target.value);
@@ -588,9 +627,9 @@ var require_index = __commonJS({
     });
     function handleMsg(msg) {
       if (msg.type === "joined") {
-        myId = msg.id;
-        myColor = msg.color;
-        state = "lobby";
+        state_default.myId = msg.id;
+        state_default.myColor = msg.color;
+        state_default.state = "lobby";
         document.getElementById("joinScreen").querySelector("h2").textContent = "Waiting for players...";
       }
       if (msg.type === "lobby") {
@@ -612,45 +651,45 @@ var require_index = __commonJS({
         }
       }
       if (msg.type === "spectate") {
-        state = "playing";
+        state_default.state = "playing";
         document.getElementById("joinScreen").style.display = "none";
         document.getElementById("hud").style.display = "block";
         document.getElementById("lockMsg").style.display = "block";
-        serverPlayers = msg.players;
-        serverFoods = (msg.foods || []).map((f) => ({ id: f.id, x: f.x, y: f.y, type: f.type }));
-        if (msg.zone) serverZone = msg.zone;
+        state_default.serverPlayers = msg.players;
+        state_default.serverFoods = (msg.foods || []).map((f) => ({ id: f.id, x: f.x, y: f.y, type: f.type }));
+        if (msg.zone) state_default.serverZone = msg.zone;
         if (msg.map) {
-          mapFeatures = msg.map;
-          mapBuilt = false;
+          state_default.mapFeatures = msg.map;
+          state_default.mapBuilt = false;
         }
-        if (msg.weapons) clientWeapons = msg.weapons;
+        if (msg.weapons) state_default.clientWeapons = msg.weapons;
         if (msg.armorPickups) window._armorPickupData = msg.armorPickups;
       }
       if (msg.type === "start") {
-        state = "playing";
+        state_default.state = "playing";
         document.getElementById("joinScreen").style.display = "none";
         document.getElementById("hud").style.display = "block";
         document.getElementById("lockMsg").style.display = "block";
         setTimeout(() => {
           document.getElementById("lockMsg").style.display = "none";
         }, 5e3);
-        serverPlayers = msg.players;
-        serverFoods = (msg.foods || []).map((f) => ({ id: f.id, x: f.x, y: f.y, type: f.type }));
-        if (msg.zone) serverZone = msg.zone;
+        state_default.serverPlayers = msg.players;
+        state_default.serverFoods = (msg.foods || []).map((f) => ({ id: f.id, x: f.x, y: f.y, type: f.type }));
+        if (msg.zone) state_default.serverZone = msg.zone;
         if (msg.map) {
-          mapFeatures = msg.map;
-          mapBuilt = false;
+          state_default.mapFeatures = msg.map;
+          state_default.mapBuilt = false;
         }
-        if (msg.weapons) clientWeapons = msg.weapons;
-        killfeed = [];
+        if (msg.weapons) state_default.clientWeapons = msg.weapons;
+        state_default.killfeed = [];
         musicPlaying = true;
         noteIdx = 0;
         window._armorPickupData = msg.armorPickups || [];
         document.getElementById("winScreen").style.display = "none";
-        for (const id in cowMeshes) {
-          scene.remove(cowMeshes[id].mesh);
+        for (const id in state_default.cowMeshes) {
+          scene.remove(state_default.cowMeshes[id].mesh);
         }
-        cowMeshes = {};
+        state_default.cowMeshes = {};
         if (window._foodMeshes) {
           for (const id in window._foodMeshes) {
             scene.remove(window._foodMeshes[id]);
@@ -663,39 +702,39 @@ var require_index = __commonJS({
           }
           window._wpMeshes = {};
         }
-        for (const id in projMeshes) {
-          const pm = projMeshes[id];
+        for (const id in state_default.projMeshes) {
+          const pm = state_default.projMeshes[id];
           scene.remove(pm);
           pm.traverse((c) => {
             if (c.geometry) c.geometry.dispose();
             if (c.material) c.material.dispose();
           });
         }
-        projMeshes = {};
-        projData = [];
+        state_default.projMeshes = {};
+        state_default.projData = [];
       }
       if (msg.type === "state") {
-        serverPlayers = msg.players;
-        if (msg.zone) serverZone = msg.zone;
-        if (pingLast > 0) {
-          const pd = performance.now() - pingLast;
-          if (pd < 2e3) pingVal = pingVal * 0.7 + pd * 0.3;
-          pingLast = 0;
+        state_default.serverPlayers = msg.players;
+        if (msg.zone) state_default.serverZone = msg.zone;
+        if (state_default.pingLast > 0) {
+          const pd = performance.now() - state_default.pingLast;
+          if (pd < 2e3) state_default.pingVal = state_default.pingVal * 0.7 + pd * 0.3;
+          state_default.pingLast = 0;
         }
       }
       if (msg.type === "food") {
         const f = msg.food || msg;
-        serverFoods.push({ id: f.id, x: f.x, y: f.y, type: f.type || f.typeName });
+        state_default.serverFoods.push({ id: f.id, x: f.x, y: f.y, type: f.type || f.typeName });
       }
       if (msg.type === "eat") {
-        serverFoods = serverFoods.filter((f) => f.id !== msg.foodId);
+        state_default.serverFoods = state_default.serverFoods.filter((f) => f.id !== msg.foodId);
         spawnParts(msg.playerId);
-        if (msg.playerId === myId) sfxEat();
+        if (msg.playerId === state_default.myId) sfxEat();
       }
       if (msg.type === "projectile") {
         const projSpeed = Math.hypot(msg.vx, msg.vy);
         let vy3d = 0, spawnH = 15 + getTerrainHeight(msg.x, msg.y);
-        if (msg.ownerId === myId) {
+        if (msg.ownerId === state_default.myId) {
           const dir3 = new THREE.Vector3(0, 0, -1);
           dir3.applyQuaternion(cam.quaternion);
           vy3d = dir3.y * projSpeed;
@@ -704,35 +743,35 @@ var require_index = __commonJS({
         if (msg.shotgun !== void 0) {
           vy3d += (Math.random() - 0.5) * 150;
         }
-        projData.push({ id: msg.id, x: msg.x, y: msg.y, vx: msg.vx, vy: msg.vy, color: msg.color || "pink", bolty: msg.bolty, cowtank: msg.cowtank, y3d: spawnH, vy3d });
-        if (msg.ownerId === myId) {
+        state_default.projData.push({ id: msg.id, x: msg.x, y: msg.y, vx: msg.vx, vy: msg.vy, color: msg.color || "pink", bolty: msg.bolty, cowtank: msg.cowtank, y3d: spawnH, vy3d });
+        if (msg.ownerId === state_default.myId) {
           msg.bolty ? sfxBolty() : sfxShoot();
         }
       }
       if (msg.type === "projectileHit") {
-        projData = projData.filter((p) => p.id !== msg.projectileId);
-        if (projMeshes[msg.projectileId]) {
-          const pm = projMeshes[msg.projectileId];
+        state_default.projData = state_default.projData.filter((p) => p.id !== msg.projectileId);
+        if (state_default.projMeshes[msg.projectileId]) {
+          const pm = state_default.projMeshes[msg.projectileId];
           scene.remove(pm);
           pm.traverse((c) => {
             if (c.geometry) c.geometry.dispose();
             if (c.material) c.material.dispose();
           });
-          delete projMeshes[msg.projectileId];
+          delete state_default.projMeshes[msg.projectileId];
         }
-        if (msg.targetId === myId) {
+        if (msg.targetId === state_default.myId) {
           sfxHit();
           document.getElementById("hitFlash").style.opacity = "0.5";
           setTimeout(() => document.getElementById("hitFlash").style.opacity = "0", 150);
         }
       }
       if (msg.type === "eliminated") {
-        killfeed.unshift({ txt: msg.name + " eliminated (#" + (msg.rank || "?") + ")", t: 5 });
-        if (killfeed.length > 5) killfeed.pop();
-        if (msg.playerId === myId) sfxDeath();
+        state_default.killfeed.unshift({ txt: msg.name + " eliminated (#" + (msg.rank || "?") + ")", t: 5 });
+        if (state_default.killfeed.length > 5) state_default.killfeed.pop();
+        if (msg.playerId === state_default.myId) sfxDeath();
       }
       if (msg.type === "winner") {
-        killfeed.unshift({ txt: "\u{1F451} " + (msg.name || "?") + " WINS!", t: 10 });
+        state_default.killfeed.unshift({ txt: "\u{1F451} " + (msg.name || "?") + " WINS!", t: 10 });
         musicPlaying = false;
         const ws2 = document.getElementById("winScreen");
         ws2.style.display = "flex";
@@ -741,7 +780,7 @@ var require_index = __commonJS({
         document.getElementById("winRestart").textContent = "Next round starting soon...";
         if (actx) {
           const t = actx.currentTime;
-          const v = 0.08 * (typeof masterVol !== "undefined" ? masterVol : 0.5);
+          const v = 0.08 * (typeof state_default.masterVol !== "undefined" ? state_default.masterVol : 0.5);
           const chords = [[82.4, 164.8], [98, 196], [110, 220], [82.4, 164.8], [110, 220], [130.8, 261.6], [164.8, 329.6]];
           chords.forEach((notes, i) => {
             notes.forEach((freq) => {
@@ -798,22 +837,22 @@ var require_index = __commonJS({
         }
       }
       if (msg.type === "restart" && msg.countdown <= 0) {
-        state = "lobby";
+        state_default.state = "lobby";
         document.getElementById("joinScreen").style.display = "flex";
         document.getElementById("joinScreen").querySelector("h2").textContent = "Waiting for players...";
         document.getElementById("hud").style.display = "none";
         document.getElementById("winScreen").style.display = "none";
-        mapBuilt = false;
+        state_default.mapBuilt = false;
         const oldRb = document.getElementById("readyBtn");
         if (oldRb) oldRb.remove();
       }
       if (msg.type === "levelup") {
         sfxLevelUp();
-        pendingLevelUps = (pendingLevelUps || 0) + 1;
-        if (!perkMenuOpen) showPerkMenu();
+        state_default.pendingLevelUps = (state_default.pendingLevelUps || 0) + 1;
+        if (!state_default.perkMenuOpen) showPerkMenu();
       }
       if (msg.type === "cowstrikeWarning") {
-        killfeed.unshift({ txt: "\u{1F6A8} " + (msg.name || "?") + " CALLED COWSTRIKE! TAKE COVER!", t: 6 });
+        state_default.killfeed.unshift({ txt: "\u{1F6A8} " + (msg.name || "?") + " CALLED COWSTRIKE! TAKE COVER!", t: 6 });
         if (actx) {
           const t = actx.currentTime;
           const o = actx.createOscillator(), g = actx.createGain();
@@ -834,7 +873,7 @@ var require_index = __commonJS({
         }
       }
       if (msg.type === "cowstrike") {
-        killfeed.unshift({ txt: "\u{1F4A5} COWSTRIKE WAVE " + ((msg.wave || 0) + 1) + "!", t: 4 });
+        state_default.killfeed.unshift({ txt: "\u{1F4A5} COWSTRIKE WAVE " + ((msg.wave || 0) + 1) + "!", t: 4 });
         if (actx) {
           const t = actx.currentTime;
           const bs = actx.sampleRate * 0.3, b = actx.createBuffer(1, bs, actx.sampleRate), d = b.getChannelData(0);
@@ -1022,10 +1061,10 @@ var require_index = __commonJS({
       }
       if (msg.type === "botsToggled") {
         document.getElementById("botsCheck").checked = msg.enabled;
-        killfeed.unshift({ txt: "Bots " + (msg.enabled ? "enabled" : "disabled"), t: 3 });
+        state_default.killfeed.unshift({ txt: "Bots " + (msg.enabled ? "enabled" : "disabled"), t: 3 });
       }
       if (msg.type === "dash") {
-        const dasher = serverPlayers.find((p) => p.id === msg.playerId);
+        const dasher = state_default.serverPlayers.find((p) => p.id === msg.playerId);
         if (dasher) {
           for (let i = 0; i < 15; i++) {
             const sm = new THREE.Mesh(new THREE.SphereGeometry(3 + Math.random() * 4, 5, 5), new THREE.MeshBasicMaterial({ color: 13421772, transparent: true, opacity: 0.6 }));
@@ -1058,25 +1097,25 @@ var require_index = __commonJS({
         sfx(300, 0.15, "sine", 0.08);
       }
       if (msg.type === "bump") {
-        if (msg.a === myId || msg.b === myId) {
+        if (msg.a === state_default.myId || msg.b === state_default.myId) {
           sfxBump();
           document.getElementById("hitFlash").style.opacity = "0.2";
           setTimeout(() => document.getElementById("hitFlash").style.opacity = "0", 100);
         }
       }
       if (msg.type === "weaponPickup") {
-        clientWeapons = clientWeapons.filter((w) => w.id !== msg.pickupId);
+        state_default.clientWeapons = state_default.clientWeapons.filter((w) => w.id !== msg.pickupId);
         const _wn = { shotgun: "Benelli", burst: "LR-300", bolty: "L96", cowtank: "LAW" };
         const wpName = _wn[msg.weapon] || msg.weapon || "weapon";
-        if (msg.playerId === myId) killfeed.unshift({ txt: "Picked up " + wpName + "!", t: 3 });
-        else killfeed.unshift({ txt: (msg.name || "?") + " picked up " + wpName, t: 3 });
+        if (msg.playerId === state_default.myId) state_default.killfeed.unshift({ txt: "Picked up " + wpName + "!", t: 3 });
+        else state_default.killfeed.unshift({ txt: (msg.name || "?") + " picked up " + wpName, t: 3 });
       }
       if (msg.type === "weaponSpawn") {
-        clientWeapons.push({ id: msg.id, x: msg.x, y: msg.y, weapon: msg.weapon });
+        state_default.clientWeapons.push({ id: msg.id, x: msg.x, y: msg.y, weapon: msg.weapon });
       }
       if (msg.type === "weaponDrop") {
-        if (msg.playerId === myId) killfeed.unshift({ txt: "Dropped weapon", t: 3 });
-        else killfeed.unshift({ txt: (msg.name || "?") + " dropped their weapon", t: 3 });
+        if (msg.playerId === state_default.myId) state_default.killfeed.unshift({ txt: "Dropped weapon", t: 3 });
+        else state_default.killfeed.unshift({ txt: (msg.name || "?") + " dropped their weapon", t: 3 });
       }
       if (msg.type === "armorPickup") {
         if (window._armorMeshes && window._armorMeshes[msg.pickupId]) {
@@ -1084,30 +1123,15 @@ var require_index = __commonJS({
           delete window._armorMeshes[msg.pickupId];
         }
         if (window._armorPickupData) window._armorPickupData = window._armorPickupData.filter((a) => a.id !== msg.pickupId);
-        if (msg.playerId === myId) killfeed.unshift({ txt: "Picked up armor (+25)", t: 3 });
+        if (msg.playerId === state_default.myId) state_default.killfeed.unshift({ txt: "Picked up armor (+25)", t: 3 });
       }
       if (msg.type === "armorSpawn") {
         if (!window._armorPickupData) window._armorPickupData = [];
         window._armorPickupData.push({ id: msg.id, x: msg.x, y: msg.y });
       }
     }
-    var clientWeapons = [];
-    var pendingLevelUps = 0;
-    var perkMenuOpen = false;
-    var PERKS = [
-      { id: "speed", name: "Swift Hooves", desc: "+15% speed" },
-      { id: "extrahunger", name: "Big Belly", desc: "+40 max hunger" },
-      { id: "xpboost", name: "Quick Learner", desc: "+50% XP" },
-      { id: "fastfire", name: "Trigger Job", desc: "-25% cooldown" },
-      { id: "cheapshot", name: "Eco Mag", desc: "-33% shot hunger cost" },
-      { id: "bigbore", name: "Hollow Points", desc: "+20% damage" },
-      { id: "kevlar", name: "Kevlar", desc: "+25 max armor" },
-      { id: "dashcd", name: "Quick Hoof", desc: "-40% dash cooldown" },
-      { id: "tiny", name: "Tiny Mode", desc: "smaller + faster" },
-      { id: "cowstrike", name: "Cowstrike", desc: "bomb the map" }
-    ];
     function showPerkMenu() {
-      perkMenuOpen = true;
+      state_default.perkMenuOpen = true;
       const choices = [];
       const pool = [...PERKS].filter((p) => p.id !== "cowstrike" || Math.random() < 0.15);
       for (let i = 0; i < 3 && pool.length; i++) {
@@ -1121,13 +1145,13 @@ var require_index = __commonJS({
     }
     window.pickPerk = function(id) {
       send({ type: "perk", id });
-      pendingLevelUps--;
-      perkMenuOpen = false;
+      state_default.pendingLevelUps--;
+      state_default.perkMenuOpen = false;
       document.getElementById("perkMenu").style.display = "none";
-      if (pendingLevelUps > 0) setTimeout(showPerkMenu, 300);
+      if (state_default.pendingLevelUps > 0) setTimeout(showPerkMenu, 300);
     };
     function spawnParts(pid) {
-      const p = serverPlayers.find((pp) => pp.id === pid);
+      const p = state_default.serverPlayers.find((pp) => pp.id === pid);
       if (!p) return;
       for (let i = 0; i < 5; i++) {
         const g = new THREE.Mesh(new THREE.SphereGeometry(1.5, 4, 4), new THREE.MeshBasicMaterial({ color: 16729156, transparent: true }));
@@ -1186,8 +1210,8 @@ var require_index = __commonJS({
     }
     var _mapMeshes = [];
     function buildMap() {
-      if (mapBuilt) return;
-      mapBuilt = true;
+      if (state_default.mapBuilt) return;
+      state_default.mapBuilt = true;
       _mapMeshes.forEach((m) => scene.remove(m));
       _mapMeshes = [];
       function addMap(m) {
@@ -1197,7 +1221,7 @@ var require_index = __commonJS({
       }
       const wm = new THREE.MeshLambertMaterial({ color: 9127187 });
       const wallH = 70;
-      (mapFeatures.walls || []).forEach((w) => {
+      (state_default.mapFeatures.walls || []).forEach((w) => {
         const ww = Math.max(w.w, 20), wh = Math.max(w.h, 20);
         const isHoriz = ww > wh;
         const len = isHoriz ? ww : wh;
@@ -1225,7 +1249,7 @@ var require_index = __commonJS({
         }
       });
       const pm = new THREE.MeshBasicMaterial({ color: 13404415, transparent: true, opacity: 0.6 });
-      (mapFeatures.portals || []).forEach((p) => {
+      (state_default.mapFeatures.portals || []).forEach((p) => {
         [[p.x1, p.y1], [p.x2, p.y2]].forEach(([px, pz]) => {
           const th = getTerrainHeight(px, pz);
           const mesh = new THREE.Mesh(new THREE.TorusGeometry(20, 3, 8, 16), pm);
@@ -1237,7 +1261,7 @@ var require_index = __commonJS({
       const barnWallMat = new THREE.MeshLambertMaterial({ color: 11154227 });
       const barnRoofMat = new THREE.MeshLambertMaterial({ color: 6964258 });
       const barnTrimMat = new THREE.MeshLambertMaterial({ color: 16777215 });
-      (mapFeatures.shelters || []).forEach((s) => {
+      (state_default.mapFeatures.shelters || []).forEach((s) => {
         const th = getTerrainHeight(s.x, s.y);
         const bw = s.r * 2 || 60, bd = s.r * 2 || 60, bh = 35;
         const stiltH = 100;
@@ -1428,11 +1452,11 @@ var require_index = __commonJS({
       vmType = type;
     }
     function updateViewmodel() {
-      const me = serverPlayers.find((p) => p.id === myId);
+      const me = state_default.serverPlayers.find((p) => p.id === state_default.myId);
       const wep = me && me.alive ? me.weapon || "normal" : "normal";
       if (wep !== vmType) buildViewmodel(wep);
       if (vmGroup) {
-        const moving = me && me.alive && (keys["KeyW"] || keys["KeyS"] || keys["KeyA"] || keys["KeyD"]);
+        const moving = me && me.alive && (state_default.keys["KeyW"] || state_default.keys["KeyS"] || state_default.keys["KeyA"] || state_default.keys["KeyD"]);
         const t = performance.now() / 1e3;
         vmGroup.position.y = -4 + (moving ? Math.sin(t * 8) * 0.5 : 0);
         vmGroup.position.x = 4 + (moving ? Math.cos(t * 6) * 0.3 : 0);
@@ -1612,7 +1636,7 @@ var require_index = __commonJS({
     }
     var _zoneMeshes = [];
     function updateZone() {
-      const z = serverZone;
+      const z = state_default.serverZone;
       _zoneMeshes.forEach((m) => scene.remove(m));
       _zoneMeshes = [];
       if (z.w >= MW - 10 && z.h >= MH - 10) return;
@@ -1672,51 +1696,51 @@ var require_index = __commonJS({
       const dt = Math.min((ts - last) / 1e3, 0.1);
       last = ts;
       const time = ts / 1e3;
-      fpsFrames++;
+      state_default.fpsFrames++;
       const fpsNow = performance.now();
-      if (fpsNow - fpsLast >= 1e3) {
-        fpsDisplay = fpsFrames;
-        fpsFrames = 0;
-        fpsLast = fpsNow;
+      if (fpsNow - state_default.fpsLast >= 1e3) {
+        state_default.fpsDisplay = state_default.fpsFrames;
+        state_default.fpsFrames = 0;
+        state_default.fpsLast = fpsNow;
       }
-      document.getElementById("fpsCounter").textContent = fpsDisplay + "fps | " + Math.round(pingVal) + "ms";
-      if (state !== "playing") {
+      document.getElementById("fpsCounter").textContent = state_default.fpsDisplay + "fps | " + Math.round(state_default.pingVal) + "ms";
+      if (state_default.state !== "playing") {
         ren.render(scene, cam);
         return;
       }
       tickMusic();
-      const me = serverPlayers.find((p) => p.id === myId);
+      const me = state_default.serverPlayers.find((p) => p.id === state_default.myId);
       const now = Date.now();
-      if ((!me || !me.alive) && state === "playing") {
+      if ((!me || !me.alive) && state_default.state === "playing") {
         const fwd = new THREE.Vector3(0, 0, -1);
         fwd.applyQuaternion(cam.quaternion);
         const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
         const spd = 300 * dt;
-        if (keys["KeyW"] || keys["ArrowUp"]) {
+        if (state_default.keys["KeyW"] || state_default.keys["ArrowUp"]) {
           cam.position.x += fwd.x * spd;
           cam.position.z += fwd.z * spd;
         }
-        if (keys["KeyS"] || keys["ArrowDown"]) {
+        if (state_default.keys["KeyS"] || state_default.keys["ArrowDown"]) {
           cam.position.x -= fwd.x * spd;
           cam.position.z -= fwd.z * spd;
         }
-        if (keys["KeyA"] || keys["ArrowLeft"]) {
+        if (state_default.keys["KeyA"] || state_default.keys["ArrowLeft"]) {
           cam.position.x -= right.x * spd;
           cam.position.z -= right.z * spd;
         }
-        if (keys["KeyD"] || keys["ArrowRight"]) {
+        if (state_default.keys["KeyD"] || state_default.keys["ArrowRight"]) {
           cam.position.x += right.x * spd;
           cam.position.z += right.z * spd;
         }
-        if (keys["Space"]) {
+        if (state_default.keys["Space"]) {
           cam.position.y += spd;
         }
-        if (keys["ShiftLeft"] || keys["ShiftRight"]) {
+        if (state_default.keys["ShiftLeft"] || state_default.keys["ShiftRight"]) {
           cam.position.y -= spd;
         }
       }
-      if (me && me.alive && now - lastMoveMsg > 50) {
-        lastMoveMsg = now;
+      if (me && me.alive && now - state_default.lastMoveMsg > 50) {
+        state_default.lastMoveMsg = now;
         const fwd = new THREE.Vector3(0, 0, -1);
         fwd.applyQuaternion(cam.quaternion);
         fwd.y = 0;
@@ -1724,33 +1748,33 @@ var require_index = __commonJS({
         else fwd.set(0, 0, -1);
         const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
         let mx = 0, mz = 0;
-        if (keys["KeyW"] || keys["ArrowUp"]) {
+        if (state_default.keys["KeyW"] || state_default.keys["ArrowUp"]) {
           mx += fwd.x;
           mz += fwd.z;
         }
-        if (keys["KeyS"] || keys["ArrowDown"]) {
+        if (state_default.keys["KeyS"] || state_default.keys["ArrowDown"]) {
           mx -= fwd.x;
           mz -= fwd.z;
         }
-        if (keys["KeyA"] || keys["ArrowLeft"]) {
+        if (state_default.keys["KeyA"] || state_default.keys["ArrowLeft"]) {
           mx -= right.x;
           mz -= right.z;
         }
-        if (keys["KeyD"] || keys["ArrowRight"]) {
+        if (state_default.keys["KeyD"] || state_default.keys["ArrowRight"]) {
           mx += right.x;
           mz += right.z;
         }
         const len = Math.hypot(mx, mz);
         if (len > 0) {
           send({ type: "move", dx: mx / len, dy: mz / len });
-          pingLast = performance.now();
+          state_default.pingLast = performance.now();
         } else send({ type: "move", dx: 0, dy: 0 });
       }
-      jumpH += jumpVel * dt;
-      jumpVel -= 350 * dt;
-      if (jumpH < 0) {
-        jumpH = 0;
-        jumpVel = 0;
+      state_default.jumpH += state_default.jumpVel * dt;
+      state_default.jumpVel -= 350 * dt;
+      if (state_default.jumpH < 0) {
+        state_default.jumpH = 0;
+        state_default.jumpVel = 0;
       }
       if (me && me.alive) {
         cam.position.x += (me.x - cam.position.x) * 0.15;
@@ -1759,9 +1783,9 @@ var require_index = __commonJS({
       if (me && me.alive) {
         const terrainH = getTerrainHeight(me.x, me.y);
         const towerBoost = getTowerHeight(me.x, me.y);
-        cam.position.y += (CH + jumpH + terrainH + towerBoost - cam.position.y) * 0.2;
+        cam.position.y += (CH + state_default.jumpH + terrainH + towerBoost - cam.position.y) * 0.2;
       }
-      cam.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, "YXZ"));
+      cam.quaternion.setFromEuler(new THREE.Euler(state_default.pitch, state_default.yaw, 0, "YXZ"));
       sun.position.set(cam.position.x + 300, 400, cam.position.z + 200);
       sun.target.position.set(cam.position.x, 0, cam.position.z);
       sun.target.updateMatrixWorld();
@@ -1799,17 +1823,17 @@ var require_index = __commonJS({
         }
       }
       if (!window._wpMeshes) window._wpMeshes = {};
-      const WPCOL = { shotgun: 16729156, burst: 4500223, bolty: 16755200, cowtank: 4521796 };
+      const WPCOL2 = { shotgun: 16729156, burst: 4500223, bolty: 16755200, cowtank: 4521796 };
       const seenWp = /* @__PURE__ */ new Set();
-      for (const w of clientWeapons) {
+      for (const w of state_default.clientWeapons) {
         const wid = String(w.id);
         seenWp.add(wid);
         if (!window._wpMeshes[wid]) {
           const g = new THREE.Group();
-          const cube = new THREE.Mesh(new THREE.BoxGeometry(10, 10, 10), new THREE.MeshBasicMaterial({ color: WPCOL[w.weapon] || 16755200 }));
+          const cube = new THREE.Mesh(new THREE.BoxGeometry(10, 10, 10), new THREE.MeshBasicMaterial({ color: WPCOL2[w.weapon] || 16755200 }));
           cube.position.y = 15;
           g.add(cube);
-          const glow = new THREE.Mesh(new THREE.SphereGeometry(12, 8, 8), new THREE.MeshBasicMaterial({ color: WPCOL[w.weapon] || 16755200, transparent: true, opacity: 0.2 }));
+          const glow = new THREE.Mesh(new THREE.SphereGeometry(12, 8, 8), new THREE.MeshBasicMaterial({ color: WPCOL2[w.weapon] || 16755200, transparent: true, opacity: 0.2 }));
           glow.position.y = 15;
           g.add(glow);
           const lc = document.createElement("canvas");
@@ -1850,7 +1874,7 @@ var require_index = __commonJS({
         window._foodMatGold = new THREE.MeshLambertMaterial({ color: 16768256 });
       }
       const seenFood = /* @__PURE__ */ new Set();
-      for (const f of serverFoods) {
+      for (const f of state_default.serverFoods) {
         const fid = String(f.id);
         seenFood.add(fid);
         if (!window._foodMeshes[fid]) {
@@ -1870,11 +1894,11 @@ var require_index = __commonJS({
         }
       }
       const seen = /* @__PURE__ */ new Set();
-      for (const p of serverPlayers) {
-        if (p.id === myId) continue;
+      for (const p of state_default.serverPlayers) {
+        if (p.id === state_default.myId) continue;
         seen.add(String(p.id));
         const pid = String(p.id);
-        if (!cowMeshes[pid]) {
+        if (!state_default.cowMeshes[pid]) {
           const m = buildCow(p.color);
           scene.add(m);
           const nc = document.createElement("canvas");
@@ -1894,9 +1918,9 @@ var require_index = __commonJS({
           nsprite.position.set(0, 44, 0);
           nsprite.scale.set(40, 10, 1);
           m.add(nsprite);
-          cowMeshes[pid] = { mesh: m };
+          state_default.cowMeshes[pid] = { mesh: m };
         }
-        const cowObj = cowMeshes[pid];
+        const cowObj = state_default.cowMeshes[pid];
         const cm = cowObj.mesh;
         cm.position.x += (p.x - cm.position.x) * 0.15;
         cm.position.z += (p.y - cm.position.z) * 0.15;
@@ -1938,9 +1962,9 @@ var require_index = __commonJS({
           cowObj.hpSprite.tex.needsUpdate = true;
         }
       }
-      for (const id in cowMeshes) {
+      for (const id in state_default.cowMeshes) {
         if (!seen.has(id)) {
-          const obj = cowMeshes[id];
+          const obj = state_default.cowMeshes[id];
           scene.remove(obj.mesh);
           obj.mesh.traverse((c) => {
             if (c.geometry) c.geometry.dispose();
@@ -1950,10 +1974,10 @@ var require_index = __commonJS({
             }
           });
           if (obj.hpSprite) obj.hpSprite.tex.dispose();
-          delete cowMeshes[id];
+          delete state_default.cowMeshes[id];
         }
       }
-      for (const p of projData) {
+      for (const p of state_default.projData) {
         p.x += p.vx * dt;
         p.y += p.vy * dt;
         if (p.vy3d !== void 0) {
@@ -1961,41 +1985,41 @@ var require_index = __commonJS({
           if (!p.bolty) p.vy3d -= 20 * dt;
           if (p.y3d < 1) p.y3d = 1;
         }
-        if (!projMeshes[p.id]) {
+        if (!state_default.projMeshes[p.id]) {
           const sz = p.cowtank ? 4 : p.bolty ? 3 : 1.5;
           const c = COL[p.color] || 16776960;
           const m = new THREE.Mesh(new THREE.SphereGeometry(sz, 6, 6), new THREE.MeshBasicMaterial({ color: c }));
           const glow = new THREE.Mesh(new THREE.SphereGeometry(sz * 2, 6, 6), new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.3 }));
           m.add(glow);
           scene.add(m);
-          projMeshes[p.id] = m;
+          state_default.projMeshes[p.id] = m;
         }
         const terrH = getTerrainHeight(p.x, p.y);
         if (p.y3d < terrH + 1) {
-          if (projMeshes[p.id]) {
-            const pm = projMeshes[p.id];
+          if (state_default.projMeshes[p.id]) {
+            const pm = state_default.projMeshes[p.id];
             scene.remove(pm);
             pm.traverse((c) => {
               if (c.geometry) c.geometry.dispose();
               if (c.material) c.material.dispose();
             });
-            delete projMeshes[p.id];
+            delete state_default.projMeshes[p.id];
           }
           p.y3d = -999;
         } else {
-          projMeshes[p.id].position.set(p.x, p.y3d, p.y);
+          state_default.projMeshes[p.id].position.set(p.x, p.y3d, p.y);
         }
       }
-      projData = projData.filter((p) => {
+      state_default.projData = state_default.projData.filter((p) => {
         if (p.y3d === -999 || p.x < -100 || p.x > MW + 100 || p.y < -100 || p.y > MH + 100) {
-          if (projMeshes[p.id]) {
-            const pm = projMeshes[p.id];
+          if (state_default.projMeshes[p.id]) {
+            const pm = state_default.projMeshes[p.id];
             scene.remove(pm);
             pm.traverse((c) => {
               if (c.geometry) c.geometry.dispose();
               if (c.material) c.material.dispose();
             });
-            delete projMeshes[p.id];
+            delete state_default.projMeshes[p.id];
           }
           return false;
         }
@@ -2019,25 +2043,25 @@ var require_index = __commonJS({
         document.getElementById("lowHealthOverlay").style.display = me.hunger < 30 ? "block" : "none";
         document.getElementById("lowHealthOverlay").style.opacity = me.hunger < 30 ? Math.min(1, (30 - me.hunger) / 30 * (0.5 + Math.sin(time * 4) * 0.2)) : "0";
       }
-      document.getElementById("playerCount").textContent = "\u{1F404} " + serverPlayers.filter((p) => p.alive).length + "/" + serverPlayers.length;
-      killfeed.forEach((k) => k.t -= dt);
-      killfeed = killfeed.filter((k) => k.t > 0);
-      document.getElementById("killfeed").innerHTML = killfeed.map((k) => '<div style="margin-bottom:3px;opacity:' + Math.min(1, k.t) + '">' + k.txt + "</div>").join("");
+      document.getElementById("playerCount").textContent = "\u{1F404} " + state_default.serverPlayers.filter((p) => p.alive).length + "/" + state_default.serverPlayers.length;
+      state_default.killfeed.forEach((k) => k.t -= dt);
+      state_default.killfeed = state_default.killfeed.filter((k) => k.t > 0);
+      document.getElementById("S.killfeed").innerHTML = state_default.killfeed.map((k) => '<div style="margin-bottom:3px;opacity:' + Math.min(1, k.t) + '">' + k.txt + "</div>").join("");
       const mc = document.getElementById("minimap"), mctx = mc.getContext("2d");
       mctx.clearRect(0, 0, 120, 90);
       mctx.fillStyle = "rgba(0,0,0,0.6)";
       mctx.fillRect(0, 0, 120, 90);
       const sx = 120 / MW, sy = 90 / MH;
-      for (const p of serverPlayers) {
-        mctx.fillStyle = p.id === myId ? "#ffdd44" : p.alive ? "#ff88aa" : "#555";
+      for (const p of state_default.serverPlayers) {
+        mctx.fillStyle = p.id === state_default.myId ? "#ffdd44" : p.alive ? "#ff88aa" : "#555";
         mctx.fillRect(p.x * sx - 1, p.y * sy - 1, 3, 3);
       }
       mctx.fillStyle = "rgba(255,255,100,0.4)";
-      for (const f of serverFoods) {
+      for (const f of state_default.serverFoods) {
         mctx.fillRect(f.x * sx, f.y * sy, 1, 1);
       }
       ren.render(scene, cam);
-      if (vmGroup && state === "playing") {
+      if (vmGroup && state_default.state === "playing") {
         ren.autoClear = false;
         ren.clearDepth();
         ren.render(vmScene, vmCam);
