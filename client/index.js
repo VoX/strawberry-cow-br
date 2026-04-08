@@ -2,58 +2,7 @@ import*as THREE from 'three';
 import{FBXLoader}from'three/addons/loaders/FBXLoader.js';
 import{MW,MH,CH,COL,FOOD_E,WPCOL,PERKS}from'./config.js';
 import S from'./state.js';
-
-// Audio
-let actx=null;
-function initAudio(){if(actx)return;actx=new(window.AudioContext||window.webkitAudioContext)();}
-function sfx(freq,dur,type,vol){
-  if(!actx)return;const t=actx.currentTime;
-  const o=actx.createOscillator(),g=actx.createGain();
-  o.type=type||'sine';o.frequency.setValueAtTime(freq,t);o.frequency.exponentialRampToValueAtTime(freq*0.3,t+dur);
-  const v=(vol||0.1)*(typeof S.masterVol!=='undefined'?S.masterVol:0.5);
-  g.gain.setValueAtTime(v,t);g.gain.exponentialRampToValueAtTime(0.001,t+dur);
-  o.connect(g);g.connect(actx.destination);o.start(t);o.stop(t+dur);
-}
-function sfxShoot(){sfx(400,0.12,'square',0.1);}
-function sfxBolty(){sfx(800,0.25,'sawtooth',0.15);}
-function sfxHit(){sfx(200,0.15,'sawtooth',0.12);}
-function sfxEat(){sfx(800,0.08,'sine',0.08);sfx(1200,0.08,'sine',0.06);}
-function sfxLevelUp(){if(!actx)return;const t=actx.currentTime;[523,659,784,1047].forEach((f,i)=>{const o=actx.createOscillator(),g=actx.createGain();o.frequency.value=f;g.gain.setValueAtTime(0.1,t+i*0.08);g.gain.exponentialRampToValueAtTime(0.001,t+i*0.08+0.2);o.connect(g);g.connect(actx.destination);o.start(t+i*0.08);o.stop(t+i*0.08+0.2);});}
-function sfxDeath(){sfx(400,0.6,'sawtooth',0.12);}
-function sfxBump(){sfx(100,0.1,'sine',0.08);}
-// In-game music — Old MacDonald melody
-let musicPlaying=false,nextNoteTime=0;
-// Old MacDonald Had A Farm melody in semitones from C4 (0=C,2=D,4=E,5=F,7=G)
-const oldMac=[
-  7,7,7,4, 5,5,4,-1, 2,2,0,0, 7,-1,-1,-1,
-  7,7,7,4, 5,5,4,-1, 2,2,0,0, 7,-1,-1,-1,
-  4,4,7,7, 9,9,7,-1, 4,4,2,2, 0,-1,-1,-1,
-  7,7,7,4, 5,5,4,-1, 2,2,0,0, 7,-1,-1,-1,
-];
-const noteDur=0.22;
-let noteIdx=0;
-function tickMusic(){
-  if(!actx||!musicPlaying||S.state!=='playing')return;
-  const t=actx.currentTime;
-  if(t<nextNoteTime-0.05)return;
-  const note=oldMac[noteIdx%oldMac.length];
-  noteIdx++;
-  nextNoteTime=t+noteDur;
-  if(note<0)return; // rest
-  const freq=261.63*Math.pow(2,note/12);
-  // Melody
-  const o=actx.createOscillator(),g=actx.createGain();
-  o.type='triangle';o.frequency.value=freq;
-  const v=0.04*(typeof S.masterVol!=='undefined'?S.masterVol:0.5);
-  g.gain.setValueAtTime(v,t);g.gain.setValueAtTime(v,t+noteDur*0.7);
-  g.gain.exponentialRampToValueAtTime(0.001,t+noteDur*0.95);
-  o.connect(g);g.connect(actx.destination);o.start(t);o.stop(t+noteDur);
-  // Bass
-  const b=actx.createOscillator(),bg=actx.createGain();
-  b.type='sine';b.frequency.value=freq/2;
-  bg.gain.setValueAtTime(v*0.6,t);bg.gain.exponentialRampToValueAtTime(0.001,t+noteDur*0.8);
-  b.connect(bg);bg.connect(actx.destination);b.start(t);b.stop(t+noteDur);
-}
+import{initAudio,sfx,sfxShoot,sfxBolty,sfxHit,sfxEat,sfxLevelUp,sfxDeath,sfxBump,tickMusic,setMusicPlaying,resetMusic,getAudioCtx}from'./audio.js';
 
 
 // Three.js
@@ -403,7 +352,7 @@ function handleMsg(msg){
     if(msg.zone)S.serverZone=msg.zone;
     if(msg.map){S.mapFeatures=msg.map;S.mapBuilt=false;}
     if(msg.weapons)S.clientWeapons=msg.weapons;
-    S.killfeed=[];musicPlaying=true;noteIdx=0;
+    S.killfeed=[];setMusicPlaying(true);resetMusic();
     window._armorPickupData=msg.armorPickups||[];
     document.getElementById('winScreen').style.display='none';
     // Clean up previous round meshes
@@ -452,45 +401,45 @@ function handleMsg(msg){
     if(msg.playerId===S.myId)sfxDeath();
   }
   if(msg.type==='winner'){
-    S.killfeed.unshift({txt:'\u{1F451} '+(msg.name||'?')+' WINS!',t:10});musicPlaying=false;
+    S.killfeed.unshift({txt:'\u{1F451} '+(msg.name||'?')+' WINS!',t:10});setMusicPlaying(false);
     const ws2=document.getElementById('winScreen');
     ws2.style.display='flex';
     document.getElementById('winName').textContent=(msg.name||'?')+' WINS!';
     document.getElementById('winStats').textContent='Score: '+(msg.score||0)+' | Kills: '+(msg.kills||0);
     document.getElementById('winRestart').textContent='Next round starting soon...';
     // Epic rock Old MacDonald victory riff
-    if(actx){const t=actx.currentTime;
+    if(getAudioCtx()){const t=getAudioCtx().currentTime;
       const v=0.08*(typeof S.masterVol!=='undefined'?S.masterVol:0.5);
       // Power chord progression E-G-A-E with distorted sawtooth
       const chords=[[82.4,164.8],[98,196],[110,220],[82.4,164.8],[110,220],[130.8,261.6],[164.8,329.6]];
       chords.forEach((notes,i)=>{
         notes.forEach(freq=>{
-          const o=actx.createOscillator(),g=actx.createGain();
-          const dist=actx.createWaveShaper();
+          const o=getAudioCtx().createOscillator(),g=getAudioCtx().createGain();
+          const dist=getAudioCtx().createWaveShaper();
           const curve=new Float32Array(256);for(let j=0;j<256;j++){const x=j*2/256-1;curve[j]=Math.tanh(x*3);}
           dist.curve=curve;
           o.type='sawtooth';o.frequency.value=freq;
           g.gain.setValueAtTime(v,t+i*0.2);g.gain.setValueAtTime(v,t+i*0.2+0.15);
           g.gain.exponentialRampToValueAtTime(0.001,t+i*0.2+0.19);
-          o.connect(dist);dist.connect(g);g.connect(actx.destination);
+          o.connect(dist);dist.connect(g);g.connect(getAudioCtx().destination);
           o.start(t+i*0.2);o.stop(t+i*0.2+0.2);
         });
         // Kick drum on each chord
-        const k=actx.createOscillator(),kg=actx.createGain();
+        const k=getAudioCtx().createOscillator(),kg=getAudioCtx().createGain();
         k.type='sine';k.frequency.setValueAtTime(150,t+i*0.2);k.frequency.exponentialRampToValueAtTime(30,t+i*0.2+0.1);
         kg.gain.setValueAtTime(v*1.5,t+i*0.2);kg.gain.exponentialRampToValueAtTime(0.001,t+i*0.2+0.12);
-        k.connect(kg);kg.connect(actx.destination);k.start(t+i*0.2);k.stop(t+i*0.2+0.12);
+        k.connect(kg);kg.connect(getAudioCtx().destination);k.start(t+i*0.2);k.stop(t+i*0.2+0.12);
       });
       // Final sustained power chord
       const finalT=t+chords.length*0.2;
       [164.8,220,329.6].forEach(freq=>{
-        const o=actx.createOscillator(),g=actx.createGain();
-        const dist=actx.createWaveShaper();
+        const o=getAudioCtx().createOscillator(),g=getAudioCtx().createGain();
+        const dist=getAudioCtx().createWaveShaper();
         const curve=new Float32Array(256);for(let j=0;j<256;j++){const x=j*2/256-1;curve[j]=Math.tanh(x*4);}
         dist.curve=curve;
         o.type='sawtooth';o.frequency.value=freq;
         g.gain.setValueAtTime(v*1.2,finalT);g.gain.exponentialRampToValueAtTime(0.001,finalT+1.5);
-        o.connect(dist);dist.connect(g);g.connect(actx.destination);
+        o.connect(dist);dist.connect(g);g.connect(getAudioCtx().destination);
         o.start(finalT);o.stop(finalT+1.5);
       });
     }
@@ -513,24 +462,24 @@ function handleMsg(msg){
   if(msg.type==='cowstrikeWarning'){
     S.killfeed.unshift({txt:'\u{1F6A8} '+(msg.name||'?')+' CALLED COWSTRIKE! TAKE COVER!',t:6});
     // Air raid siren
-    if(actx){const t=actx.currentTime;
-      const o=actx.createOscillator(),g=actx.createGain();
+    if(getAudioCtx()){const t=getAudioCtx().currentTime;
+      const o=getAudioCtx().createOscillator(),g=getAudioCtx().createGain();
       o.type='sawtooth';o.frequency.setValueAtTime(300,t);
       o.frequency.linearRampToValueAtTime(900,t+0.75);o.frequency.linearRampToValueAtTime(300,t+1.5);
       o.frequency.linearRampToValueAtTime(900,t+2.25);o.frequency.linearRampToValueAtTime(300,t+3);
       g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(0.1,t+0.2);
       g.gain.setValueAtTime(0.1,t+2.5);g.gain.linearRampToValueAtTime(0,t+3);
-      o.connect(g);g.connect(actx.destination);o.start(t);o.stop(t+3);
+      o.connect(g);g.connect(getAudioCtx().destination);o.start(t);o.stop(t+3);
     }
   }
   if(msg.type==='cowstrike'){
     S.killfeed.unshift({txt:'\u{1F4A5} COWSTRIKE WAVE '+(((msg.wave||0)+1))+'!',t:4});
-    if(actx){const t=actx.currentTime;
-      const bs=actx.sampleRate*0.3,b=actx.createBuffer(1,bs,actx.sampleRate),d=b.getChannelData(0);
+    if(getAudioCtx()){const t=getAudioCtx().currentTime;
+      const bs=getAudioCtx().sampleRate*0.3,b=getAudioCtx().createBuffer(1,bs,getAudioCtx().sampleRate),d=b.getChannelData(0);
       for(let i=0;i<bs;i++)d[i]=(Math.random()*2-1)*Math.exp(-i/bs*3);
-      const n=actx.createBufferSource();n.buffer=b;const ng=actx.createGain();
+      const n=getAudioCtx().createBufferSource();n.buffer=b;const ng=getAudioCtx().createGain();
       ng.gain.setValueAtTime(0.15,t);ng.gain.exponentialRampToValueAtTime(0.001,t+0.4);
-      n.connect(ng);ng.connect(actx.destination);n.start(t);n.stop(t+0.4);
+      n.connect(ng);ng.connect(getAudioCtx().destination);n.start(t);n.stop(t+0.4);
       sfx(60,0.4,'sine',0.12);
     }
     // INTENSE cowstrike visuals
