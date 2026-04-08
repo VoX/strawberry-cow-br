@@ -49,6 +49,9 @@ canvas{display:block;position:absolute;top:0;left:0;z-index:1}
 <canvas id="minimap" width="120" height="90"></canvas>
 </div>
 <div id="lockMsg">Click to play<br><small>WASD move, Mouse look, Click shoot, Shift dash</small></div>
+<canvas id="touchDpad" width="130" height="130" style="position:fixed;bottom:20px;left:20px;z-index:60;display:none;opacity:0.5;touch-action:none"></canvas>
+<div id="touchShoot" style="position:fixed;bottom:40px;right:30px;width:60px;height:60px;border-radius:50%;background:rgba(255,50,50,0.4);border:2px solid rgba(255,100,100,0.6);z-index:60;display:none;touch-action:none"></div>
+<div id="touchDash" style="position:fixed;bottom:40px;right:110px;width:45px;height:45px;border-radius:50%;background:rgba(50,150,255,0.4);border:2px solid rgba(100,180,255,0.6);z-index:60;display:none;font-size:10px;color:#fff;text-align:center;line-height:45px;touch-action:none">DASH</div>
 <div id="perkMenu" style="position:absolute;top:8px;left:50%;transform:translateX(-50%);display:none;gap:10px;z-index:80;pointer-events:none"></div>
 <style>
 .perkCard{background:rgba(26,10,46,0.85);border:2px solid #cc88ff;border-radius:8px;padding:10px 14px;width:180px;text-align:center;pointer-events:none}
@@ -349,6 +352,34 @@ document.addEventListener('mouseup',e=>{
   }
 });
 document.addEventListener('contextmenu',e=>e.preventDefault());
+
+// Mobile touch controls
+const isMobile='ontouchstart'in window||navigator.maxTouchPoints>0;
+if(isMobile){
+  document.getElementById('touchDpad').style.display='block';
+  document.getElementById('touchShoot').style.display='block';
+  document.getElementById('touchDash').style.display='block';
+  document.getElementById('lockMsg').style.display='none';
+  // D-pad
+  const dp=document.getElementById('touchDpad'),dpCtx=dp.getContext('2d');
+  let tdx=0,tdy=0;
+  function drawDp(nx,ny){dpCtx.clearRect(0,0,130,130);dpCtx.fillStyle='rgba(0,0,0,0.3)';dpCtx.beginPath();dpCtx.arc(65,65,60,0,Math.PI*2);dpCtx.fill();dpCtx.fillStyle='rgba(255,255,255,0.5)';dpCtx.beginPath();dpCtx.arc(65+nx*22,65+ny*22,20,0,Math.PI*2);dpCtx.fill();}
+  drawDp(0,0);
+  function handleDp(e){e.preventDefault();const t=e.touches[0];if(!t){tdx=tdy=0;drawDp(0,0);return;}const r=dp.getBoundingClientRect();const dx=t.clientX-(r.left+r.width/2),dy=t.clientY-(r.top+r.height/2);const d=Math.hypot(dx,dy);if(d<10){tdx=tdy=0;drawDp(0,0);return;}tdx=dx/d;tdy=dy/d;drawDp(tdx,tdy);}
+  dp.addEventListener('touchstart',handleDp,{passive:false});
+  dp.addEventListener('touchmove',handleDp,{passive:false});
+  dp.addEventListener('touchend',e=>{e.preventDefault();tdx=tdy=0;drawDp(0,0);},{passive:false});
+  // Override movement to use touch
+  setInterval(()=>{if(state==='playing'&&(Math.abs(tdx)+Math.abs(tdy))>0.1){send({type:'move',dx:tdx,dy:tdy});}else if(state==='playing'){send({type:'move',dx:0,dy:0});}},50);
+  // Touch look (right side of screen)
+  let lastTouchX=0,lastTouchY=0;
+  document.addEventListener('touchstart',e=>{if(e.target===dp||e.target.id==='touchShoot'||e.target.id==='touchDash')return;const t=e.touches[e.touches.length-1];lastTouchX=t.clientX;lastTouchY=t.clientY;},{passive:true});
+  document.addEventListener('touchmove',e=>{if(e.target===dp)return;const t=e.touches[e.touches.length-1];const dx=t.clientX-lastTouchX,dy=t.clientY-lastTouchY;yaw-=dx*0.004;pitch-=dy*0.004;pitch=Math.max(-1.2,Math.min(1.2,pitch));lastTouchX=t.clientX;lastTouchY=t.clientY;},{passive:true});
+  // Shoot button
+  document.getElementById('touchShoot').addEventListener('touchstart',e=>{e.preventDefault();doAttack();},{passive:false});
+  // Dash button
+  document.getElementById('touchDash').addEventListener('touchstart',e=>{e.preventDefault();doDash();},{passive:false});
+}
 
 // Input
 addEventListener('keydown',e=>{
