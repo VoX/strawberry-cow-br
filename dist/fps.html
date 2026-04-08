@@ -154,7 +154,7 @@ scene.add(new THREE.HemisphereLight(0x87CEEB,0x44aa44,0.3));
 // Procedural gradient skybox
 const skyGeo=new THREE.SphereGeometry(2500,32,32);
 const skyMat=new THREE.ShaderMaterial({
-  side:THREE.BackSide,
+  side:THREE.BackSide,fog:false,
   uniforms:{},
   vertexShader:`varying vec3 vWorldPos;void main(){vWorldPos=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
   fragmentShader:`varying vec3 vWorldPos;void main(){
@@ -176,6 +176,41 @@ const skyMat=new THREE.ShaderMaterial({
 });
 const sky=new THREE.Mesh(skyGeo,skyMat);
 scene.add(sky);
+
+// Cloud planes with procedural texture
+function makeCloudTexture(){
+  const c=document.createElement('canvas');c.width=256;c.height=256;
+  const ctx=c.getContext('2d');
+  ctx.fillStyle='rgba(0,0,0,0)';ctx.fillRect(0,0,256,256);
+  // Draw soft blobs
+  for(let i=0;i<20;i++){
+    const x=64+Math.random()*128,y=64+Math.random()*128;
+    const r=30+Math.random()*60;
+    const grad=ctx.createRadialGradient(x,y,0,x,y,r);
+    grad.addColorStop(0,'rgba(255,255,255,0.6)');
+    grad.addColorStop(0.5,'rgba(255,255,255,0.2)');
+    grad.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=grad;ctx.fillRect(x-r,y-r,r*2,r*2);
+  }
+  return new THREE.CanvasTexture(c);
+}
+const cloudPlanes=[];
+for(let i=0;i<12;i++){
+  const tex=makeCloudTexture();
+  const mat=new THREE.MeshBasicMaterial({map:tex,transparent:true,opacity:0.7,side:THREE.DoubleSide,fog:false,depthWrite:false});
+  const sz=400+Math.random()*400;
+  const mesh=new THREE.Mesh(new THREE.PlaneGeometry(sz,sz*0.4),mat);
+  mesh.position.set(
+    Math.random()*MW,
+    150+Math.random()*100,
+    Math.random()*MH
+  );
+  mesh.rotation.x=-Math.PI/2;
+  mesh.rotation.z=Math.random()*Math.PI;
+  mesh.userData={speed:2+Math.random()*4,origX:mesh.position.x};
+  scene.add(mesh);
+  cloudPlanes.push(mesh);
+}
 
 // STEP 1: Generate collision heightmap as the single source of truth
 const GRID_W=200, GRID_H=150;
@@ -1018,6 +1053,8 @@ function loop(ts){
   buildMap();
   updateZone();
   updateViewmodel();
+  // Animate clouds
+  cloudPlanes.forEach(c=>{c.position.x=c.userData.origX+Math.sin(time*0.05*c.userData.speed)*200;});
 
   // Armor pickups (blue shields)
   if(!window._armorMeshes)window._armorMeshes={};
