@@ -36,6 +36,7 @@ canvas{display:block;position:absolute;top:0;left:0;z-index:1}
 <button id="joinBtn">JOIN GAME</button>
 <div style="margin-top:12px;color:#cc88ff;font-size:13px"><label><input type="checkbox" id="botsCheck" checked style="vertical-align:middle"> Include Bots</label></div>
 <div style="margin-top:8px;color:#cc88ff;font-size:13px">Volume: <input id="volSlider" type="range" min="0" max="100" value="50" style="width:120px;vertical-align:middle"> <span id="volLbl">50%</span></div>
+<div id="serverStatus" style="margin-top:12px;font-size:13px;color:#ffaa44">&#x23F3; connecting...</div>
 </div>
 <div id="hud">
 <div id="crosshair"></div>
@@ -422,9 +423,10 @@ function doDash(){
 function connect(){
   const proto=location.protocol==='https:'?'wss':'ws';
   ws=new WebSocket(proto+'://'+location.host+'/strawberrycow-fps-ws/');
-  ws.onopen=()=>console.log('connected');
+  ws.onopen=()=>{console.log('connected');const ss=document.getElementById('serverStatus');if(ss){ss.textContent='\u2705 server online';ss.style.color='#88ff88';}};
   ws.onmessage=e=>handleMsg(JSON.parse(e.data));
-  ws.onclose=()=>setTimeout(connect,2000);
+  ws.onclose=()=>{const ss=document.getElementById('serverStatus');if(ss){ss.textContent='\u274C server offline';ss.style.color='#ff6666';}setTimeout(connect,2000);};
+  ws.onerror=()=>{const ss=document.getElementById('serverStatus');if(ss){ss.textContent='\u274C server offline';ss.style.color='#ff6666';}};
 }
 function send(m){if(ws&&ws.readyState===1)ws.send(JSON.stringify(m));}
 
