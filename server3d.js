@@ -89,13 +89,13 @@ function generateMap() {
   }
 
   // Mud patches (3-5)
-  const mudCount = 3 + Math.floor(Math.random() * 3);
+  const mudCount = 0;
   for (let i = 0; i < mudCount; i++) {
     MUD_PATCHES.push({x:rand(200,MAP_W-200), y:rand(200,MAP_H-200), r:rand(50,100)});
   }
 
   // Heal ponds (1-3)
-  const pondCount = 1 + Math.floor(Math.random() * 3);
+  const pondCount = 0;
   for (let i = 0; i < pondCount; i++) {
     HEAL_PONDS.push({x:rand(150,MAP_W-150), y:rand(150,MAP_H-150), r:rand(40,60)});
   }
@@ -830,7 +830,7 @@ function gameTick() {
     const roll = Math.random();
     let f;
     if (roll < 0.05) { f = spawnGoldenFood(); }
-    else if (roll < 0.08) { f = spawnFood(true); }
+    else { f = spawnFood(false); } // poison removed
     else { f = spawnFood(false); }
     broadcast({ type: 'food', food: serializeFood(f) });
   }
