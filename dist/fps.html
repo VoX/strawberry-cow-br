@@ -189,8 +189,10 @@ const gndPos=gndGeo.attributes.position;
 // So getY(i)+MH/2 IS correct for worldZ mapping! The heightmap rows match.
 for(let i=0;i<gndPos.count;i++){
   const wx=gndPos.getX(i)+MW/2;
-  const wz=gndPos.getY(i)+MH/2;
-  // Clamp to valid heightmap range
+  // PlaneGeometry row 0: getY=+MH/2, but after -90deg X rotation this becomes worldZ=MH
+  // PlaneGeometry last row: getY=-MH/2, after rotation worldZ=0
+  // So we need to INVERT: worldZ = MH - (getY(i) + MH/2) = MH/2 - getY(i)
+  const wz=MH/2-gndPos.getY(i);
   const col=Math.max(0,Math.min(GRID_W,Math.round(wx/MW*GRID_W)));
   const row=Math.max(0,Math.min(GRID_H,Math.round(wz/MH*GRID_H)));
   gndPos.setZ(i,heightMap[row*(GRID_W+1)+col]);
@@ -232,7 +234,7 @@ function buildFenceLine(points){
 }
 // Generate fence points along each edge
 const fenceN=[],fenceS=[],fenceE=[],fenceW=[];
-const fenceStep=80;
+const fenceStep=25; // match terrain grid cell size (MW/GRID_W = 10, but 25 is good for post density)
 for(let x=0;x<=MW;x+=fenceStep){fenceN.push({x,z:0});fenceS.push({x,z:MH});}
 for(let z=0;z<=MH;z+=fenceStep){fenceW.push({x:0,z});fenceE.push({x:MW,z});}
 buildFenceLine(fenceN);buildFenceLine(fenceS);buildFenceLine(fenceW);buildFenceLine(fenceE);
