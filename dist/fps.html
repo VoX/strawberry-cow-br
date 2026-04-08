@@ -761,10 +761,14 @@ function buildMap(){
 
 // Zone wall
 let zoneWall=null;
-// Viewmodel (first-person weapon)
+// Viewmodel (first-person weapon) — separate scene rendered on top
+const vmScene=new THREE.Scene();
+vmScene.add(new THREE.AmbientLight(0xffffff,1));
+const vmCam=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.1,100);
+vmCam.position.set(0,0,0);
 let vmGroup=null,vmType='normal';
 function buildViewmodel(type){
-  if(vmGroup){cam.remove(vmGroup);}
+  if(vmGroup){vmScene.remove(vmGroup);}
   vmGroup=new THREE.Group();
   const dark=new THREE.MeshBasicMaterial({color:0x444444});
   const metal=new THREE.MeshBasicMaterial({color:0x999999});
@@ -812,10 +816,10 @@ function buildViewmodel(type){
     const sight=new THREE.Mesh(new THREE.BoxGeometry(1,1,1),metal);
     sight.position.set(0,2.5,-4);vmGroup.add(sight);
   }
-  // Position viewmodel in bottom-center of camera view
+  // Position in viewmodel scene
   vmGroup.position.set(2,-3,-5);
   vmGroup.rotation.set(0,0.05,0);
-  cam.add(vmGroup);
+  vmScene.add(vmGroup);
   vmType=type;
 }
 function updateViewmodel(){
@@ -1146,9 +1150,16 @@ function loop(ts){
   for(const f of serverFoods){mctx.fillRect(f.x*sx,f.y*sy,1,1);}
 
   ren.render(scene,cam);
+  // Render viewmodel on top
+  if(vmGroup&&state==='playing'){
+    ren.autoClear=false;
+    ren.clearDepth();
+    ren.render(vmScene,vmCam);
+    ren.autoClear=true;
+  }
 }
 
-addEventListener('resize',()=>{cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();ren.setSize(innerWidth,innerHeight);});
+addEventListener('resize',()=>{cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();vmCam.aspect=innerWidth/innerHeight;vmCam.updateProjectionMatrix();ren.setSize(innerWidth,innerHeight);});
 
 connect();
 requestAnimationFrame(loop);
