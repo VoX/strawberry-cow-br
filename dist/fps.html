@@ -331,7 +331,7 @@ document.addEventListener('mousedown',e=>{
     const me=serverPlayers.find(p=>p.id===myId);
     if(me&&me.alive&&me.weapon==='bolty'){
       adsActive=true;
-      cam.fov=30;cam.updateProjectionMatrix();
+      cam.fov=19;cam.updateProjectionMatrix();
       document.getElementById('scopeOverlay').style.display='block';
       document.getElementById('crosshair').style.display='none';
       if(vmGroup)vmGroup.visible=false;
