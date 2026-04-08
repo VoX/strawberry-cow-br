@@ -115,7 +115,6 @@ function generateMap() {
   SHELTERS.push({ x: MAP_W / 2, y: MAP_H - 60, r: 60 });  // South wall - touching bottom fence
   SHELTERS.push({ x: 60, y: MAP_H / 2, r: 60 });           // West wall - touching left fence
   SHELTERS.push({ x: MAP_W - 60, y: MAP_H / 2, r: 60 });   // East wall - touching right fence
-  SHELTERS.push({ x: MAP_W / 2, y: MAP_H / 2, r: 60 });   // Center
 }
 
 function rand(min, max) { return min + Math.random() * (max - min); }
