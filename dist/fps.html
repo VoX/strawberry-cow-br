@@ -39,6 +39,7 @@ canvas{display:block;position:absolute;top:0;left:0;z-index:1}
 </div>
 <div id="hud">
 <div id="crosshair"></div>
+<div id="armorBar" style="position:absolute;bottom:52px;left:50%;transform:translateX(-50%);width:220px;height:10px;background:rgba(0,0,0,0.6);border-radius:3px;display:none"><div id="armorFill" style="height:100%;border-radius:3px;background:#5588ff;width:0%"></div><div id="armorTxt" style="position:absolute;width:100%;text-align:center;top:-1px;font-size:8px;text-shadow:1px 1px #000"></div></div>
 <div id="hunger"><div id="hungerFill"></div><div id="hungerTxt"></div></div>
 <div id="score"></div>
 <div id="xpBar" style="position:absolute;bottom:55px;left:50%;transform:translateX(-50%);width:220px;height:10px;background:rgba(0,0,0,0.6);border-radius:3px"><div id="xpFill" style="height:100%;border-radius:3px;background:#cc88ff;width:0%"></div><div id="xpTxt" style="position:absolute;width:100%;text-align:center;top:-1px;font-size:8px;text-shadow:1px 1px #000"></div></div>
@@ -267,6 +268,7 @@ addEventListener('keydown',e=>{
   keys[e.code]=true;
   if((e.code==='ShiftLeft'||e.code==='ShiftRight')&&state==='playing')doDash();
   if(e.code==='Space'){e.preventDefault();if(jumpH<1)jumpVel=120;}
+  if(e.code==='KeyQ'&&state==='playing')send({type:'dropWeapon'});
   if(perkMenuOpen&&window._perkChoices){
     if(e.code==='Digit1'&&window._perkChoices[0])window.pickPerk(window._perkChoices[0].id);
     if(e.code==='Digit2'&&window._perkChoices[1])window.pickPerk(window._perkChoices[1].id);
@@ -352,6 +354,7 @@ function handleMsg(msg){
     if(msg.map){mapFeatures=msg.map;mapBuilt=false;}
     if(msg.weapons)clientWeapons=msg.weapons;
     killfeed=[];musicPlaying=true;noteIdx=0;
+    window._armorPickupData=msg.armorPickups||[];
     document.getElementById('winScreen').style.display='none';
     // Clean up previous round meshes
     for(const id in cowMeshes){scene.remove(cowMeshes[id].mesh);} cowMeshes={};
@@ -566,6 +569,19 @@ function handleMsg(msg){
     else killfeed.unshift({txt:(msg.name||'?')+' picked up '+(msg.weapon||'weapon'),t:3});
   }
   if(msg.type==='weaponSpawn'){clientWeapons.push({id:msg.id,x:msg.x,y:msg.y,weapon:msg.weapon});}
+  if(msg.type==='weaponDrop'){
+    if(msg.playerId===myId)killfeed.unshift({txt:'Dropped weapon',t:3});
+    else killfeed.unshift({txt:(msg.name||'?')+' dropped their weapon',t:3});
+  }
+  if(msg.type==='armorPickup'){
+    if(!window._armorMeshes)window._armorMeshes={};
+    if(window._armorMeshes[msg.pickupId]){scene.remove(window._armorMeshes[msg.pickupId]);delete window._armorMeshes[msg.pickupId];}
+    if(msg.playerId===myId)killfeed.unshift({txt:'Picked up armor (+25)',t:3});
+  }
+  if(msg.type==='armorSpawn'){
+    if(!window._armorPickupData)window._armorPickupData=[];
+    window._armorPickupData.push({id:msg.id,x:msg.x,y:msg.y});
+  }
 }
 
 let clientWeapons=[];
@@ -814,6 +830,23 @@ function loop(ts){
 
   buildMap();
 
+  // Armor pickups (blue shields)
+  if(!window._armorMeshes)window._armorMeshes={};
+  if(!window._armorPickupData)window._armorPickupData=[];
+  const seenArmor=new Set();
+  for(const a of window._armorPickupData){
+    const aid=String(a.id);seenArmor.add(aid);
+    if(!window._armorMeshes[aid]){
+      const m=new THREE.Mesh(new THREE.OctahedronGeometry(8,0),new THREE.MeshBasicMaterial({color:0x5588ff}));
+      const glow=new THREE.Mesh(new THREE.OctahedronGeometry(12,0),new THREE.MeshBasicMaterial({color:0x5588ff,transparent:true,opacity:0.2}));
+      m.add(glow);m.position.set(a.x,getTerrainHeight(a.x,a.y)+15,a.y);
+      scene.add(m);window._armorMeshes[aid]=m;
+    }
+    window._armorMeshes[aid].rotation.y=time*2;
+    window._armorMeshes[aid].position.y=getTerrainHeight(a.x,a.y)+15+Math.sin(time*3)*3;
+  }
+  for(const id in window._armorMeshes){if(!seenArmor.has(id)){scene.remove(window._armorMeshes[id]);delete window._armorMeshes[id];}}
+
   // Weapon pickups - render as glowing colored cubes with labels
   if(!window._wpMeshes)window._wpMeshes={};
   const WPCOL={shotgun:0xff4444,burst:0x44aaff,bolty:0xffaa00,cowtank:0x44ff44};
@@ -977,6 +1010,11 @@ function loop(ts){
     document.getElementById('hungerTxt').textContent='HUNGER '+Math.ceil(me.hunger)+'%';
     const wep=me.weapon||'normal';
     document.getElementById('weapon').textContent=wep!=='normal'?wep+(me.weaponLevel>0?' Lv'+(me.weaponLevel+1):''):'Spit';
+    // Armor bar
+    const armorVal=me.armor||0;
+    document.getElementById('armorBar').style.display=armorVal>0?'block':'none';
+    document.getElementById('armorFill').style.width=Math.min(100,armorVal)+'%';
+    document.getElementById('armorTxt').textContent='ARMOR '+Math.ceil(armorVal);
     // XP bar
     const xpPct=me.xpToNext>0?Math.max(0,Math.min(100,(me.xp||0)/(me.xpToNext||50)*100)):0;
     document.getElementById('xpFill').style.width=xpPct+'%';

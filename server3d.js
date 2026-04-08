@@ -28,7 +28,8 @@ let aliveCount = 0;
 let gameTime = 0; // seconds since game start
 let zone = { x: 0, y: 0, w: MAP_W, h: MAP_H };
 let projectiles = [];
-let weaponPickups = []; // {id, x, y, weapon:'shotgun'|'burst'|'bolty'}
+let weaponPickups = [];
+let armorPickups = []; // {id, x, y, weapon:'shotgun'|'burst'|'bolty'}
 const WEAPON_TYPES = ['shotgun','burst','bolty','shotgun','burst','bolty','cowtank']; // cowtank is rarer (1/7 chance)
 
 // Map features — regenerated each game
@@ -135,7 +136,7 @@ function spawnBots() {
       dashCooldown: 0, attackCooldown: 0, stunTimer: 0, lastAttacker: null,
       perks: { speedMult: 1, radiusMult: 1, drainMult: 1, magnetRange: 0, regen: 0, maxHunger: 100, sizeMult: 1, damage: 1 },
       weaponPerks: { velocity: 1, cooldown: 1, hungerDiscount: 0, extraProj: 0, damageMult: 1, piercing: false, burstMod: false },
-      weapon: 'normal', weaponLevel: 0, weaponTimer: 0,
+      weapon: 'normal', weaponLevel: 0, weaponTimer: 0, armor: 0,
       isBot: true, botTarget: null, botActionTimer: 2,
     };
     players.set(botId, bot);
@@ -319,6 +320,9 @@ function spawnInitialFood() {
   for (let i = 0; i < 35; i++) spawnFood(false);
   // Spawn 2-3 initial weapon pickups
   for (let i = 0; i < 3; i++) spawnWeaponPickup();
+  // Armor pickups
+  armorPickups = [];
+  for (let i = 0; i < 4; i++) { armorPickups.push({ id: foodIdCounter++, x: rand(200, MAP_W-200), y: rand(200, MAP_H-200) }); }
 }
 
 function broadcast(data) {
@@ -433,6 +437,7 @@ function startGame() {
     foods: foods.map(serializeFood),
     zone,
     map: { walls: WALLS, mud: MUD_PATCHES, ponds: HEAL_PONDS, portals: PORTALS, shelters: SHELTERS },
+    armorPickups: armorPickups.map(a => ({ id: a.id, x: a.x, y: a.y })),
     weapons: weaponPickups.map(w => ({ id: w.id, x: w.x, y: w.y, weapon: w.weapon })),
   });
 
@@ -452,7 +457,7 @@ function getPlayerStates() {
         id: p.id, name: p.name, color: p.color, x: p.x, y: p.y, dir: p.dir,
         hunger: p.hunger, score: p.score, alive: p.alive, eating: p.eating,
         foodEaten: p.foodEaten, level: p.level || 0, xp: p.xp || 0,
-        xpToNext: p.xpToNext || 50, sizeMult: p.perks ? p.perks.sizeMult : 1,
+        xpToNext: p.xpToNext || 50, sizeMult: p.perks ? p.perks.sizeMult : 1, armor: p.armor || 0,
         kills: p.kills || 0, stunTimer: p.stunTimer || 0, weapon: p.weapon || 'normal', aimAngle: p.aimAngle || 0, weaponLevel: p.weaponLevel || 0,
         dashCooldown: p.dashCooldown || 0, attackCooldown: p.attackCooldown || 0,
       });
@@ -674,6 +679,25 @@ function gameTick() {
     }
   }
 
+  // Armor pickup collision
+  for (const [, p] of players) {
+    if (!p.alive) continue;
+    for (let i = armorPickups.length - 1; i >= 0; i--) {
+      const a = armorPickups[i];
+      if (Math.hypot(p.x - a.x, p.y - a.y) < 45) {
+        p.armor = Math.min(100, (p.armor || 0) + 25);
+        broadcast({ type: 'armorPickup', playerId: p.id, name: p.name, pickupId: a.id });
+        armorPickups.splice(i, 1);
+      }
+    }
+  }
+  // Respawn armor pickups
+  if (Math.random() < 0.004 && armorPickups.length < 5) {
+    const a = { id: foodIdCounter++, x: rand(200, MAP_W-200), y: rand(200, MAP_H-200) };
+    armorPickups.push(a);
+    broadcast({ type: 'armorSpawn', id: a.id, x: a.x, y: a.y });
+  }
+
   // Periodically spawn new weapon pickups (every ~15 seconds, max 4 on map)
   if (Math.random() < 0.008 && weaponPickups.length < 6) {
     const w = spawnWeaponPickup();
@@ -763,8 +787,12 @@ function gameTick() {
           dmg = pr.dmg * (1 + (hits - 1) * 0.5); // 1x, 1.5x, 2x, 2.5x, 3x
         }
         // Cowtank armor: 50% damage reduction
-        const armor = (p.weapon === 'cowtank') ? 0.5 : 1;
-        p.hunger -= dmg * armor;
+        let armor = (p.weapon === 'cowtank') ? 0.5 : 1;
+        if (p.perks && p.perks.damageReduction) armor *= (1 - p.perks.damageReduction);
+        // Armor absorbs damage first
+        let actualDmg = dmg * armor;
+        if (p.armor > 0) { const absorbed = Math.min(p.armor, actualDmg); p.armor -= absorbed; actualDmg -= absorbed; }
+        p.hunger -= actualDmg;
         p.stunTimer = (p.weapon === 'cowtank') ? 0.2 : 0.5;
         p.lastAttacker = pr.ownerId;
         if (p.weapon === 'cowtank') broadcast({ type: 'armorHit', playerId: p.id, x: p.x, y: p.y });
@@ -939,6 +967,15 @@ wss.on('connection', (ws) => {
     if (msg.type === 'toggleBots') {
       botsEnabled = !botsEnabled;
       broadcast({ type: 'botsToggled', enabled: botsEnabled });
+    }
+
+    if (msg.type === 'dropWeapon' && player && player.alive && player.weapon !== 'normal') {
+      // Drop current weapon as a pickup
+      weaponPickups.push({ id: foodIdCounter++, x: player.x + 20, y: player.y, weapon: player.weapon });
+      broadcast({ type: 'weaponSpawn', id: weaponPickups[weaponPickups.length-1].id, x: player.x + 20, y: player.y, weapon: player.weapon });
+      player.weapon = 'normal';
+      player.weaponLevel = 0;
+      broadcast({ type: 'weaponDrop', playerId: player.id, name: player.name });
     }
 
     if (msg.type === 'ready' && player && player.inLobby) {
