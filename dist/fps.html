@@ -898,7 +898,7 @@ function buildViewmodel(type){
     const loader=new FBXLoader();
     loader.load('models/M16_ps1.fbx',fbx=>{
       fbx.scale.set(0.08,0.08,0.08);
-      fbx.rotation.set(-Math.PI/2,Math.PI,0);
+      fbx.rotation.set(0,Math.PI,Math.PI/2);
       fbx.position.set(0,-2,-4);
       const grayMat=new THREE.MeshBasicMaterial({color:0x333333});
       fbx.traverse(c=>{if(c.isMesh)c.material=grayMat;});
