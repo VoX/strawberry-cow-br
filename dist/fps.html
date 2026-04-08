@@ -978,73 +978,66 @@ const towerH=200,towerSize=60; // half-width of square tower
 function buildTower(){
   const g=new THREE.Group();
   const th=getTerrainHeight(towerX,towerZ);
-  const stoneMat=new THREE.MeshLambertMaterial({color:0x888888});
+  const stoneMat=new THREE.MeshLambertMaterial({color:0x999999});
+  const stoneD=new THREE.MeshLambertMaterial({color:0x777777});
   const woodMat=new THREE.MeshLambertMaterial({color:0x8B5A2B});
+  const roofMat=new THREE.MeshLambertMaterial({color:0x884422});
   const metalMat=new THREE.MeshLambertMaterial({color:0x666666});
-  const rampMat=new THREE.MeshLambertMaterial({color:0x7a6a5a});
 
-  // 4 walls (open-sided for entry)
-  const wallH=towerH+10;
-  const wallThick=4;
-  // North wall
-  let w;
-  w=new THREE.Mesh(new THREE.BoxGeometry(towerSize*2,wallH,wallThick),stoneMat);w.position.set(0,wallH/2,-towerSize);g.add(w);
-  // South wall (with gap for entry)
-  w=new THREE.Mesh(new THREE.BoxGeometry(towerSize*0.7,wallH,wallThick),stoneMat);w.position.set(-towerSize*0.65,wallH/2,towerSize);g.add(w);
-  w=new THREE.Mesh(new THREE.BoxGeometry(towerSize*0.7,wallH,wallThick),stoneMat);w.position.set(towerSize*0.65,wallH/2,towerSize);g.add(w);
-  // East wall
-  w=new THREE.Mesh(new THREE.BoxGeometry(wallThick,wallH,towerSize*2),stoneMat);w.position.set(towerSize,wallH/2,0);g.add(w);
-  // West wall
-  w=new THREE.Mesh(new THREE.BoxGeometry(wallThick,wallH,towerSize*2),stoneMat);w.position.set(-towerSize,wallH/2,0);g.add(w);
-
-  // Winding ramp: 4 sides, corner platforms, going up
-  const levels=8;
-  const levelH=towerH/levels;
-  const rampW=towerSize*1.6,rampD=12;
-  for(let i=0;i<levels;i++){
-    const h=i*levelH+levelH/2;
-    const side=i%4;
-    let rx=0,rz=0,rw=rampW,rd=rampD,ry=0;
-    if(side===0){rx=0;rz=-towerSize+8;rw=rampW;ry=0;}       // north
-    else if(side===1){rx=towerSize-8;rz=0;rw=rampD;rd=rampW;} // east
-    else if(side===2){rx=0;rz=towerSize-8;rw=rampW;ry=0;}     // south
-    else{rx=-towerSize+8;rz=0;rw=rampD;rd=rampW;}              // west
-    // Ramp
-    const ramp=new THREE.Mesh(new THREE.BoxGeometry(rw,3,rd),rampMat);
-    ramp.position.set(rx,h,rz);g.add(ramp);
-    // Corner platform at each turn
-    const corners=[[-1,-1],[-1,1],[1,-1],[1,1]];
-    const ci=i%4;
-    const cx=corners[ci][0]*(towerSize-10),cz=corners[ci][1]*(towerSize-10);
-    const plat=new THREE.Mesh(new THREE.BoxGeometry(20,3,20),woodMat);
-    plat.position.set(cx,h,cz);g.add(plat);
+  // Solid stone base tower (square, no entry — purely visual landmark/wall)
+  const baseW=towerSize*2, baseH=towerH;
+  const base=new THREE.Mesh(new THREE.BoxGeometry(baseW,baseH,baseW),stoneMat);
+  base.position.y=baseH/2;base.castShadow=true;g.add(base);
+  // Stone detail bands
+  for(let y=0;y<baseH;y+=40){
+    const band=new THREE.Mesh(new THREE.BoxGeometry(baseW+2,3,baseW+2),stoneD);
+    band.position.y=y;g.add(band);
   }
-
-  // Top platform
-  const topPlat=new THREE.Mesh(new THREE.BoxGeometry(towerSize*2+20,4,towerSize*2+20),woodMat);
-  topPlat.position.y=towerH;g.add(topPlat);
-
-  // Railing posts around top
+  // Crenellations on top
   for(let i=0;i<16;i++){
-    const a=(i/16)*Math.PI*2;
-    const pr=towerSize+8;
-    const px=Math.cos(a)*pr,pz=Math.sin(a)*pr;
-    const post=new THREE.Mesh(new THREE.CylinderGeometry(1,1,15,4),metalMat);
-    post.position.set(px,towerH+9,pz);g.add(post);
+    const a=(i/16)*4;const side=Math.floor(a);const frac=a-side;
+    let cx=0,cz=0;
+    const hw=towerSize;
+    if(side===0){cx=-hw+frac*baseW;cz=-hw;}
+    else if(side===1){cx=hw;cz=-hw+frac*baseW;}
+    else if(side===2){cx=hw-frac*baseW;cz=hw;}
+    else{cx=-hw;cz=hw-frac*baseW;}
+    const cren=new THREE.Mesh(new THREE.BoxGeometry(8,10,8),stoneMat);
+    cren.position.set(cx,baseH+5,cz);g.add(cren);
   }
-  // Rails
-  [towerH+6,towerH+14].forEach(rh=>{
-    [[-1,0],[1,0],[0,-1],[0,1]].forEach(([dx,dz])=>{
-      const rail=new THREE.Mesh(new THREE.BoxGeometry(dx?towerSize*2+16:3,2,dz?towerSize*2+16:3),metalMat);
-      rail.position.set(dx*(towerSize+8),rh,dz*(towerSize+8));g.add(rail);
-    });
+
+  // Observation platform — extends past the tower on all sides
+  const platSize=baseW+40;
+  const plat=new THREE.Mesh(new THREE.BoxGeometry(platSize,4,platSize),woodMat);
+  plat.position.y=baseH+12;g.add(plat);
+
+  // 4 pillars holding up the spire roof
+  const pillarH=50;
+  const pillarOff=platSize/2-8;
+  [[-1,-1],[-1,1],[1,-1],[1,1]].forEach(([dx,dz])=>{
+    const pillar=new THREE.Mesh(new THREE.CylinderGeometry(3,3,pillarH,6),stoneMat);
+    pillar.position.set(dx*pillarOff,baseH+12+pillarH/2,dz*pillarOff);g.add(pillar);
   });
 
-  // Flag
-  const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,30,4),metalMat);
-  pole.position.set(0,towerH+19,0);g.add(pole);
+  // Pointed spire roof (pyramid)
+  const roofH=40;
+  const roofGeo=new THREE.ConeGeometry(platSize*0.7,roofH,4);
+  const roof=new THREE.Mesh(roofGeo,roofMat);
+  roof.position.y=baseH+12+pillarH+roofH/2;
+  roof.rotation.y=Math.PI/4; // align square base with tower
+  g.add(roof);
+
+  // Railings around observation platform
+  [[-1,0],[1,0],[0,-1],[0,1]].forEach(([dx,dz])=>{
+    const rail=new THREE.Mesh(new THREE.BoxGeometry(dx?platSize:3,12,dz?platSize:3),metalMat);
+    rail.position.set(dx*(platSize/2),baseH+20,dz*(platSize/2));g.add(rail);
+  });
+
+  // Flag on spire tip
+  const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,20,4),metalMat);
+  pole.position.set(0,baseH+12+pillarH+roofH+10,0);g.add(pole);
   const flag=new THREE.Mesh(new THREE.PlaneGeometry(18,10),new THREE.MeshBasicMaterial({color:0xff4444,side:THREE.DoubleSide}));
-  flag.position.set(10,towerH+30,0);g.add(flag);
+  flag.position.set(10,baseH+12+pillarH+roofH+16,0);g.add(flag);
 
   g.position.set(towerX,th,towerZ);
   scene.add(g);
@@ -1052,18 +1045,11 @@ function buildTower(){
 }
 let towerMesh=null;
 
-// Tower height boost — square tower, ramp winds around inside
+// Tower acts as a wall — no climbing. Only the top platform gives height.
+// Players who are ON the platform (teleported there via ladder interaction) get the boost.
+// For now: tower is purely a visual landmark + wall. No height boost.
 function getTowerHeight(x,z){
-  const dx=Math.abs(x-towerX),dz=Math.abs(z-towerZ);
-  if(dx>towerSize+5||dz>towerSize+5)return 0;
-  // Inside tower — height based on which side you're closest to (simulates winding ramp)
-  const angle=Math.atan2(z-towerZ,x-towerX);
-  const normalizedAngle=((angle+Math.PI)/(Math.PI*2))%1;
-  // 2 full rotations to reach top
-  const rampProgress=normalizedAngle;
-  // Also factor in distance from center — closer to walls = higher on ramp
-  const edgeDist=Math.max(dx,dz)/towerSize;
-  return towerH*Math.min(1,rampProgress*edgeDist*2);
+  return 0;
 }
 
 let _zoneMeshes=[];
