@@ -591,6 +591,7 @@ function handleMsg(msg){
             fb.material.color.setHex(fblife>0.4?0xff4400:0xff8800);
             if(fblife<=0){scene.remove(fb);fb.geometry.dispose();fb.material.dispose();}else requestAnimationFrame(fbAnim);};
           requestAnimationFrame(fbAnim);
+          setTimeout(()=>{try{scene.remove(fb);fb.geometry.dispose();fb.material.dispose();}catch(e){}},3000);
           // Expanding ring
           const ring=new THREE.Mesh(new THREE.TorusGeometry(5,2,6,16),new THREE.MeshBasicMaterial({color:0xffaa00,transparent:true}));
           ring.position.set(rx,groundH+3,rz);ring.rotation.x=Math.PI/2;scene.add(ring);
@@ -598,6 +599,7 @@ function handleMsg(msg){
           const rAnim=()=>{rlife-=0.02;ring.material.opacity=rlife;ring.scale.multiplyScalar(1.08);
             if(rlife<=0){scene.remove(ring);ring.geometry.dispose();ring.material.dispose();}else requestAnimationFrame(rAnim);};
           requestAnimationFrame(rAnim);
+          setTimeout(()=>{try{scene.remove(ring);ring.geometry.dispose();ring.material.dispose();}catch(e){}},3000);
           // Flying debris
           for(let j=0;j<12;j++){
             const col=Math.random()>0.3?0xff4400:(Math.random()>0.5?0xffdd00:0xff8800);
@@ -606,11 +608,12 @@ function handleMsg(msg){
             const evx=(Math.random()-0.5)*120,evy=40+Math.random()*80,evz=(Math.random()-0.5)*120;
             ep.position.set(rx,groundH+5,rz);scene.add(ep);
             let elife=0.7+Math.random()*0.3;
-            const explode=()=>{elife-=0.02;ep.material.opacity=Math.max(0,elife);
+            const explode=()=>{elife-=0.025;ep.material.opacity=Math.max(0,elife);
               ep.position.x+=evx*0.016;ep.position.y+=evy*0.016;ep.position.z+=evz*0.016;evy-=3;
-              ep.scale.multiplyScalar(0.97);
+              ep.scale.multiplyScalar(0.96);
               if(elife<=0){scene.remove(ep);ep.geometry.dispose();ep.material.dispose();}else requestAnimationFrame(explode);};
             requestAnimationFrame(explode);
+            setTimeout(()=>{try{scene.remove(ep);ep.geometry.dispose();ep.material.dispose();}catch(e){}},3000);
           }
           // Clean remaining trail
           trailParts.forEach(t=>{scene.remove(t.mesh);t.mesh.geometry.dispose();t.mesh.material.dispose();});
