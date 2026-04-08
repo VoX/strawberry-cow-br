@@ -1,0 +1,111 @@
+{
+  "character": {
+    "id": "6a93eebe-2c66-4458-b6c7-57996ad93a39",
+    "name": "Gold Cow",
+    "prompt": "golden cow, golden yellow and white spotted cow, cute farm animal, shiny gold coloring",
+    "size": {
+      "width": 68,
+      "height": 68
+    },
+    "template_id": "horse",
+    "directions": 4,
+    "view": "low top-down",
+    "created_at": "2026-04-07T23:54:36.062724+00:00"
+  },
+  "frames": {
+    "rotations": {
+      "south": "rotations/south.png",
+      "west": "rotations/west.png",
+      "east": "rotations/east.png",
+      "north": "rotations/north.png"
+    },
+    "animations": {
+      "shaking_head-b69e3b7e": {
+        "east": [
+          "animations/shaking_head-b69e3b7e/east/frame_000.png",
+          "animations/shaking_head-b69e3b7e/east/frame_001.png",
+          "animations/shaking_head-b69e3b7e/east/frame_002.png",
+          "animations/shaking_head-b69e3b7e/east/frame_003.png",
+          "animations/shaking_head-b69e3b7e/east/frame_004.png",
+          "animations/shaking_head-b69e3b7e/east/frame_005.png",
+          "animations/shaking_head-b69e3b7e/east/frame_006.png",
+          "animations/shaking_head-b69e3b7e/east/frame_007.png",
+          "animations/shaking_head-b69e3b7e/east/frame_008.png",
+          "animations/shaking_head-b69e3b7e/east/frame_009.png",
+          "animations/shaking_head-b69e3b7e/east/frame_010.png"
+        ],
+        "north": [
+          "animations/shaking_head-b69e3b7e/north/frame_000.png",
+          "animations/shaking_head-b69e3b7e/north/frame_001.png",
+          "animations/shaking_head-b69e3b7e/north/frame_002.png",
+          "animations/shaking_head-b69e3b7e/north/frame_003.png",
+          "animations/shaking_head-b69e3b7e/north/frame_004.png",
+          "animations/shaking_head-b69e3b7e/north/frame_005.png",
+          "animations/shaking_head-b69e3b7e/north/frame_006.png",
+          "animations/shaking_head-b69e3b7e/north/frame_007.png",
+          "animations/shaking_head-b69e3b7e/north/frame_008.png",
+          "animations/shaking_head-b69e3b7e/north/frame_009.png",
+          "animations/shaking_head-b69e3b7e/north/frame_010.png"
+        ],
+        "south": [
+          "animations/shaking_head-b69e3b7e/south/frame_000.png",
+          "animations/shaking_head-b69e3b7e/south/frame_001.png",
+          "animations/shaking_head-b69e3b7e/south/frame_002.png",
+          "animations/shaking_head-b69e3b7e/south/frame_003.png",
+          "animations/shaking_head-b69e3b7e/south/frame_004.png",
+          "animations/shaking_head-b69e3b7e/south/frame_005.png",
+          "animations/shaking_head-b69e3b7e/south/frame_006.png",
+          "animations/shaking_head-b69e3b7e/south/frame_007.png",
+          "animations/shaking_head-b69e3b7e/south/frame_008.png",
+          "animations/shaking_head-b69e3b7e/south/frame_009.png",
+          "animations/shaking_head-b69e3b7e/south/frame_010.png"
+        ],
+        "west": [
+          "animations/shaking_head-b69e3b7e/west/frame_000.png",
+          "animations/shaking_head-b69e3b7e/west/frame_001.png",
+          "animations/shaking_head-b69e3b7e/west/frame_002.png",
+          "animations/shaking_head-b69e3b7e/west/frame_003.png",
+          "animations/shaking_head-b69e3b7e/west/frame_004.png",
+          "animations/shaking_head-b69e3b7e/west/frame_005.png",
+          "animations/shaking_head-b69e3b7e/west/frame_006.png",
+          "animations/shaking_head-b69e3b7e/west/frame_007.png",
+          "animations/shaking_head-b69e3b7e/west/frame_008.png",
+          "animations/shaking_head-b69e3b7e/west/frame_009.png",
+          "animations/shaking_head-b69e3b7e/west/frame_010.png"
+        ]
+      },
+      "eating-0b384098": {
+        "west": [
+          "animations/eating-0b384098/west/frame_000.png",
+          "animations/eating-0b384098/west/frame_001.png",
+          "animations/eating-0b384098/west/frame_002.png",
+          "animations/eating-0b384098/west/frame_003.png",
+          "animations/eating-0b384098/west/frame_004.png"
+        ],
+        "south": [
+          "animations/eating-0b384098/south/frame_000.png",
+          "animations/eating-0b384098/south/frame_001.png",
+          "animations/eating-0b384098/south/frame_002.png",
+          "animations/eating-0b384098/south/frame_003.png",
+          "animations/eating-0b384098/south/frame_004.png"
+        ],
+        "north": [
+          "animations/eating-0b384098/north/frame_000.png",
+          "animations/eating-0b384098/north/frame_001.png",
+          "animations/eating-0b384098/north/frame_002.png",
+          "animations/eating-0b384098/north/frame_003.png",
+          "animations/eating-0b384098/north/frame_004.png"
+        ],
+        "east": [
+          "animations/eating-0b384098/east/frame_000.png",
+          "animations/eating-0b384098/east/frame_001.png",
+          "animations/eating-0b384098/east/frame_002.png",
+          "animations/eating-0b384098/east/frame_003.png",
+          "animations/eating-0b384098/east/frame_004.png"
+        ]
+      }
+    }
+  },
+  "export_version": "2.0",
+  "export_date": "2026-04-08T00:20:33.797908"
+}
