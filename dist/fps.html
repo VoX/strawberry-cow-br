@@ -369,8 +369,15 @@ if(isMobile){
   dp.addEventListener('touchstart',handleDp,{passive:false});
   dp.addEventListener('touchmove',handleDp,{passive:false});
   dp.addEventListener('touchend',e=>{e.preventDefault();tdx=tdy=0;drawDp(0,0);},{passive:false});
-  // Override movement to use touch
-  setInterval(()=>{if(state==='playing'&&(Math.abs(tdx)+Math.abs(tdy))>0.1){send({type:'move',dx:tdx,dy:tdy});}else if(state==='playing'){send({type:'move',dx:0,dy:0});}},50);
+  // Override movement — rotate d-pad input by camera yaw
+  setInterval(()=>{if(state==='playing'&&(Math.abs(tdx)+Math.abs(tdy))>0.1){
+    const fwd=new THREE.Vector3(0,0,-1);fwd.applyQuaternion(cam.quaternion);fwd.y=0;if(fwd.length()>0.01)fwd.normalize();
+    const right=new THREE.Vector3(-fwd.z,0,fwd.x);
+    const mx=fwd.x*(-tdy)+right.x*tdx;
+    const mz=fwd.z*(-tdy)+right.z*tdx;
+    const len=Math.hypot(mx,mz);
+    if(len>0)send({type:'move',dx:mx/len,dy:mz/len});
+  }else if(state==='playing'){send({type:'move',dx:0,dy:0});}},50);
   // Touch look (right side of screen)
   let lastTouchX=0,lastTouchY=0;
   document.addEventListener('touchstart',e=>{if(e.target===dp||e.target.id==='touchShoot'||e.target.id==='touchDash')return;const t=e.touches[e.touches.length-1];lastTouchX=t.clientX;lastTouchY=t.clientY;},{passive:true});
