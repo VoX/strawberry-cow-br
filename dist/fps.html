@@ -698,6 +698,24 @@ function handleMsg(msg){
     document.getElementById('botsCheck').checked=msg.enabled;
     killfeed.unshift({txt:'Bots '+(msg.enabled?'enabled':'disabled'),t:3});
   }
+  if(msg.type==='dash'){
+    const dasher=serverPlayers.find(p=>p.id===msg.playerId);
+    if(dasher){
+      // Smoke cloud at dash origin
+      for(let i=0;i<15;i++){
+        const sm=new THREE.Mesh(new THREE.SphereGeometry(3+Math.random()*4,5,5),new THREE.MeshBasicMaterial({color:0xcccccc,transparent:true,opacity:0.6}));
+        const th=getTerrainHeight(dasher.x,dasher.y);
+        sm.position.set(dasher.x+(Math.random()-0.5)*20,th+5+Math.random()*15,dasher.y+(Math.random()-0.5)*20);
+        scene.add(sm);
+        let life=0.8+Math.random()*0.4;
+        const anim=()=>{life-=0.02;sm.material.opacity=life*0.5;sm.scale.multiplyScalar(1.03);sm.position.y+=0.5;
+          if(life<=0){scene.remove(sm);sm.geometry.dispose();sm.material.dispose();}else requestAnimationFrame(anim);};
+        requestAnimationFrame(anim);
+        setTimeout(()=>{try{scene.remove(sm);sm.geometry.dispose();sm.material.dispose();}catch(e){}},3000);
+      }
+    }
+    sfx(300,0.15,'sine',0.08);
+  }
   if(msg.type==='bump'){
     if(msg.a===myId||msg.b===myId){sfxBump();document.getElementById('hitFlash').style.opacity='0.2';setTimeout(()=>document.getElementById('hitFlash').style.opacity='0',100);}
   }
