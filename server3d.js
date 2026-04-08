@@ -322,7 +322,7 @@ function spawnInitialFood() {
   for (let i = 0; i < 3; i++) spawnWeaponPickup();
   // Armor pickups
   armorPickups = [];
-  for (let i = 0; i < 4; i++) { armorPickups.push({ id: foodIdCounter++, x: rand(200, MAP_W-200), y: rand(200, MAP_H-200) }); }
+  for (let i = 0; i < 2; i++) { armorPickups.push({ id: foodIdCounter++, x: rand(200, MAP_W-200), y: rand(200, MAP_H-200) }); }
 }
 
 function broadcast(data) {
@@ -692,7 +692,7 @@ function gameTick() {
     }
   }
   // Respawn armor pickups
-  if (Math.random() < 0.004 && armorPickups.length < 5) {
+  if (Math.random() < 0.004 && armorPickups.length < 2) {
     const a = { id: foodIdCounter++, x: rand(200, MAP_W-200), y: rand(200, MAP_H-200) };
     armorPickups.push(a);
     broadcast({ type: 'armorSpawn', id: a.id, x: a.x, y: a.y });
@@ -905,7 +905,7 @@ wss.on('connection', (ws) => {
       if (gameState === 'lobby') {
         broadcast({ type: 'lobby', players: getLobbyPlayers(), countdown: lobbyCountdown });
       } else if (gameState === 'playing') {
-        sendTo(ws, { type: 'spectate', players: getPlayerStates(), foods: foods.map(serializeFood), zone });
+        sendTo(ws, { type: 'spectate', players: getPlayerStates(), foods: foods.map(serializeFood), zone, map: { walls: WALLS, mud: MUD_PATCHES, ponds: HEAL_PONDS, portals: PORTALS, shelters: SHELTERS }, weapons: weaponPickups.map(w => ({ id: w.id, x: w.x, y: w.y, weapon: w.weapon })), armorPickups: armorPickups.map(a => ({ id: a.id, x: a.x, y: a.y })) });
       }
 
       if (!lobbyTimer && gameState !== 'playing' && gameState !== 'ending') {

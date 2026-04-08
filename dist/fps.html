@@ -340,6 +340,8 @@ function handleMsg(msg){
     serverFoods=(msg.foods||[]).map(f=>({id:f.id,x:f.x,y:f.y,type:f.type}));
     if(msg.zone)serverZone=msg.zone;
     if(msg.map){mapFeatures=msg.map;mapBuilt=false;}
+    if(msg.weapons)clientWeapons=msg.weapons;
+    if(msg.armorPickups)window._armorPickupData=msg.armorPickups;
   }
   if(msg.type==='start'){
     state='playing';
@@ -574,8 +576,8 @@ function handleMsg(msg){
     else killfeed.unshift({txt:(msg.name||'?')+' dropped their weapon',t:3});
   }
   if(msg.type==='armorPickup'){
-    if(!window._armorMeshes)window._armorMeshes={};
-    if(window._armorMeshes[msg.pickupId]){scene.remove(window._armorMeshes[msg.pickupId]);delete window._armorMeshes[msg.pickupId];}
+    if(window._armorMeshes&&window._armorMeshes[msg.pickupId]){scene.remove(window._armorMeshes[msg.pickupId]);delete window._armorMeshes[msg.pickupId];}
+    if(window._armorPickupData)window._armorPickupData=window._armorPickupData.filter(a=>a.id!==msg.pickupId);
     if(msg.playerId===myId)killfeed.unshift({txt:'Picked up armor (+25)',t:3});
   }
   if(msg.type==='armorSpawn'){
