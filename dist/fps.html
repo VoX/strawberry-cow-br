@@ -150,20 +150,43 @@ scene.add(sun);
 scene.add(sun.target);
 scene.add(new THREE.HemisphereLight(0x87CEEB,0x44aa44,0.3));
 
-// Ground with height variation
-const gndGeo=new THREE.PlaneGeometry(MW,MH,200,150);
+// STEP 1: Generate collision heightmap as the single source of truth
+const GRID_W=200, GRID_H=150;
+const heightMap=new Float32Array((GRID_W+1)*(GRID_H+1));
+for(let row=0;row<=GRID_H;row++){
+  for(let col=0;col<=GRID_W;col++){
+    const wx=col*MW/GRID_W; // world x: 0 to 2000
+    const wz=row*MH/GRID_H; // world z: 0 to 1500
+    const h=Math.sin(wx*0.004)*20+Math.cos(wz*0.005)*15+Math.sin(wx*0.01+wz*0.007)*10+Math.cos(wx*0.003-wz*0.004)*12;
+    heightMap[row*(GRID_W+1)+col]=h;
+  }
+}
+
+// STEP 2: Height lookup reads from the collision heightmap
+function getTerrainHeight(x,z){
+  const col=Math.max(0,Math.min(GRID_W,(x/MW*GRID_W)|0));
+  const row=Math.max(0,Math.min(GRID_H,(z/MH*GRID_H)|0));
+  return heightMap[row*(GRID_W+1)+col];
+}
+
+// STEP 3: Build visual mesh from the SAME heightmap data
+const gndGeo=new THREE.PlaneGeometry(MW,MH,GRID_W,GRID_H);
 const gndPos=gndGeo.attributes.position;
+// PlaneGeometry vertex layout: rows from +Y to -Y (top to bottom in local space)
+// After rotation -PI/2 on X and translation to (MW/2,0,MH/2):
+// local X -> world X, local Y -> world Z (inverted)
 for(let i=0;i<gndPos.count;i++){
-  const x=gndPos.getX(i)+MW/2, z=gndPos.getY(i)+MH/2;
-  gndPos.setZ(i,_th(x,z));
+  // Convert local coords to world coords
+  const wx=gndPos.getX(i)+MW/2;
+  const wz=gndPos.getY(i)+MH/2;
+  // Look up from our collision heightmap
+  const col=Math.max(0,Math.min(GRID_W,(wx/MW*GRID_W)|0));
+  const row=Math.max(0,Math.min(GRID_H,(wz/MH*GRID_H)|0));
+  gndPos.setZ(i,heightMap[row*(GRID_W+1)+col]);
 }
 gndGeo.computeVertexNormals();
 const gnd=new THREE.Mesh(gndGeo,new THREE.MeshLambertMaterial({color:0x4a8c3f}));
 gnd.rotation.x=-Math.PI/2;gnd.position.set(MW/2,0,MH/2);gnd.receiveShadow=true;scene.add(gnd);
-
-// Terrain height — exact same formula as mesh generation
-function _th(x,z){return Math.sin(x*0.004)*20+Math.cos(z*0.005)*15+Math.sin(x*0.01+z*0.007)*10+Math.cos(x*0.003-z*0.004)*12;}
-function getTerrainHeight(x,z){return _th(x,z);}
 
 // Border fence — follows terrain with posts and rails
 const bm=new THREE.MeshLambertMaterial({color:0xeeeeee});
