@@ -571,19 +571,17 @@ function handleMsg(msg){
 let clientWeapons=[];
 let pendingLevelUps=0,perkMenuOpen=false;
 const PERKS=[
-  {id:'speed',name:'Swift Hooves',desc:'+30% speed'},
-  {id:'extrahunger',name:'Big Belly',desc:'+25 max hunger'},
-  {id:'xpboost',name:'Quick Learner',desc:'+30% XP'},
+  {id:'speed',name:'Swift Hooves',desc:'+15% speed'},
+  {id:'extrahunger',name:'Big Belly',desc:'+40 max hunger'},
+  {id:'xpboost',name:'Quick Learner',desc:'+50% XP'},
   {id:'regen',name:'Regeneration',desc:'slow hunger regen'},
-  {id:'velocity',name:'Muzzle Boost',desc:'+40% bullet speed'},
   {id:'fastfire',name:'Trigger Job',desc:'-25% cooldown'},
-  {id:'cheapshot',name:'Eco Mag',desc:'-3 hunger per shot'},
+  {id:'cheapshot',name:'Eco Mag',desc:'-20% shot hunger cost'},
   {id:'extraproj',name:'Split Chamber',desc:'+1 projectile'},
-  {id:'bigbore',name:'Hollow Points',desc:'+40% damage'},
+  {id:'bigbore',name:'Hollow Points',desc:'+20% damage'},
   {id:'piercing',name:'AP Rounds',desc:'shots pierce 1 target'},
-  {id:'burstmod',name:'Burst Module',desc:'adds burst fire'},
+  {id:'kevlar',name:'Kevlar',desc:'-20% damage taken'},
   {id:'dashcd',name:'Quick Hoof',desc:'-40% dash cooldown'},
-  {id:'dashdist',name:'Long Stride',desc:'+50% dash distance'},
   {id:'tiny',name:'Tiny Mode',desc:'smaller + faster'},
   {id:'cowstrike',name:'Cowstrike',desc:'bomb the map'},
 ];

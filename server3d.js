@@ -899,13 +899,14 @@ wss.on('connection', (ws) => {
       else if (id === 'damage') perks.damage += 0.5;
       else if (id === 'velocity') { if (player.weaponPerks) player.weaponPerks.velocity += 0.4; }
       else if (id === 'fastfire') { if (player.weaponPerks) player.weaponPerks.cooldown *= 0.75; }
-      else if (id === 'cheapshot') { if (player.weaponPerks) player.weaponPerks.hungerDiscount += 3; }
+      else if (id === 'cheapshot') { if (player.weaponPerks) player.weaponPerks.hungerDiscountPct = (player.weaponPerks.hungerDiscountPct || 0) + 0.2; }
       else if (id === 'extraproj') { if (player.weaponPerks) player.weaponPerks.extraProj += 1; }
-      else if (id === 'bigbore') { if (player.weaponPerks) player.weaponPerks.damageMult += 0.4; }
+      else if (id === 'bigbore') { if (player.weaponPerks) player.weaponPerks.damageMult += 0.2; }
       else if (id === 'piercing') { if (player.weaponPerks) player.weaponPerks.piercing = true; }
       else if (id === 'burstmod') { if (player.weaponPerks) player.weaponPerks.burstMod = true; }
       else if (id === 'dashcd') { player.dashCdMult = (player.dashCdMult || 1) * 0.6; }
       else if (id === 'dashdist') { player.dashDistMult = (player.dashDistMult || 1) * 1.5; }
+      else if (id === 'kevlar') { perks.damageReduction = (perks.damageReduction || 0) + 0.2; }
       else if (id === 'shotgun') { /* weapon handled client-side */ }
       else if (id === 'burst') { /* weapon handled client-side */ }
       else if (id === 'bolty') { /* weapon handled client-side */ }
