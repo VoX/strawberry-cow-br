@@ -151,7 +151,7 @@ scene.add(sun.target);
 scene.add(new THREE.HemisphereLight(0x87CEEB,0x44aa44,0.3));
 
 // Ground with height variation
-const gndGeo=new THREE.PlaneGeometry(MW,MH,80,60);
+const gndGeo=new THREE.PlaneGeometry(MW,MH,200,150);
 const gndPos=gndGeo.attributes.position;
 for(let i=0;i<gndPos.count;i++){
   const x=gndPos.getX(i)+MW/2, z=gndPos.getY(i)+MH/2;
