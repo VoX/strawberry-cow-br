@@ -64,9 +64,10 @@ canvas{display:block;position:absolute;top:0;left:0;z-index:1}
 </div>
 <style>@keyframes winBounce{0%,100%{transform:scale(1) translateY(0)}50%{transform:scale(1.15) translateY(-10px)}}</style>
 <div id="spectateMsg" style="position:absolute;bottom:80px;left:50%;transform:translateX(-50%);font-size:18px;color:#ffaa00;display:none;z-index:50;text-shadow:0 0 10px #000;background:rgba(0,0,0,0.5);padding:10px 20px;border-radius:8px">SPECTATING - waiting for next round</div>
-<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
 <script type="module">
 import*as THREE from 'three';
+import{FBXLoader}from'three/addons/loaders/FBXLoader.js';
 
 const MW=2000,MH=1500,CH=35;
 
@@ -893,30 +894,22 @@ function buildViewmodel(type){
     const buttpad=new THREE.Mesh(new THREE.BoxGeometry(2,2.5,0.8),dark);
     buttpad.position.set(0,-0.3,6.5);vmGroup.add(buttpad);
   }else if(type==='burst'){
-    // LR-300 — compact AR-style with distinctive forward handguard
-    const barrel=new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.4,14,8),dark);
-    barrel.rotation.x=Math.PI/2;barrel.position.set(0,0.2,-8);vmGroup.add(barrel);
-    // Handguard with rails
-    const handguard=new THREE.Mesh(new THREE.BoxGeometry(2,2,7),dark);
-    handguard.position.set(0,-0.2,-5);vmGroup.add(handguard);
-    const rail=new THREE.Mesh(new THREE.BoxGeometry(2.3,0.3,7),metal);
-    rail.position.set(0,0.9,-5);vmGroup.add(rail);
-    // Upper/lower receiver
-    const upper=new THREE.Mesh(new THREE.BoxGeometry(2.2,1.8,4),black);
-    upper.position.set(0,-0.2,-1);vmGroup.add(upper);
-    // Magazine — curved
-    const mag=new THREE.Mesh(new THREE.BoxGeometry(1.2,5,1.8),metal);
-    mag.rotation.x=0.15;mag.position.set(0,-3.5,-1);vmGroup.add(mag);
-    // Pistol grip
-    const grip=new THREE.Mesh(new THREE.BoxGeometry(1.5,3,1.5),black);
-    grip.rotation.x=0.3;grip.position.set(0,-2.3,1);vmGroup.add(grip);
-    // Folding stock
-    const stockArm=new THREE.Mesh(new THREE.BoxGeometry(0.4,0.4,5),metal);
-    stockArm.position.set(0.7,-0.2,3.5);vmGroup.add(stockArm);
-    const stockArm2=new THREE.Mesh(new THREE.BoxGeometry(0.4,0.4,5),metal);
-    stockArm2.position.set(-0.7,-0.2,3.5);vmGroup.add(stockArm2);
-    const butt=new THREE.Mesh(new THREE.BoxGeometry(2,2,0.8),dark);
-    butt.position.set(0,-0.2,6);vmGroup.add(butt);
+    // LR-300 — load FBX model
+    const loader=new FBXLoader();
+    loader.load('models/M16_ps1.fbx',fbx=>{
+      fbx.scale.set(0.08,0.08,0.08);
+      fbx.rotation.set(0,Math.PI,0);
+      fbx.position.set(0,-2,-4);
+      const grayMat=new THREE.MeshBasicMaterial({color:0x888888});
+      fbx.traverse(c=>{if(c.isMesh)c.material=grayMat;});
+      vmGroup.add(fbx);
+    },undefined,()=>{
+      // Fallback if FBX fails to load — simple procedural
+      const barrel=new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.4,14,8),dark);
+      barrel.rotation.x=Math.PI/2;barrel.position.set(0,0.2,-8);vmGroup.add(barrel);
+      const body=new THREE.Mesh(new THREE.BoxGeometry(2,2,8),dark);
+      body.position.set(0,-0.2,-3);vmGroup.add(body);
+    });
   }else if(type==='bolty'){
     // Bolt-action — long barrel, wood stock, scope, bolt handle
     const barrel=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,22,8),dark);
@@ -994,14 +987,15 @@ function buildTower(){
   const wallH=towerH+10;
   const wallThick=4;
   // North wall
-  g.add(Object.assign(new THREE.Mesh(new THREE.BoxGeometry(towerSize*2,wallH,wallThick),stoneMat),{position:new THREE.Vector3(0,wallH/2,-towerSize)}));
+  let w;
+  w=new THREE.Mesh(new THREE.BoxGeometry(towerSize*2,wallH,wallThick),stoneMat);w.position.set(0,wallH/2,-towerSize);g.add(w);
   // South wall (with gap for entry)
-  g.add(Object.assign(new THREE.Mesh(new THREE.BoxGeometry(towerSize*0.7,wallH,wallThick),stoneMat),{position:new THREE.Vector3(-towerSize*0.65,wallH/2,towerSize)}));
-  g.add(Object.assign(new THREE.Mesh(new THREE.BoxGeometry(towerSize*0.7,wallH,wallThick),stoneMat),{position:new THREE.Vector3(towerSize*0.65,wallH/2,towerSize)}));
+  w=new THREE.Mesh(new THREE.BoxGeometry(towerSize*0.7,wallH,wallThick),stoneMat);w.position.set(-towerSize*0.65,wallH/2,towerSize);g.add(w);
+  w=new THREE.Mesh(new THREE.BoxGeometry(towerSize*0.7,wallH,wallThick),stoneMat);w.position.set(towerSize*0.65,wallH/2,towerSize);g.add(w);
   // East wall
-  g.add(Object.assign(new THREE.Mesh(new THREE.BoxGeometry(wallThick,wallH,towerSize*2),stoneMat),{position:new THREE.Vector3(towerSize,wallH/2,0)}));
+  w=new THREE.Mesh(new THREE.BoxGeometry(wallThick,wallH,towerSize*2),stoneMat);w.position.set(towerSize,wallH/2,0);g.add(w);
   // West wall
-  g.add(Object.assign(new THREE.Mesh(new THREE.BoxGeometry(wallThick,wallH,towerSize*2),stoneMat),{position:new THREE.Vector3(-towerSize,wallH/2,0)}));
+  w=new THREE.Mesh(new THREE.BoxGeometry(wallThick,wallH,towerSize*2),stoneMat);w.position.set(-towerSize,wallH/2,0);g.add(w);
 
   // Winding ramp: 4 sides, corner platforms, going up
   const levels=8;
