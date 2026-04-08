@@ -793,10 +793,17 @@ function buildCow(color){
   const body=new THREE.Mesh(new THREE.BoxGeometry(18,12,26),mat);body.position.set(0,14,0);g.add(body);
   // Head
   const head=new THREE.Mesh(new THREE.BoxGeometry(10,10,10),mat);head.position.set(0,20,16);g.add(head);
-  // Eyes
-  const eyeM=new THREE.MeshLambertMaterial({color:0xffffff});
-  const e1=new THREE.Mesh(new THREE.SphereGeometry(1.8,6,6),eyeM);e1.position.set(-3,22,21);g.add(e1);
-  const e2=new THREE.Mesh(new THREE.SphereGeometry(1.8,6,6),eyeM);e2.position.set(3,22,21);g.add(e2);
+  // Eyes (white + black pupil)
+  const eyeM=new THREE.MeshBasicMaterial({color:0xffffff});
+  const pupilM=new THREE.MeshBasicMaterial({color:0x222222});
+  const e1=new THREE.Mesh(new THREE.SphereGeometry(2,6,6),eyeM);e1.position.set(-3,22,21);g.add(e1);
+  const e2=new THREE.Mesh(new THREE.SphereGeometry(2,6,6),eyeM);e2.position.set(3,22,21);g.add(e2);
+  const p1=new THREE.Mesh(new THREE.SphereGeometry(1,6,6),pupilM);p1.position.set(-3,22,22.5);g.add(p1);
+  const p2=new THREE.Mesh(new THREE.SphereGeometry(1,6,6),pupilM);p2.position.set(3,22,22.5);g.add(p2);
+  // Smile :)
+  const smileMat=new THREE.MeshBasicMaterial({color:0x222222});
+  const smile=new THREE.Mesh(new THREE.TorusGeometry(2.5,0.4,6,12,Math.PI),smileMat);
+  smile.position.set(0,18.5,21.5);smile.rotation.set(0,0,Math.PI);g.add(smile);
   // Horns
   const hm=new THREE.MeshLambertMaterial({color:0xffdd88});
   const h1=new THREE.Mesh(new THREE.ConeGeometry(1.5,8,5),hm);h1.position.set(-4,28,16);h1.rotation.set(0,0,-0.3);g.add(h1);
