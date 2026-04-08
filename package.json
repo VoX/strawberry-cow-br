@@ -4,6 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "build:client": "esbuild client/index.js --bundle --outfile=dist/bundle.js --format=esm --external:three --external:three/*",
+    "watch:client": "esbuild client/index.js --bundle --outfile=dist/bundle.js --format=esm --external:three --external:three/* --watch",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -12,5 +14,8 @@
   "type": "commonjs",
   "dependencies": {
     "ws": "^8.20.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.0"
   }
 }
