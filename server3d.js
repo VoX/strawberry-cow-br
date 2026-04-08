@@ -148,7 +148,7 @@ function updateBots(dt) {
     if (!p.isBot || !p.alive) continue;
     p.botActionTimer -= dt;
     if (p.botActionTimer > 0) continue;
-    p.botActionTimer = 0.3 + Math.random() * 0.5; // rethink every 0.3-0.8s
+    p.botActionTimer = 0.5 + Math.random() * 0.8; // rethink every 0.3-0.8s
 
     // Find nearest food
     let nearestFood = null, nearFoodDist = Infinity;
@@ -202,8 +202,8 @@ function updateBots(dt) {
     else if (nearestEnemy && nearEnemyDist < 500) {
       // Shoot if in range
       if (nearEnemyDist < 350 && p.attackCooldown <= 0 && p.hunger > 15) {
-        const ax = (nearestEnemy.x - p.x) / nearEnemyDist;
-        const ay = (nearestEnemy.y - p.y) / nearEnemyDist;
+        const ax = (nearestEnemy.x - p.x) / nearEnemyDist + (Math.random()-0.5)*0.4;
+        const ay = (nearestEnemy.y - p.y) / nearEnemyDist + (Math.random()-0.5)*0.4;
         fireBot(p, ax, ay);
       }
       // Kite: stay at ~200px distance if armed, close in if not
