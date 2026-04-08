@@ -604,7 +604,7 @@ function gameTick() {
     }
 
     // Cooldowns
-    if (p.dashCooldown > 0) p.dashCooldown -= dt;
+    if (p.dashCooldown > 0) p.dashCooldown -= dt; if (p.pickupCooldown > 0) p.pickupCooldown -= dt;
     if (p.attackCooldown > 0) p.attackCooldown -= dt;
     // Cowtank timer
     if (p.weaponTimer > 0) {
@@ -678,7 +678,7 @@ function gameTick() {
       if (Math.hypot(p.x - w.x, p.y - w.y) < 45) {
         // Can't pick up a different weapon if you already have one (must drop first with Q)
         // Exception: same weapon (upgrade) and cowtank (always pickable)
-        if (p.weapon !== 'normal' && p.weapon !== w.weapon && w.weapon !== 'cowtank') continue;
+        if ((p.pickupCooldown || 0) > 0 || (p.weapon !== 'normal' && p.weapon !== w.weapon && w.weapon !== 'cowtank') continue;
         if (w.weapon === 'cowtank') {
           p.weapon = 'cowtank';
           p.weaponLevel = 0;
@@ -990,7 +990,7 @@ wss.on('connection', (ws) => {
       // Drop current weapon as a pickup
       weaponPickups.push({ id: foodIdCounter++, x: player.x + 20, y: player.y, weapon: player.weapon });
       broadcast({ type: 'weaponSpawn', id: weaponPickups[weaponPickups.length-1].id, x: player.x + 20, y: player.y, weapon: player.weapon });
-      player.weapon = 'normal';
+      player.weapon = 'normal'; player.pickupCooldown = 2;
       player.weaponLevel = 0;
       broadcast({ type: 'weaponDrop', playerId: player.id, name: player.name });
     }

@@ -1392,7 +1392,8 @@ function loop(ts){
     document.getElementById('hungerFill').style.background=hPct>0.5?'#44ff44':hPct>0.25?'#ffaa00':'#ff4444';
     document.getElementById('hungerTxt').textContent='HUNGER '+Math.ceil(me.hunger)+'%';
     const wep=me.weapon||'normal';
-    document.getElementById('weapon').textContent=wep!=='normal'?wep+(me.weaponLevel>0?' Lv'+(me.weaponLevel+1):''):'Spit';
+    const wepNames={shotgun:'Benelli',burst:'LR-300',bolty:'L96',cowtank:'LAW',normal:'Spit'};
+    document.getElementById('weapon').textContent=(wepNames[wep]||wep)+(me.weaponLevel>0?' Lv'+(me.weaponLevel+1):'');
     // Armor bar
     const armorVal=me.armor||0;
     document.getElementById('armorBar').style.display=armorVal>0?'block':'none';
