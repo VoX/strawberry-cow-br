@@ -493,7 +493,7 @@ function handleMsg(msg){
     for(const id in cowMeshes){scene.remove(cowMeshes[id].mesh);} cowMeshes={};
     if(window._foodMeshes){for(const id in window._foodMeshes){scene.remove(window._foodMeshes[id]);}window._foodMeshes={};}
     if(window._wpMeshes){for(const id in window._wpMeshes){scene.remove(window._wpMeshes[id]);}window._wpMeshes={};}
-    for(const id in projMeshes){scene.remove(projMeshes[id]);}projMeshes={};projData=[];
+    for(const id in projMeshes){const pm=projMeshes[id];scene.remove(pm);pm.traverse(c=>{if(c.geometry)c.geometry.dispose();if(c.material)c.material.dispose();});}projMeshes={};projData=[];
   }
   if(msg.type==='state'){
     serverPlayers=msg.players;
@@ -526,7 +526,7 @@ function handleMsg(msg){
   }
   if(msg.type==='projectileHit'){
     projData=projData.filter(p=>p.id!==msg.projectileId);
-    if(projMeshes[msg.projectileId]){scene.remove(projMeshes[msg.projectileId]);delete projMeshes[msg.projectileId];}
+    if(projMeshes[msg.projectileId]){const pm=projMeshes[msg.projectileId];scene.remove(pm);pm.traverse(c=>{if(c.geometry)c.geometry.dispose();if(c.material)c.material.dispose();});delete projMeshes[msg.projectileId];}
     if(msg.targetId===myId){sfxHit();document.getElementById('hitFlash').style.opacity='0.5';setTimeout(()=>document.getElementById('hitFlash').style.opacity='0',150);}
   }
   if(msg.type==='eliminated'){
@@ -693,11 +693,14 @@ function handleMsg(msg){
       };
       setTimeout(fall,delay);
     }
-    // Camera shake
-    const origY=cam.position.y;
+    // Camera shake — save and restore original position
+    const shakeBaseX=cam.position.x,shakeBaseZ=cam.position.z;
     let shakeT=0;
-    const shake=()=>{shakeT+=0.03;cam.position.x+=(Math.random()-0.5)*3;cam.position.z+=(Math.random()-0.5)*3;
-      if(shakeT<1)requestAnimationFrame(shake);};
+    const shake=()=>{shakeT+=0.03;
+      cam.position.x=shakeBaseX+(Math.random()-0.5)*3*(1-shakeT);
+      cam.position.z=shakeBaseZ+(Math.random()-0.5)*3*(1-shakeT);
+      if(shakeT<1)requestAnimationFrame(shake);
+      else{cam.position.x=shakeBaseX;cam.position.z=shakeBaseZ;}};
     shake();
   }
   if(msg.type==='botsToggled'){
@@ -1131,8 +1134,11 @@ function buildTower(){
     const ramp=new THREE.Mesh(new THREE.BoxGeometry(rw,3,rd),rampMat2);
     ramp.position.set(rx,h+5,rz);g.add(ramp);
     // Ramp railing
-    const railOut=new THREE.Mesh(new THREE.BoxGeometry(rw+2,8,2),metalMat);
-    if(side===1||side===3){railOut.geometry=new THREE.BoxGeometry(2,8,rd+2);}
+    const railGeoH=new THREE.BoxGeometry(rw+2,8,2);
+    const railGeoV=new THREE.BoxGeometry(2,8,rd+2);
+    const railOut=new THREE.Mesh((side===1||side===3)?railGeoV:railGeoH,metalMat);
+    // Dispose the unused geometry
+    if(side===1||side===3){railGeoH.dispose();}else{railGeoV.dispose();}
     const railOff=side===0?-hw-rampW/2:side===2?hw+rampW/2:side===1?hw+rampW/2:-hw-rampW/2;
     if(side===0||side===2)railOut.position.set(0,h+10,railOff);
     else railOut.position.set(railOff,h+10,0);
@@ -1329,11 +1335,10 @@ function loop(ts){
       g.position.set(w.x,getTerrainHeight(w.x,w.y),w.y);
       scene.add(g);window._wpMeshes[wid]=g;
     }
-    // Rotate and bob
+    // Rotate and bob (group is already at terrain height, so children are relative)
     window._wpMeshes[wid].children[0].rotation.y=time*2;
-    const wpTH=getTerrainHeight(w.x,w.y);
-    window._wpMeshes[wid].children[0].position.y=15+Math.sin(time*3+w.x)*3+wpTH;
-    window._wpMeshes[wid].children[1].position.y=15+wpTH;
+    window._wpMeshes[wid].children[0].position.y=15+Math.sin(time*3+w.x)*3;
+    window._wpMeshes[wid].children[1].position.y=15;
   }
   for(const id in window._wpMeshes){if(!seenWp.has(id)){scene.remove(window._wpMeshes[id]);delete window._wpMeshes[id];}}
 
@@ -1446,8 +1451,8 @@ function loop(ts){
     }
     const terrH=getTerrainHeight(p.x,p.y);
     if(p.y3d<terrH+1){
-      // Hit terrain — remove visually
-      if(projMeshes[p.id]){scene.remove(projMeshes[p.id]);projMeshes[p.id].geometry.dispose();projMeshes[p.id].material.dispose();delete projMeshes[p.id];}
+      // Hit terrain — remove visually (dispose glow child too)
+      if(projMeshes[p.id]){const pm=projMeshes[p.id];scene.remove(pm);pm.traverse(c=>{if(c.geometry)c.geometry.dispose();if(c.material)c.material.dispose();});delete projMeshes[p.id];}
       p.y3d=-999; // mark for removal
     } else {
       projMeshes[p.id].position.set(p.x,p.y3d,p.y);
@@ -1456,7 +1461,7 @@ function loop(ts){
   // Clean offscreen
   projData=projData.filter(p=>{
     if(p.y3d===-999||p.x<-100||p.x>MW+100||p.y<-100||p.y>MH+100){
-      if(projMeshes[p.id]){const pm=projMeshes[p.id];scene.remove(pm);pm.geometry.dispose();pm.material.dispose();delete projMeshes[p.id];}
+      if(projMeshes[p.id]){const pm=projMeshes[p.id];scene.remove(pm);pm.traverse(c=>{if(c.geometry)c.geometry.dispose();if(c.material)c.material.dispose();});delete projMeshes[p.id];}
       return false;
     }return true;
   });
