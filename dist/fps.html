@@ -385,7 +385,10 @@ function handleMsg(msg){
       vy3d=dir3.y*Math.hypot(msg.vx,msg.vy); // scale Y by projectile speed
     }
     const spawnH=CH+getTerrainHeight(msg.x,msg.y);
-    projData.push({id:msg.id,x:msg.x,y:msg.y,vx:msg.vx,vy:msg.vy,color:msg.color||'pink',bolty:msg.bolty,cowtank:msg.cowtank,y3d:spawnH,vy3d});
+    // Add vertical spread for shotgun pellets
+    let vy3dFinal=vy3d;
+    if(msg.shotgun!==undefined){vy3dFinal=(vy3d||0)+(Math.random()-0.5)*150;} // vertical cone spread
+    projData.push({id:msg.id,x:msg.x,y:msg.y,vx:msg.vx,vy:msg.vy,color:msg.color||'pink',bolty:msg.bolty,cowtank:msg.cowtank,y3d:spawnH,vy3d:vy3dFinal});
     if(msg.ownerId===myId){msg.bolty?sfxBolty():sfxShoot();}
   }
   if(msg.type==='projectileHit'){
