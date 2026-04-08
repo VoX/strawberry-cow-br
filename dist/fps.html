@@ -154,25 +154,16 @@ scene.add(new THREE.HemisphereLight(0x87CEEB,0x44aa44,0.3));
 const gndGeo=new THREE.PlaneGeometry(MW,MH,80,60);
 const gndPos=gndGeo.attributes.position;
 for(let i=0;i<gndPos.count;i++){
-  const x=gndPos.getX(i)+MW/2, y=gndPos.getY(i)+MH/2;
-  const h=Math.sin(x*0.004)*20+Math.cos(y*0.005)*15+Math.sin(x*0.01+y*0.007)*10+Math.cos(x*0.003-y*0.004)*12;
-  gndPos.setZ(i,h);
+  const x=gndPos.getX(i)+MW/2, z=gndPos.getY(i)+MH/2;
+  gndPos.setZ(i,_th(x,z));
 }
 gndGeo.computeVertexNormals();
 const gnd=new THREE.Mesh(gndGeo,new THREE.MeshLambertMaterial({color:0x4a8c3f}));
 gnd.rotation.x=-Math.PI/2;gnd.position.set(MW/2,0,MH/2);gnd.receiveShadow=true;scene.add(gnd);
 
-// Height from actual mesh vertices — single source of truth
-function getTerrainHeight(x,z){
-  const pos=gndGeo.attributes.position;
-  // Map world coords to grid row/col
-  // col = world_x * segW / mapW, row = (mapH - world_z) * segH / mapH
-  const col=Math.max(0,Math.min(80, (x*80/MW)|0 ));
-  const row=Math.max(0,Math.min(60, ((MH-z)*60/MH)|0 ));
-  const idx=row*81+col;
-  if(idx>=0&&idx<pos.count)return pos.getZ(idx);
-  return 0;
-}
+// Terrain height — exact same formula as mesh generation
+function _th(x,z){return Math.sin(x*0.004)*20+Math.cos(z*0.005)*15+Math.sin(x*0.01+z*0.007)*10+Math.cos(x*0.003-z*0.004)*12;}
+function getTerrainHeight(x,z){return _th(x,z);}
 
 // Border fence — follows terrain with posts and rails
 const bm=new THREE.MeshLambertMaterial({color:0xeeeeee});
