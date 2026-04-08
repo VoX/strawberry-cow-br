@@ -702,7 +702,7 @@ function gameTick() {
     for (let i = armorPickups.length - 1; i >= 0; i--) {
       const a = armorPickups[i];
       if (Math.hypot(p.x - a.x, p.y - a.y) < 45) {
-        p.armor = Math.min(100, (p.armor || 0) + 25);
+        p.armor = Math.min(p.maxArmor || 50, (p.armor || 0) + 25);
         broadcast({ type: 'armorPickup', playerId: p.id, name: p.name, pickupId: a.id });
         armorPickups.splice(i, 1);
       }
@@ -950,7 +950,7 @@ wss.on('connection', (ws) => {
       else if (id === 'burstmod') { if (player.weaponPerks) player.weaponPerks.burstMod = true; }
       else if (id === 'dashcd') { player.dashCdMult = (player.dashCdMult || 1) * 0.6; }
       else if (id === 'dashdist') { player.dashDistMult = (player.dashDistMult || 1) * 1.5; }
-      else if (id === 'kevlar') { perks.damageReduction = (perks.damageReduction || 0) + 0.2; }
+      else if (id === 'kevlar') { p.maxArmor = (p.maxArmor || 50) + 25; }
       else if (id === 'shotgun') { /* weapon handled client-side */ }
       else if (id === 'burst') { /* weapon handled client-side */ }
       else if (id === 'bolty') { /* weapon handled client-side */ }
