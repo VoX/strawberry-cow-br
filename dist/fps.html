@@ -1082,6 +1082,8 @@ function loop(ts){
   buildMap();
   updateZone();
   updateViewmodel();
+  // Skybox follows camera
+  sky.position.copy(cam.position);
   // Animate clouds
   cloudPlanes.forEach(c=>{c.position.x=c.userData.origX+Math.sin(time*0.05*c.userData.speed)*200;});
 
