@@ -259,7 +259,7 @@ function fireBot(bot, ax, ay) {
     bot.attackCooldown = 1.5 * cdMult;
     const volleyId = foodIdCounter++;
     for (let b = 0; b < 5; b++) {
-      const spread = (b - 2) * 0.12;
+      const spread = (Math.random() - 0.5) * 0.2;
       const bx = ax * Math.cos(spread) - ay * Math.sin(spread);
       const by = ax * Math.sin(spread) + ay * Math.cos(spread);
       const projId = foodIdCounter++;
@@ -927,7 +927,7 @@ wss.on('connection', (ws) => {
       else if (id === 'damage') perks.damage += 0.5;
       else if (id === 'velocity') { if (player.weaponPerks) player.weaponPerks.velocity += 0.4; }
       else if (id === 'fastfire') { if (player.weaponPerks) player.weaponPerks.cooldown *= 0.75; }
-      else if (id === 'cheapshot') { if (player.weaponPerks) player.weaponPerks.hungerDiscountPct = (player.weaponPerks.hungerDiscountPct || 0) + 0.2; }
+      else if (id === 'cheapshot') { if (player.weaponPerks) player.weaponPerks.hungerDiscountPct = (player.weaponPerks.hungerDiscountPct || 0) + 0.33; }
       else if (id === 'extraproj') { if (player.weaponPerks) player.weaponPerks.extraProj += 1; }
       else if (id === 'bigbore') { if (player.weaponPerks) player.weaponPerks.damageMult += 0.2; }
       else if (id === 'piercing') { if (player.weaponPerks) player.weaponPerks.piercing = true; }
@@ -1011,7 +1011,7 @@ wss.on('connection', (ws) => {
         player.attackCooldown = 1.5 * cdMult;
         const volleyId = foodIdCounter++;
         for (let b = 0; b < 5; b++) {
-          const spread = (b - 2) * 0.12;
+          const spread = (Math.random() - 0.5) * 0.2;
           const bx = ax * Math.cos(spread) - ay * Math.sin(spread);
           const by = ax * Math.sin(spread) + ay * Math.cos(spread);
           const projId = foodIdCounter++;
