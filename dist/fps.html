@@ -379,7 +379,7 @@ if(isMobile){
     const mx=fwd.x*(-tdy)+right.x*tdx;
     const mz=fwd.z*(-tdy)+right.z*tdx;
     const len=Math.hypot(mx,mz);
-    if(len>0)send({type:'move',dx:mx/len,dy:mz/len});
+    if(len>0){send({type:'move',dx:mx/len,dy:mz/len});pingLast=performance.now();}
   }else if(state==='playing'){send({type:'move',dx:0,dy:0});}},50);
   // Touch look (right side of screen)
   let lastTouchX=0,lastTouchY=0;
@@ -496,7 +496,7 @@ function handleMsg(msg){
   if(msg.type==='state'){
     serverPlayers=msg.players;
     if(msg.zone)serverZone=msg.zone;
-    if(pingLast>0){pingVal=pingVal*0.8+(performance.now()-pingLast)*0.2;pingLast=0;}
+    if(pingLast>0){const pd=performance.now()-pingLast;if(pd<2000)pingVal=pingVal*0.7+pd*0.3;pingLast=0;}
   }
   if(msg.type==='food'){
     const f=msg.food||msg;
