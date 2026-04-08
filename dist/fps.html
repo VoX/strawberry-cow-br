@@ -53,6 +53,7 @@ canvas{display:block;position:absolute;top:0;left:0;z-index:1}
 <style>
 .perkCard{background:rgba(26,10,46,0.85);border:2px solid #cc88ff;border-radius:8px;padding:10px 14px;width:180px;text-align:center;pointer-events:none}
 </style>
+<div id="scopeOverlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:8;display:none"><div style="position:absolute;top:0;left:0;width:100%;height:100%;background:radial-gradient(circle at center,transparent 25%,rgba(0,0,0,0.95) 26%);"></div><div style="position:absolute;top:50%;left:0;width:100%;height:1px;background:rgba(255,100,100,0.5)"></div><div style="position:absolute;top:0;left:50%;width:1px;height:100%;background:rgba(255,100,100,0.5)"></div><div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:8px;height:8px;border:1px solid rgba(255,100,100,0.6);border-radius:50%"></div></div>
 <div id="lowHealthOverlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:6;display:none;background:radial-gradient(ellipse at center,transparent 50%,rgba(255,0,0,0.4) 100%)"></div>
 <div id="hitFlash" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:7;opacity:0;background:rgba(255,0,0,0.3)"></div>
 <div id="winScreen" style="position:absolute;top:0;left:0;width:100%;height:100%;display:none;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,0.75);z-index:90">
@@ -124,6 +125,7 @@ function tickMusic(){
 let ws=null,myId=null,myColor='pink',state='join',serverPlayers=[],serverFoods=[];
 let yaw=0,pitch=0,locked=false,keys={},lastMoveMsg=0;
 let jumpVel=0,jumpH=0;
+let adsActive=false;
 let killfeed=[],projData=[],projMeshes={};
 let cowMeshes={},mapBuilt=false;
 let serverZone={x:0,y:0,w:MW,h:MH},mapFeatures={walls:[],mud:[],ponds:[],portals:[],shelters:[]};
@@ -319,9 +321,33 @@ document.addEventListener('pointerlockchange',()=>{
 });
 document.addEventListener('mousemove',e=>{
   if(!locked)return;
-  yaw-=e.movementX*0.002;pitch-=e.movementY*0.002;
+  const sens=adsActive?0.0008:0.002;
+  yaw-=e.movementX*sens;pitch-=e.movementY*sens;
   pitch=Math.max(-1.2,Math.min(1.2,pitch));
 });
+// Right click for ADS (bolty only)
+document.addEventListener('mousedown',e=>{
+  if(e.button===2&&locked&&state==='playing'){
+    const me=serverPlayers.find(p=>p.id===myId);
+    if(me&&me.alive&&me.weapon==='bolty'){
+      adsActive=true;
+      cam.fov=30;cam.updateProjectionMatrix();
+      document.getElementById('scopeOverlay').style.display='block';
+      document.getElementById('crosshair').style.display='none';
+      if(vmGroup)vmGroup.visible=false;
+    }
+  }
+});
+document.addEventListener('mouseup',e=>{
+  if(e.button===2){
+    adsActive=false;
+    cam.fov=75;cam.updateProjectionMatrix();
+    document.getElementById('scopeOverlay').style.display='none';
+    document.getElementById('crosshair').style.display='block';
+    if(vmGroup)vmGroup.visible=true;
+  }
+});
+document.addEventListener('contextmenu',e=>e.preventDefault());
 
 // Input
 addEventListener('keydown',e=>{
