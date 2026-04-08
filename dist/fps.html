@@ -439,17 +439,18 @@ function handleMsg(msg){
     if(msg.playerId===myId)sfxEat();
   }
   if(msg.type==='projectile'){
-    // Calculate 3D Y velocity from camera pitch if it's our projectile
-    let vy3d=0;
+    // 3D projectile: starts at camera position, travels along camera look direction
+    const projSpeed=Math.hypot(msg.vx,msg.vy);
+    let vy3d=0, spawnH=15+getTerrainHeight(msg.x,msg.y);
     if(msg.ownerId===myId){
+      // Use actual camera direction for Y velocity
       const dir3=new THREE.Vector3(0,0,-1);dir3.applyQuaternion(cam.quaternion);
-      vy3d=dir3.y*Math.hypot(msg.vx,msg.vy); // scale Y by projectile speed
+      vy3d=dir3.y*projSpeed;
+      spawnH=cam.position.y; // start from camera height
     }
-    const spawnH=CH+getTerrainHeight(msg.x,msg.y);
-    // Add vertical spread for shotgun pellets
-    let vy3dFinal=vy3d;
-    if(msg.shotgun!==undefined){vy3dFinal=(vy3d||0)+(Math.random()-0.5)*150;} // vertical cone spread
-    projData.push({id:msg.id,x:msg.x,y:msg.y,vx:msg.vx,vy:msg.vy,color:msg.color||'pink',bolty:msg.bolty,cowtank:msg.cowtank,y3d:spawnH,vy3d:vy3dFinal});
+    // Vertical spread for shotgun pellets
+    if(msg.shotgun!==undefined){vy3d+=(Math.random()-0.5)*150;}
+    projData.push({id:msg.id,x:msg.x,y:msg.y,vx:msg.vx,vy:msg.vy,color:msg.color||'pink',bolty:msg.bolty,cowtank:msg.cowtank,y3d:spawnH,vy3d});
     if(msg.ownerId===myId){msg.bolty?sfxBolty():sfxShoot();}
   }
   if(msg.type==='projectileHit'){
