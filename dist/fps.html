@@ -766,9 +766,9 @@ let vmGroup=null,vmType='normal';
 function buildViewmodel(type){
   if(vmGroup){cam.remove(vmGroup);}
   vmGroup=new THREE.Group();
-  const dark=new THREE.MeshLambertMaterial({color:0x444444});
-  const metal=new THREE.MeshLambertMaterial({color:0x888888});
-  const wood=new THREE.MeshLambertMaterial({color:0x8B5A2B});
+  const dark=new THREE.MeshBasicMaterial({color:0x444444});
+  const metal=new THREE.MeshBasicMaterial({color:0x999999});
+  const wood=new THREE.MeshBasicMaterial({color:0x8B5A2B});
   if(type==='normal'){
     // Spit — just a small tube
     const barrel=new THREE.Mesh(new THREE.CylinderGeometry(0.8,1,8,6),metal);
@@ -805,16 +805,16 @@ function buildViewmodel(type){
     scopeLens.position.set(0,2,-6);vmGroup.add(scopeLens);
   }else if(type==='cowtank'){
     // Cowtank — big launcher
-    const barrel=new THREE.Mesh(new THREE.CylinderGeometry(2,2,14,8),new THREE.MeshLambertMaterial({color:0x556B2F}));
+    const barrel=new THREE.Mesh(new THREE.CylinderGeometry(2,2,14,8),new THREE.MeshBasicMaterial({color:0x556B2F}));
     barrel.rotation.x=Math.PI/2;barrel.position.set(0,0,-8);vmGroup.add(barrel);
     const grip=new THREE.Mesh(new THREE.BoxGeometry(2,4,2),dark);
     grip.position.set(0,-3,-1);vmGroup.add(grip);
     const sight=new THREE.Mesh(new THREE.BoxGeometry(1,1,1),metal);
     sight.position.set(0,2.5,-4);vmGroup.add(sight);
   }
-  // Position viewmodel in bottom-right of camera view
-  vmGroup.position.set(4,-4,-6);
-  vmGroup.rotation.set(0,0.1,0);
+  // Position viewmodel in bottom-center of camera view
+  vmGroup.position.set(2,-3,-5);
+  vmGroup.rotation.set(0,0.05,0);
   cam.add(vmGroup);
   vmType=type;
 }
