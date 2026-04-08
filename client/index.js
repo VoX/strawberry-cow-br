@@ -5,178 +5,8 @@ import S from'./state.js';
 import{initAudio,sfx,sfxShoot,sfxBolty,sfxHit,sfxEat,sfxLevelUp,sfxDeath,sfxBump,tickMusic,setMusicPlaying,resetMusic,getAudioCtx}from'./audio.js';
 
 
-// Three.js
-const scene=new THREE.Scene();
-// Background handled by skybox sphere
-// No fog — skybox handles atmosphere
-const cam=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,1,6100);
-cam.position.set(MW/2,CH,MH/2);
-const ren=new THREE.WebGLRenderer({antialias:true});
-ren.setSize(innerWidth,innerHeight);ren.setPixelRatio(Math.min(devicePixelRatio,2));
-ren.shadowMap.enabled=true;
-document.body.appendChild(ren.domElement);
-
-// Lights
-scene.add(new THREE.AmbientLight(0xffffff,0.6));
-const sun=new THREE.DirectionalLight(0xffffff,0.8);
-sun.position.set(500,400,300);sun.castShadow=true;
-sun.shadow.mapSize.set(256,256);
-sun.shadow.camera.near=10;sun.shadow.camera.far=800;
-sun.shadow.camera.left=-400;sun.shadow.camera.right=400;
-sun.shadow.camera.top=400;sun.shadow.camera.bottom=-400;
-scene.add(sun);
-scene.add(sun.target);
-scene.add(new THREE.HemisphereLight(0x87CEEB,0x44aa44,0.3));
-
-// Procedural gradient skybox
-const skyGeo=new THREE.SphereGeometry(5000,32,32);
-const skyMat=new THREE.ShaderMaterial({
-  side:THREE.BackSide,fog:false,
-  uniforms:{},
-  vertexShader:`varying vec3 vWorldPos;void main(){vWorldPos=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
-  fragmentShader:`varying vec3 vWorldPos;void main(){
-    float h=normalize(vWorldPos).y;
-    vec3 top=vec3(0.3,0.5,0.9);    // deep blue
-    vec3 mid=vec3(0.6,0.8,1.0);    // light blue
-    vec3 horizon=vec3(1.0,0.85,0.7);// warm peach
-    vec3 bottom=vec3(0.4,0.7,0.3); // green ground reflection
-    vec3 col;
-    if(h>0.3)col=mix(mid,top,(h-0.3)/0.7);
-    else if(h>0.0)col=mix(horizon,mid,h/0.3);
-    else col=mix(bottom,horizon,(h+0.3)/0.3);
-    // Subtle clouds
-    float c=sin(vWorldPos.x*0.003+vWorldPos.z*0.002)*0.5+0.5;
-    c*=smoothstep(0.05,0.3,h)*smoothstep(0.6,0.3,h);
-    col=mix(col,vec3(1.0,1.0,1.0),c*0.2);
-    gl_FragColor=vec4(col,1.0);
-  }`
-});
-const sky=new THREE.Mesh(skyGeo,skyMat);
-scene.add(sky);
-
-// Cloud planes with procedural texture
-function makeCloudTexture(){
-  const c=document.createElement('canvas');c.width=256;c.height=256;
-  const ctx=c.getContext('2d');
-  ctx.fillStyle='rgba(0,0,0,0)';ctx.fillRect(0,0,256,256);
-  // Draw soft blobs
-  for(let i=0;i<20;i++){
-    const x=64+Math.random()*128,y=64+Math.random()*128;
-    const r=30+Math.random()*60;
-    const grad=ctx.createRadialGradient(x,y,0,x,y,r);
-    grad.addColorStop(0,'rgba(255,255,255,0.6)');
-    grad.addColorStop(0.5,'rgba(255,255,255,0.2)');
-    grad.addColorStop(1,'rgba(255,255,255,0)');
-    ctx.fillStyle=grad;ctx.fillRect(x-r,y-r,r*2,r*2);
-  }
-  return new THREE.CanvasTexture(c);
-}
-const cloudPlanes=[];
-for(let i=0;i<12;i++){
-  const tex=makeCloudTexture();
-  const mat=new THREE.MeshBasicMaterial({map:tex,transparent:true,opacity:0.7,side:THREE.DoubleSide,fog:false,depthWrite:false});
-  const sz=400+Math.random()*400;
-  const mesh=new THREE.Mesh(new THREE.PlaneGeometry(sz,sz*0.4),mat);
-  mesh.position.set(
-    Math.random()*MW,
-    300+Math.random()*200,
-    Math.random()*MH
-  );
-  mesh.rotation.x=-Math.PI/2;
-  mesh.rotation.z=Math.random()*Math.PI;
-  mesh.userData={speed:2+Math.random()*4,origX:mesh.position.x};
-  scene.add(mesh);
-  cloudPlanes.push(mesh);
-}
-
-// STEP 1: Generate collision heightmap as the single source of truth
-const GRID_W=200, GRID_H=150;
-const heightMap=new Float32Array((GRID_W+1)*(GRID_H+1));
-for(let row=0;row<=GRID_H;row++){
-  for(let col=0;col<=GRID_W;col++){
-    const wx=col*MW/GRID_W; // world x: 0 to 2000
-    const wz=row*MH/GRID_H; // world z: 0 to 1500
-    const h=Math.sin(wx*0.004)*20+Math.cos(wz*0.005)*15+Math.sin(wx*0.01+wz*0.007)*10+Math.cos(wx*0.003-wz*0.004)*12;
-    heightMap[row*(GRID_W+1)+col]=h;
-  }
-}
-
-// STEP 2: Height lookup reads from the collision heightmap
-function getTerrainHeight(x,z){
-  const col=Math.max(0,Math.min(GRID_W,(x/MW*GRID_W)|0));
-  const row=Math.max(0,Math.min(GRID_H,(z/MH*GRID_H)|0));
-  return heightMap[row*(GRID_W+1)+col];
-}
-
-// STEP 3: Build visual mesh from the SAME heightmap data
-const gndGeo=new THREE.PlaneGeometry(MW,MH,GRID_W,GRID_H);
-const gndPos=gndGeo.attributes.position;
-// PlaneGeometry vertex layout: rows from +Y to -Y (top to bottom in local space)
-// After rotation -PI/2 on X and translation to (MW/2,0,MH/2):
-// local X -> world X, local Y -> world Z (inverted)
-// PlaneGeometry vertex order: rows from local +Y (top) to -Y (bottom)
-// After -90deg X rotation + translate(MW/2, 0, MH/2):
-//   local +Y -> world -Z, so local_Y=+MH/2 -> world Z=0, local_Y=-MH/2 -> world Z=MH
-// Therefore: worldZ = MH/2 - localY = MH/2 - getY(i) ... wait, with position offset:
-//   worldZ = (MH/2 - getY(i))... no. Let's just compute it directly.
-//   worldX = getX(i) + MW/2  (translation)
-//   After rotation -90 on X: (lx, ly, lz) -> (lx, -lz, ly)
-//   Then translate: worldX = lx + MW/2, worldY = -lz, worldZ = ly + MH/2
-//   So worldZ = getY(i) + MH/2... but getY goes from +MH/2 (row0) to -MH/2 (last row)
-//   Row 0: worldZ = MH/2 + MH/2 = MH ... that's the FAR side
-//   Last row: worldZ = -MH/2 + MH/2 = 0 ... that's the NEAR side
-// So getY(i)+MH/2 IS correct for worldZ mapping! The heightmap rows match.
-for(let i=0;i<gndPos.count;i++){
-  const wx=gndPos.getX(i)+MW/2;
-  // PlaneGeometry row 0: getY=+MH/2, but after -90deg X rotation this becomes worldZ=MH
-  // PlaneGeometry last row: getY=-MH/2, after rotation worldZ=0
-  // So we need to INVERT: worldZ = MH - (getY(i) + MH/2) = MH/2 - getY(i)
-  const wz=MH/2-gndPos.getY(i);
-  const col=Math.max(0,Math.min(GRID_W,Math.round(wx/MW*GRID_W)));
-  const row=Math.max(0,Math.min(GRID_H,Math.round(wz/MH*GRID_H)));
-  gndPos.setZ(i,heightMap[row*(GRID_W+1)+col]);
-}
-gndGeo.computeVertexNormals();
-const gnd=new THREE.Mesh(gndGeo,new THREE.MeshLambertMaterial({color:0x4a8c3f}));
-gnd.rotation.x=-Math.PI/2;gnd.position.set(MW/2,0,MH/2);gnd.receiveShadow=true;scene.add(gnd);
-
-// Border fence — follows terrain with posts and rails
-const bm=new THREE.MeshLambertMaterial({color:0xeeeeee});
-const postGeo=new THREE.CylinderGeometry(2,2,30,5);
-const railGeo=new THREE.CylinderGeometry(1,1,1,4); // scaled per segment
-function buildFenceLine(points){
-  for(let i=0;i<points.length;i++){
-    const p=points[i];
-    const th=getTerrainHeight(p.x,p.z);
-    // Post
-    const post=new THREE.Mesh(postGeo,bm);
-    post.position.set(p.x,th+15,p.z);
-    scene.add(post);
-    // Rail to next post
-    if(i<points.length-1){
-      const n=points[i+1];
-      const nth=getTerrainHeight(n.x,n.z);
-      const mx=(p.x+n.x)/2,mz=(p.z+n.z)/2;
-      const dist=Math.hypot(n.x-p.x,n.z-p.z);
-      const mth=(th+nth)/2;
-      const angle=Math.atan2(n.x-p.x,n.z-p.z);
-      const rail=new THREE.Mesh(new THREE.BoxGeometry(3,3,dist),bm);
-      rail.position.set(mx,mth+22,mz);
-      rail.rotation.y=angle;
-      scene.add(rail);
-      const rail2=new THREE.Mesh(new THREE.BoxGeometry(3,3,dist),bm);
-      rail2.position.set(mx,mth+12,mz);
-      rail2.rotation.y=angle;
-      scene.add(rail2);
-    }
-  }
-}
-// Generate fence points along each edge
-const fenceN=[],fenceS=[],fenceE=[],fenceW=[];
-const fenceStep=25; // match terrain grid cell size (MW/GRID_W = 10, but 25 is good for post density)
-for(let x=0;x<=MW;x+=fenceStep){fenceN.push({x,z:0});fenceS.push({x,z:MH});}
-for(let z=0;z<=MH;z+=fenceStep){fenceW.push({x:0,z});fenceE.push({x:MW,z});}
-buildFenceLine(fenceN);buildFenceLine(fenceS);buildFenceLine(fenceW);buildFenceLine(fenceE);
+import{scene,cam,ren,sun,sky,cloudPlanes,vmScene,vmCam}from'./renderer.js';
+import{getTerrainHeight}from'./terrain.js';
 
 
 
@@ -780,11 +610,7 @@ function buildMap(){
 
 // Zone wall
 let zoneWall=null;
-// Viewmodel (first-person weapon) — separate scene rendered on top
-const vmScene=new THREE.Scene();
-vmScene.add(new THREE.AmbientLight(0xffffff,1));
-const vmCam=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.1,100);
-vmCam.position.set(0,0,0);
+// Viewmodel (first-person weapon)
 let vmGroup=null,vmType='normal';
 function buildViewmodel(type){
   if(vmGroup){vmScene.remove(vmGroup);}
@@ -1367,8 +1193,6 @@ function loop(ts){
     ren.autoClear=true;
   }
 }
-
-addEventListener('resize',()=>{cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();vmCam.aspect=innerWidth/innerHeight;vmCam.updateProjectionMatrix();ren.setSize(innerWidth,innerHeight);});
 
 connect();
 requestAnimationFrame(loop);
