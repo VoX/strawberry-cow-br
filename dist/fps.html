@@ -500,7 +500,10 @@ function handleMsg(msg){
       const trailParts=[];
       const delay=Math.random()*800;
       const fallSpeed=6+Math.random()*10;
+      let fallLife=5; // hard kill after 5 seconds
       const fall=()=>{
+        fallLife-=0.016;
+        if(fallLife<=0){scene.remove(m);m.geometry.dispose();fireMat.dispose();glow.geometry.dispose();glowMat.dispose();trailParts.forEach(t=>{scene.remove(t.mesh);t.mesh.geometry.dispose();t.mesh.material.dispose();});return;}
         m.position.y-=fallSpeed;
         // Spawn trail
         if(Math.random()<0.4){
