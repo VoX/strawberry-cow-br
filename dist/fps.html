@@ -175,13 +175,24 @@ const gndPos=gndGeo.attributes.position;
 // PlaneGeometry vertex layout: rows from +Y to -Y (top to bottom in local space)
 // After rotation -PI/2 on X and translation to (MW/2,0,MH/2):
 // local X -> world X, local Y -> world Z (inverted)
+// PlaneGeometry vertex order: rows from local +Y (top) to -Y (bottom)
+// After -90deg X rotation + translate(MW/2, 0, MH/2):
+//   local +Y -> world -Z, so local_Y=+MH/2 -> world Z=0, local_Y=-MH/2 -> world Z=MH
+// Therefore: worldZ = MH/2 - localY = MH/2 - getY(i) ... wait, with position offset:
+//   worldZ = (MH/2 - getY(i))... no. Let's just compute it directly.
+//   worldX = getX(i) + MW/2  (translation)
+//   After rotation -90 on X: (lx, ly, lz) -> (lx, -lz, ly)
+//   Then translate: worldX = lx + MW/2, worldY = -lz, worldZ = ly + MH/2
+//   So worldZ = getY(i) + MH/2... but getY goes from +MH/2 (row0) to -MH/2 (last row)
+//   Row 0: worldZ = MH/2 + MH/2 = MH ... that's the FAR side
+//   Last row: worldZ = -MH/2 + MH/2 = 0 ... that's the NEAR side
+// So getY(i)+MH/2 IS correct for worldZ mapping! The heightmap rows match.
 for(let i=0;i<gndPos.count;i++){
-  // Convert local coords to world coords
   const wx=gndPos.getX(i)+MW/2;
   const wz=gndPos.getY(i)+MH/2;
-  // Look up from our collision heightmap
-  const col=Math.max(0,Math.min(GRID_W,(wx/MW*GRID_W)|0));
-  const row=Math.max(0,Math.min(GRID_H,(wz/MH*GRID_H)|0));
+  // Clamp to valid heightmap range
+  const col=Math.max(0,Math.min(GRID_W,Math.round(wx/MW*GRID_W)));
+  const row=Math.max(0,Math.min(GRID_H,Math.round(wz/MH*GRID_H)));
   gndPos.setZ(i,heightMap[row*(GRID_W+1)+col]);
 }
 gndGeo.computeVertexNormals();
