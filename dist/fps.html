@@ -321,7 +321,7 @@ document.addEventListener('pointerlockchange',()=>{
 });
 document.addEventListener('mousemove',e=>{
   if(!locked)return;
-  const sens=adsActive?0.0008:0.002;
+  const sens=adsActive?0.0004:0.002;
   yaw-=e.movementX*sens;pitch-=e.movementY*sens;
   pitch=Math.max(-1.2,Math.min(1.2,pitch));
 });

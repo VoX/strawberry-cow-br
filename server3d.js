@@ -280,7 +280,7 @@ function fireBot(bot, ax, ay) {
     bot.hunger -= 8;
     bot.attackCooldown = 2.5 * cdMult;
     const projId = foodIdCounter++;
-    const proj = { id: projId, ownerId: bot.id, x: bot.x + ax * 40, y: bot.y + ay * 40, vx: ax * 2800 * velMult, vy: ay * 2800 * velMult, life: 1.5, dmg: 25 * dmgMult };
+    const proj = { id: projId, ownerId: bot.id, x: bot.x + ax * 40, y: bot.y + ay * 40, vx: ax * 4200 * velMult, vy: ay * 4200 * velMult, life: 1.5, dmg: 25 * dmgMult };
     projectiles.push(proj);
     broadcast({ type: 'projectile', id: projId, ownerId: bot.id, x: proj.x, y: proj.y, vx: proj.vx, vy: proj.vy, color: bot.color, bolty: true });
   }
@@ -672,10 +672,13 @@ function gameTick() {
     for (let i = weaponPickups.length - 1; i >= 0; i--) {
       const w = weaponPickups[i];
       if (Math.hypot(p.x - w.x, p.y - w.y) < 45) {
+        // Can't pick up a different weapon if you already have one (must drop first with Q)
+        // Exception: same weapon (upgrade) and cowtank (always pickable)
+        if (p.weapon !== 'normal' && p.weapon !== w.weapon && w.weapon !== 'cowtank') continue;
         if (w.weapon === 'cowtank') {
           p.weapon = 'cowtank';
           p.weaponLevel = 0;
-          p.weaponTimer = 15; // 15 second powerup
+          p.weaponTimer = 15;
         } else if (p.weapon === w.weapon) {
           p.weaponLevel = Math.min(3, (p.weaponLevel || 0) + 1);
         } else {
@@ -1047,7 +1050,7 @@ wss.on('connection', (ws) => {
         player.attackCooldown = 2.5 * cdMult;
         const projId = foodIdCounter++;
         const dmg = 25 * player.perks.damage * dmgMult;
-        const proj = { id: projId, ownerId: player.id, x: player.x + ax * 40, y: player.y + ay * 40, vx: ax * 2800 * velMult, vy: ay * 2800 * velMult, life: 1.5, dmg, piercing: wp.piercing };
+        const proj = { id: projId, ownerId: player.id, x: player.x + ax * 40, y: player.y + ay * 40, vx: ax * 4200 * velMult, vy: ay * 4200 * velMult, life: 1.5, dmg, piercing: wp.piercing };
         projectiles.push(proj);
         broadcast({ type: 'projectile', id: projId, ownerId: player.id, x: proj.x, y: proj.y, vx: proj.vx, vy: proj.vy, color: player.color, bolty: true });
       } else if (weapon === 'cowtank' && player.hunger > Math.max(2, 6 - hungerDiscount)) {
