@@ -38,8 +38,6 @@ let MUD_PATCHES = [];
 let HEAL_PONDS = [];
 let PORTALS = [];
 let SHELTERS = []; // {x,y,r} — protect from cowstrike
-  // Center tower wall
-  WALLS.push({x: MAP_W/2 - 60, y: MAP_H/2 - 60, w: 120, h: 120});
 
 function generateMap() {
   WALLS = [];
@@ -497,7 +495,7 @@ function eliminatePlayer(p, reason) {
       while (attacker.xp >= attacker.xpToNext) {
         attacker.xp = Math.max(0, attacker.xp - attacker.xpToNext);
         attacker.level++;
-        attacker.xpToNext = Math.floor(50 + p.level * 25 + p.level * p.level * 5);
+        attacker.xpToNext = Math.floor(50 + attacker.level * 25 + attacker.level * attacker.level * 5);
         sendTo(attacker.ws, { type: 'levelup', level: attacker.level });
       }
       broadcast({ type: 'kill', killerId: attacker.id, killerName: attacker.name, victimId: p.id, victimName: p.name });
@@ -847,6 +845,7 @@ function gameTick() {
     const roll = Math.random();
     let f;
     if (roll < 0.05) { f = spawnGoldenFood(); }
+    else if (roll < 0.15) { f = spawnFood(true); }
     else { f = spawnFood(false); }
     broadcast({ type: 'food', food: serializeFood(f) });
   }
@@ -914,6 +913,8 @@ wss.on('connection', (ws) => {
         eating: false, eatTimer: 0, foodEaten: 0,
         kills: 0, dashCooldown: 0, attackCooldown: 0, stunTimer: 0, lastAttacker: null,
         perks: { speedMult: 1, radiusMult: 1, drainMult: 1, magnetRange: 0, regen: 0, maxHunger: 100, sizeMult: 1, damage: 1 },
+        weaponPerks: { velocity: 1, cooldown: 1, hungerDiscount: 0, extraProj: 0, damageMult: 1, piercing: false, burstMod: false },
+        weapon: 'normal', weaponLevel: 0, weaponTimer: 0, armor: 0,
       };
       players.set(playerId, player);
       sendTo(ws, { type: 'joined', id: playerId, color });
@@ -950,7 +951,7 @@ wss.on('connection', (ws) => {
       else if (id === 'burstmod') { if (player.weaponPerks) player.weaponPerks.burstMod = true; }
       else if (id === 'dashcd') { player.dashCdMult = (player.dashCdMult || 1) * 0.6; }
       else if (id === 'dashdist') { player.dashDistMult = (player.dashDistMult || 1) * 1.5; }
-      else if (id === 'kevlar') { p.maxArmor = (p.maxArmor || 50) + 25; }
+      else if (id === 'kevlar') { player.maxArmor = (player.maxArmor || 50) + 25; }
       else if (id === 'shotgun') { /* weapon handled client-side */ }
       else if (id === 'burst') { /* weapon handled client-side */ }
       else if (id === 'bolty') { /* weapon handled client-side */ }
