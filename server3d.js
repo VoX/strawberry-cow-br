@@ -1005,8 +1005,8 @@ wss.on('connection', (ws) => {
         ax = dd[0]; ay = dd[1];
       } else { ax /= alen; ay /= alen; }
 
-      if (weapon === 'shotgun' && player.hunger > Math.max(3, 8 - hungerDiscount)) {
-        player.hunger -= Math.max(3, 7 - hungerDiscount);
+      if (weapon === 'shotgun' && player.hunger > Math.max(2, 7 - hungerDiscount)) {
+        player.hunger -= Math.max(2, 6 - hungerDiscount);
         player.attackCooldown = 1.5 * cdMult;
         const volleyId = foodIdCounter++;
         for (let b = 0; b < 5; b++) {
@@ -1019,9 +1019,9 @@ wss.on('connection', (ws) => {
           projectiles.push(proj);
           broadcast({ type: 'projectile', id: projId, ownerId: player.id, x: proj.x, y: proj.y, vx: proj.vx, vy: proj.vy, color: player.color, shotgun: b === 0 });
         }
-      } else if (weapon === 'burst' && player.hunger > Math.max(3, 8 - hungerDiscount)) {
+      } else if (weapon === 'burst' && player.hunger > Math.max(2, 6 - hungerDiscount)) {
         const burstCount = burstMod ? 5 : 3;
-        player.hunger -= Math.max(3, 6 - hungerDiscount);
+        player.hunger -= Math.max(2, 5 - hungerDiscount);
         player.attackCooldown = 1.2 * cdMult;
         for (let b = 0; b < burstCount; b++) {
           const projId = foodIdCounter++;
@@ -1031,25 +1031,25 @@ wss.on('connection', (ws) => {
           projectiles.push(proj);
           broadcast({ type: 'projectile', id: projId, ownerId: player.id, x: proj.x, y: proj.y, vx: proj.vx, vy: proj.vy, color: player.color, burst: b === 0 });
         }
-      } else if (weapon === 'bolty' && player.hunger > Math.max(4, 12 - hungerDiscount)) {
-        player.hunger -= Math.max(4, 8 - hungerDiscount);
+      } else if (weapon === 'bolty' && player.hunger > Math.max(3, 8 - hungerDiscount)) {
+        player.hunger -= Math.max(3, 7 - hungerDiscount);
         player.attackCooldown = 2.5 * cdMult;
         const projId = foodIdCounter++;
         const dmg = 25 * player.perks.damage * dmgMult;
         const proj = { id: projId, ownerId: player.id, x: player.x + ax * 40, y: player.y + ay * 40, vx: ax * 2800 * velMult, vy: ay * 2800 * velMult, life: 1.5, dmg, piercing: wp.piercing };
         projectiles.push(proj);
         broadcast({ type: 'projectile', id: projId, ownerId: player.id, x: proj.x, y: proj.y, vx: proj.vx, vy: proj.vy, color: player.color, bolty: true });
-      } else if (weapon === 'cowtank' && player.hunger > Math.max(5, 10 - hungerDiscount)) {
+      } else if (weapon === 'cowtank' && player.hunger > Math.max(2, 6 - hungerDiscount)) {
         // Cowtank: explosive shell, high velocity, AOE damage
-        player.hunger -= Math.max(3, 6 - hungerDiscount);
+        player.hunger -= Math.max(2, 5 - hungerDiscount);
         player.attackCooldown = 1.0 * cdMult;
         const projId = foodIdCounter++;
         const dmg = 25 * player.perks.damage * dmgMult;
         const proj = { id: projId, ownerId: player.id, x: player.x + ax * 40, y: player.y + ay * 40, vx: ax * 1000 * velMult, vy: ay * 1000 * velMult, life: 1.2, dmg, explosive: true };
         projectiles.push(proj);
         broadcast({ type: 'projectile', id: projId, ownerId: player.id, x: proj.x, y: proj.y, vx: proj.vx, vy: proj.vy, color: player.color, cowtank: true });
-      } else if (weapon === 'normal' && player.hunger > Math.max(3, 10 - hungerDiscount)) {
-        player.hunger -= Math.max(2, 3 - hungerDiscount);
+      } else if (weapon === 'normal' && player.hunger > Math.max(1, 3 - hungerDiscount)) {
+        player.hunger -= Math.max(1, 2 - hungerDiscount);
         player.attackCooldown = 1.0 * cdMult;
         const shotCount = burstMod ? 3 : 1;
         for (let b = 0; b < shotCount; b++) {
