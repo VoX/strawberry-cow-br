@@ -53,7 +53,7 @@ canvas{display:block;position:absolute;top:0;left:0;z-index:1}
 <style>
 .perkCard{background:rgba(26,10,46,0.85);border:2px solid #cc88ff;border-radius:8px;padding:10px 14px;width:180px;text-align:center;pointer-events:none}
 </style>
-<div id="scopeOverlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:8;display:none"><div style="position:absolute;top:0;left:0;width:100%;height:100%;background:radial-gradient(circle at center,transparent 25%,rgba(0,0,0,0.95) 26%);"></div><div style="position:absolute;top:50%;left:0;width:100%;height:1px;background:rgba(255,100,100,0.5)"></div><div style="position:absolute;top:0;left:50%;width:1px;height:100%;background:rgba(255,100,100,0.5)"></div><div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:8px;height:8px;border:1px solid rgba(255,100,100,0.6);border-radius:50%"></div></div>
+<div id="scopeOverlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:8;display:none"><div style="position:absolute;top:0;left:0;width:100%;height:100%;background:radial-gradient(circle at center,transparent 35%,rgba(0,0,0,0.95) 36%);"></div><div style="position:absolute;top:50%;left:0;width:100%;height:1px;background:rgba(255,100,100,0.5)"></div><div style="position:absolute;top:0;left:50%;width:1px;height:100%;background:rgba(255,100,100,0.5)"></div><div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:8px;height:8px;border:1px solid rgba(255,100,100,0.6);border-radius:50%"></div></div>
 <div id="lowHealthOverlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:6;display:none;background:radial-gradient(ellipse at center,transparent 50%,rgba(255,0,0,0.4) 100%)"></div>
 <div id="hitFlash" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:7;opacity:0;background:rgba(255,0,0,0.3)"></div>
 <div id="winScreen" style="position:absolute;top:0;left:0;width:100%;height:100%;display:none;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,0.75);z-index:90">
@@ -134,7 +134,7 @@ let serverZone={x:0,y:0,w:MW,h:MH},mapFeatures={walls:[],mud:[],ponds:[],portals
 const scene=new THREE.Scene();
 // Background handled by skybox sphere
 scene.fog=new THREE.Fog(0x87CEEB,800,4000);
-const cam=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,1,6000);
+const cam=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,1,6100);
 cam.position.set(MW/2,CH,MH/2);
 const ren=new THREE.WebGLRenderer({antialias:true});
 ren.setSize(innerWidth,innerHeight);ren.setPixelRatio(Math.min(devicePixelRatio,2));
@@ -331,7 +331,7 @@ document.addEventListener('mousedown',e=>{
     const me=serverPlayers.find(p=>p.id===myId);
     if(me&&me.alive&&me.weapon==='bolty'){
       adsActive=true;
-      cam.fov=19;cam.updateProjectionMatrix();
+      cam.fov=12.5;cam.updateProjectionMatrix();
       document.getElementById('scopeOverlay').style.display='block';
       document.getElementById('crosshair').style.display='none';
       if(vmGroup)vmGroup.visible=false;
@@ -702,7 +702,7 @@ const PERKS=[
 ];
 function showPerkMenu(){
   perkMenuOpen=true;
-  const choices=[];const pool=[...PERKS];
+  const choices=[];const pool=[...PERKS].filter(p=>p.id!=='cowstrike'||Math.random()<0.15);
   for(let i=0;i<3&&pool.length;i++){const idx=Math.floor(Math.random()*pool.length);choices.push(pool.splice(idx,1)[0]);}
   const el=document.getElementById('perkMenu');
   el.innerHTML='<div style="color:#ffee55;font-size:13px;font-weight:bold;margin-right:8px;align-self:center">LEVEL UP!</div>'+choices.map((p,i)=>'<div class="perkCard"><div style="color:#888;font-size:11px">['+(i+1)+']</div><div style="color:#ff88aa;font-size:15px;font-weight:bold;margin:3px 0">'+p.name+'</div><div style="color:#aaa;font-size:11px">'+p.desc+'</div></div>').join('');

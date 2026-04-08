@@ -194,6 +194,15 @@ function updateBots(dt) {
     else if (nearestWeapon && nearWeaponDist < 300 && !hasGun) {
       targetX = nearestWeapon.x; targetY = nearestWeapon.y;
     }
+    // COWSTRIKE: run to nearest shelter
+    else if (cowstrikeActive && SHELTERS.length > 0) {
+      let nearShelter = null, nearShDist = Infinity;
+      for (const sh of SHELTERS) {
+        const d = Math.hypot(p.x - sh.x, p.y - sh.y);
+        if (d < nearShDist) { nearShDist = d; nearShelter = sh; }
+      }
+      if (nearShelter) { targetX = nearShelter.x; targetY = nearShelter.y; }
+    }
     // Hungry? eat
     else if (p.hunger < 50 && nearestFood) {
       targetX = nearestFood.x; targetY = nearestFood.y;
@@ -344,6 +353,7 @@ function assignColor() {
 }
 
 let readyCountdown = false;
+let cowstrikeActive = false;
 let botsEnabled = true;
 
 function checkAllReady() {
@@ -939,7 +949,8 @@ wss.on('connection', (ws) => {
       else if (id === 'bolty') { /* weapon handled client-side */ }
       else if (id === 'cowstrike') {
         // 3 second warning then nuke everyone else
-        broadcast({ type: 'cowstrikeWarning', playerId: player.id, name: player.name });
+        cowstrikeActive = true; broadcast({ type: 'cowstrikeWarning', playerId: player.id, name: player.name });
+        setTimeout(() => { cowstrikeActive = false; }, 9000);
         // 3 waves of damage over 5 seconds
         [5000, 6500, 8000].forEach((delay, wave) => {
           setTimeout(() => {
