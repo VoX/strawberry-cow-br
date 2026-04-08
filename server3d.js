@@ -770,7 +770,7 @@ function gameTick() {
       }
       checkX += stepX; checkY += stepY;
     }
-    if (hitWall) {
+    if (hitWall && !pr.piercing) {
       broadcast({ type: 'projectileHit', projectileId: pr.id, targetId: null, ownerId: pr.ownerId, wall: true, x: checkX, y: checkY });
       projectiles.splice(i, 1); continue;
     }
