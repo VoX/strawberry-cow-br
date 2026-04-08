@@ -38,6 +38,8 @@ let MUD_PATCHES = [];
 let HEAL_PONDS = [];
 let PORTALS = [];
 let SHELTERS = []; // {x,y,r} — protect from cowstrike
+  // Center tower wall
+  WALLS.push({x: MAP_W/2 - 60, y: MAP_H/2 - 60, w: 120, h: 120});
 
 function generateMap() {
   WALLS = [];
@@ -45,6 +47,8 @@ function generateMap() {
   HEAL_PONDS = [];
   PORTALS = [];
   SHELTERS = [];
+  // Center tower wall
+  WALLS.push({x: MAP_W/2 - 60, y: MAP_H/2 - 60, w: 120, h: 120});
 
   // Random L-shaped walls in corners (with variation)
   const corners = [
