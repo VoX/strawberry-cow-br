@@ -101,7 +101,7 @@ function generateMap() {
   }
 
   // Portals (1-2 pairs)
-  const portalCount = 1 + Math.floor(Math.random() * 2);
+  const portalCount = 0;
   for (let i = 0; i < portalCount; i++) {
     PORTALS.push({
       id: i,
@@ -830,7 +830,6 @@ function gameTick() {
     const roll = Math.random();
     let f;
     if (roll < 0.05) { f = spawnGoldenFood(); }
-    else { f = spawnFood(false); } // poison removed
     else { f = spawnFood(false); }
     broadcast({ type: 'food', food: serializeFood(f) });
   }
