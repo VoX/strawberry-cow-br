@@ -678,7 +678,7 @@ function gameTick() {
       if (Math.hypot(p.x - w.x, p.y - w.y) < 45) {
         // Can't pick up a different weapon if you already have one (must drop first with Q)
         // Exception: same weapon (upgrade) and cowtank (always pickable)
-        if ((p.pickupCooldown || 0) > 0 || (p.weapon !== 'normal' && p.weapon !== w.weapon && w.weapon !== 'cowtank') continue;
+        if ((p.pickupCooldown || 0) > 0 || (p.weapon !== 'normal' && p.weapon !== w.weapon && w.weapon !== 'cowtank')) continue;
         if (w.weapon === 'cowtank') {
           p.weapon = 'cowtank';
           p.weaponLevel = 0;
