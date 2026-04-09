@@ -182,21 +182,20 @@ AWS security group for the cowgame box currently allows:
 - SSH
 
 Additions required:
-- **UDP 10000–10100** (narrow the port pool via `portRange: {min: 10000, max: 10100}` to keep the exposed surface small — 100 concurrent connections is plenty and the multiplex option shares one UDP port across all peers anyway, so even 1 port would technically work).
+- **UDP 10000–10100** (narrow pool via `portRange: {min: 10000, max: 10100}`). Decision rationale: 100 ports is effectively unlimited for our scale, `multiplex: true` means all peers share a single UDP socket anyway so the "pool" is really just for fallback / edge cases, and a tight security-group range is better posture than exposing 10k UDP ports. If we ever hit >100 concurrent connections (unlikely — peak has been <20) we can widen it trivially.
 - **TCP 9208** internal-only — only needs to be reachable from localhost because Caddy proxies to it. Default iptables rules should already drop inbound on non-exposed ports.
 
 ### STUN/TURN servers
 
-**STUN** (NAT candidate discovery): free public servers are fine for a hobby game. geckos.io's default includes Google's public STUN. We can keep the default. STUN has zero hosting cost.
+**STUN** (NAT candidate discovery): free public servers are fine for a hobby game. geckos.io's default includes Google's public STUN. We keep the default. Zero hosting cost.
 
-**TURN** (relay when direct connection fails): this is where it gets tricky. A small fraction of clients (symmetric NATs, strict enterprise firewalls) can't establish a direct UDP path and need a TURN relay. Without a TURN server, those clients can't connect.
+**TURN** (relay when direct connection fails): **NOT included in this migration per VoX's decision.** A small fraction of clients (symmetric NATs, strict enterprise firewalls, some IPv6-only mobile carriers) won't be able to establish a direct UDP path and will fail to connect. Those players fall back to WebSocket transport via the env toggle — see Fallback section below. If we later see a non-trivial connection-failure rate, add self-hosted coturn on a small VM (~$5/mo, ~50 MB RAM idle, handles dozens of concurrent sessions) as a follow-up. TURN ports would be TCP 3478 + 5349 and UDP 3478 + a relay range.
 
-Options:
-1. **Skip TURN entirely** — accept that ~5–10 % of clients can't connect. For a hobby game with <20 concurrent players on your claw.bitvox.me domain, this is probably fine. WebSocket-over-TCP path worked for these clients but Phase 7 prediction still falls back on lost packets… actually no, TCP would just stall for them. They're already in a bad spot.
-2. **Self-host coturn** on the cowgame box (or a separate small VM). coturn is free, ~50 MB RAM idle, handles the relay for dozens of simultaneous sessions on a $5/mo VPS. TURN uses TCP 3478 + 5349 and UDP 3478 + a relay port range.
-3. **Paid TURN** (Twilio, Xirsys, etc.) at ~$0.40/GB. For this game's traffic volume that's pennies per month but adds an account to manage.
+### Fallback to WebSocket for unreachable clients
 
-**Recommendation**: **start with option 1** (skip TURN). If we get reports of players who can't connect, add coturn as option 2. Document the fallback path in the migration commit message so future-you knows where to turn.
+Because VoX wants WebSocket support retained alongside geckos, clients that fail to establish a WebRTC data channel can fall back to the legacy WS path **without losing the ability to play**. The client transport module detects WebRTC connect failure (timeout on `geckos().onConnect()` or explicit error callback) and re-initializes with the WS transport instead. The server keeps both endpoints listening. One-line URL param override (`?transport=ws`) lets us manually force WS for debugging.
+
+This is the "best of both worlds" posture: geckos is the default for the ~90% of clients that can establish UDP, WebSocket remains available for the rest and for debugging.
 
 ### Certificates
 
@@ -219,22 +218,32 @@ Add `@geckos.io/server` and `@geckos.io/client` to package.json. Create `server/
 
 Local smoke test: `GAME_TRANSPORT=geckos npm run start` + browser at `localhost` with the matching client env. Verify connect, tick broadcast, move input, attack, death, round reset all work. No TURN needed for localhost.
 
-### Phase W.2 — Production deploy with fallback (1 day + bake time)
-Open the UDP port range (narrow to 10000–10100 via `portRange`). Add the Caddy signaling route. Deploy the parallel build with an env toggle. **Keep WebSocket as the default transport** for the rollout — only players with `?rtc=1` in the URL use geckos. Monitor connection success rate for a few days.
+### Phase W.2 — Production deploy, geckos as default (1 day + observe)
+Open the UDP port range 10000-10100 in the AWS security group. Add the Caddy signaling route (`handle /strawberrycow-fps-rtc/* { reverse_proxy localhost:9208 }`). Deploy the parallel build with **`GAME_TRANSPORT=geckos` as the default**. WebSocket stays fully functional via:
+  - env override (`GAME_TRANSPORT=ws` for the whole server, for rollback),
+  - URL param (`?transport=ws` per-client for debugging),
+  - automatic client-side fallback when geckos fails to connect within a timeout (~5 s) — the client detects the failure and re-initializes with the WS transport, player never sees the game fail to load.
+
+Both transport endpoints listen at the same time: geckos at `/strawberrycow-fps-rtc/*` + UDP range, WebSocket at `/strawberrycow-fps-ws/*`. Same handlers, same game state, just different connection paths.
 
 ### Phase W.3 — Reliability audit (half day)
-For each S2C and C2S message type, add a one-time boot log at the first emit: `[transport] sending <type> (reliable=<bool>)`. Compare against this plan's table. Any mismatch is a bug. Remove the logs after the audit.
+For each S2C and C2S message type, add a one-time boot log at the first emit on each transport: `[transport:geckos] sending <type> (reliable=<bool>)` / `[transport:ws] sending <type>`. Compare against this plan's table. Any mismatch is a bug. Remove the logs after the audit.
 
-### Phase W.4 — Cutover (1 day)
-Flip `GAME_TRANSPORT=geckos` as the default. Keep WebSocket available via env fallback for 1–2 weeks. Close the `/strawberrycow-fps-ws/` Caddy route after the bake period, **commit removing the WebSocket implementation** in a separate commit so reverting is a single git revert.
+### Phase W.4 — Observe and iterate (ongoing)
+geckos is the default path going forward. WebSocket stays in the codebase as a fallback for:
+- clients that can't establish a UDP path (corporate NATs, some mobile carriers)
+- debugging / bisecting transport-layer bugs
+- emergency rollback without redeploy (flip env var, restart service)
+
+No code deletion is scheduled — per VoX's decision, WebSocket support remains in place. If we eventually decide the fallback rate is zero and want to rip it out, that's a separate future commit.
 
 ### Phase W.5 — Binary encoding follow-up (deferred)
 Once stable, consider migrating the `tick` payload to a binary encoding via geckos's `channel.raw.emit()` — a bespoke fixed-schema serializer per `getPlayerTick()` field would cut the hot-path payload size by ~40 % and parse time dramatically. Not in the base migration — only after the transport swap has baked for at least a week.
 
 ## Risks
 
-1. **UDP blocked on enterprise networks**. Some corporate firewalls drop all UDP. Players behind them will fail to connect. Mitigation: log connection failures, add TURN if we see a non-trivial failure rate.
-2. **Mobile carriers**. Some mobile carriers (especially on IPv6-only networks) can be finicky. Same mitigation path.
+1. **UDP blocked on enterprise networks**. Some corporate firewalls drop all UDP. Players behind them fail to establish a geckos data channel → automatic client-side fallback to WebSocket kicks in. Those players get pre-migration gameplay feel (TCP head-of-line blocking during packet loss, but functional). If the fallback rate ends up high, add coturn as a followup.
+2. **Mobile carriers**. Some mobile carriers (especially IPv6-only) can be finicky with WebRTC. Same fallback path.
 3. **Geckos library maturity**. The library is actively maintained but not as battle-tested as Socket.IO. If we hit a bug, we may need to patch or fork. The transport abstraction in Phase W.0 lets us bail back to WebSocket instantly if needed.
 4. **Load balancer / CDN path**. If we ever put the game behind a CDN or load balancer, the WebRTC connection still needs a direct path to the game server — the CDN can't proxy it. Not a concern today (Caddy is single-host), flagged for future architecture changes.
 5. **Multiple game instances**. If we ever shard into multiple game servers, each needs its own port range and STUN advertisement. Single-server for now.
@@ -249,9 +258,9 @@ After migration: the `tick` channel is unreliable, so a dropped tick is just GON
 
 Net effect: transient packet loss on the player's connection becomes invisible to gameplay instead of a visible freeze.
 
-## Open questions for VoX
+## Decisions (locked after VoX review)
 
-1. **TURN or no TURN?** My recommendation is start without, add coturn if we see failures. Approve?
-2. **Deploy parallel (opt-in) or direct cutover?** I suggest Phase W.2 being `?rtc=1`-gated with a few days of bake. Is that acceptable latency for the rollout, or do you want to flip it immediately?
-3. **Port range width**: narrow to 10000–10100 (100 concurrent peers) or leave at the default 10000–20000 (10001 peers)? I don't think we'll ever see >100 concurrent players but the wider range is zero effort.
-4. **Deprecate WebSocket entirely, or keep as fallback forever?** Simpler code if we rip it; faster revert if we keep it. I lean toward a 2-week parallel run then rip.
+1. **No TURN.** ~5-10% of clients on strict corporate NATs / symmetric-NAT mobile carriers won't establish a direct UDP path and will fall through to the WebSocket fallback. Revisit with coturn if the observed failure rate is unacceptable.
+2. **Parallel support, geckos default.** Both transports listen simultaneously. `GAME_TRANSPORT=geckos` is the default; client auto-falls-back to WS on connect failure; URL param + env var allow manual forcing either way.
+3. **Port range 10000-10100.** Narrow is fine — `multiplex: true` shares a single UDP socket across all peers anyway, so the pool is effectively one port for normal operation. Security-group surface is as small as possible.
+4. **Keep WebSocket in the codebase.** Not scheduled for deletion. Fallback path, debug path, emergency rollback path. Future deletion is a separate decision if the fallback rate turns out to be zero.
