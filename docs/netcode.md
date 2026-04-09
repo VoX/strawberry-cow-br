@@ -263,6 +263,67 @@ Cowstrike, delayed visual effects, and anything else that uses `setTimeout` duri
 - **No delta compression.** Every tick ships the full mutable shape for every player. There's no "send only fields that changed since last tick" mechanism — the tick payload is already small enough that delta compression would cost more CPU than it saves bandwidth.
 - **No reliable/unreliable split.** Everything goes over the same WebSocket. `tick` is the only type that can drop under backpressure; everything else is TCP-reliable by construction.
 
+## Gaps vs Counter-Strike
+
+Counter-Strike (GoldSrc and Source) is the canonical reference for "how to do realtime FPS netcode correctly." Setting aside the obvious differences in transport and wire format (they use UDP with a custom reliability layer, delta-compressed binary snapshots, and a separate command/update channel), the real architectural gaps are these:
+
+### 1. No client-side prediction
+
+CS clients run the full movement and physics code locally. On every input, the client immediately simulates the result and shows you moving — zero-latency response to WASD. When the server's authoritative state arrives, the client reconciles: if the prediction matches (almost always), nothing happens; if it diverged, the client snaps to the server position and replays any inputs the server hasn't acknowledged yet to land where it should.
+
+We send `{dx, dy, walking}` to the server and wait for the next `tick` to learn where we ended up. Input-to-visible-motion latency = `RTT + (tick_interval / 2)`. At 80 ms ping and 30 Hz, that's ~96 ms minimum before you see your own character move. A CS client at the same ping feels instant because the local sim runs ahead.
+
+### 2. No entity interpolation
+
+CS renders remote entities ~100 ms in the past via an interpolation buffer (`cl_interp` in the old cvar parlance). The client maintains a short history of received snapshots; the renderer picks two snapshots that bracket `now - interp_delay` and smoothly lerps between them. This trades a fixed 100 ms of display latency on remote entities for perfectly smooth motion.
+
+We just render remote players at whatever the latest `tick` said. At 30 Hz, that's a ~33 ms hop per update — visually choppy. Adding a small interp buffer (even 50 ms) would make remote motion dramatically smoother without touching any other part of the stack.
+
+### 3. No lag compensation
+
+When a CS player fires, the server rewinds the world to the timestamp the shooter was actually seeing — `server_time - their_ping - their_interp_delay` — runs the hit check against historical entity positions, then rolls forward. The shooter hits what was on their screen when they pulled the trigger, even though the target has moved several units by the time the fire command arrives.
+
+We run hit detection in the tick when the `attack` message is received, against whatever `p.x, p.y, p.z` is right now. High-ping players in cow game have to lead moving targets by their ping; CS players with 150 ms ping still hit stationary targets with perfect accuracy. Fixing this requires both a historical position ring on the server AND a way for the client to send its `cl_interp` preference so the rewind depth is right.
+
+### 4. No input command buffering or reconciliation
+
+CS clients number every input command and send a sliding window of the last N (redundantly, in case of packet loss). The server applies them in order and sends the last-applied command number back with each state update. The client keeps its own ring of predicted states keyed by command number, discards anything the server confirmed, and replays the remainder on top of the new baseline.
+
+We send inputs naked — no sequence numbers, no ack, no replay. One dropped `move` message just means your movement vector doesn't update until the next one arrives. We can get away with this because we're on TCP and messages are never "dropped" in transit, only delayed — but it also means we have no reconciliation story at all, which is the load-bearing piece for client-side prediction to work.
+
+### 5. No historical entity state on the server
+
+Lag compensation requires the server to keep a ring buffer of `(tick → {positions of every entity})` for the last several hundred ms. We keep exactly zero history — the world is always at "now." The ballistics module runs against `gameState.getPlayers()` / `getWalls()` / `getBarricades()` at their current positions. Adding lag comp would mean a per-entity position ring, plus threading "at what historical tick" through every hit-detection path.
+
+### 6. TCP head-of-line blocking
+
+CS rides UDP with its own reliability layer on top. Critical events (fire, hit, death, chat) are marked reliable and retransmitted; per-tick state snapshots are unreliable and superseded by the next one. Packet loss on a state snapshot is invisible.
+
+We ride TCP via WebSocket. One lost packet stalls every subsequent message on that connection until it's retransmitted — head-of-line blocking. On a flaky wifi connection, a single dropped packet freezes the entire game stream for the kernel's retransmit window (typically 100-300 ms on first retry, exponential backoff after). The `DROPPABLE_TYPES` backpressure guard mitigates the memory side of this (we stop queueing `tick` messages to slow clients) but doesn't fix the underlying stall — the socket is still wedged until the lost packet recovers. Moving off TCP would mean running our own reliability layer on top of WebRTC data channels or raw UDP.
+
+### 7. Tick rate and update rate are coupled
+
+CS exposes three independent knobs: `sv_tickrate` (how often the server simulation runs), `cl_cmdrate` (how often the client sends inputs), and `cl_updaterate` (how often the server sends state updates to that specific client). A player with a slow connection can receive 20 updates per second while the server still runs the sim at 64 or 128 Hz; a competitive player on a fast connection can get 128 updates per second for smoother motion.
+
+We run everything at 30 Hz with no knobs. A player on a gigabit connection gets the same 30 updates per second as a player on phone data. A subtle consequence: `cl_updaterate` decoupling is what makes it economical to run a high-tickrate server — most clients don't need 128 updates per second, only the hit-registration sim does.
+
+### 8. No split between "simulation tick" and "snapshot tick"
+
+Related to #7: CS runs its game simulation every server tick (e.g. 64 Hz) but only sends state snapshots at `cl_updaterate` intervals (e.g. 20-64 Hz). Simulation accuracy (hit detection, physics) is decoupled from bandwidth cost. We just broadcast every tick, so bumping the sim to 60 Hz would double the broadcast cost too.
+
+### What we'd need to get there (rough migration)
+
+If you wanted to take this codebase toward CS-style netcode, the steps in dependency order:
+
+1. **Input command sequence numbers.** Every client input gets a monotonically increasing number. Server echoes "last applied command number" in every `tick`. No behavioral change yet — just infrastructure.
+2. **Entity interpolation buffer on the client.** Keep the last ~4 `tick` snapshots, render remote entities from `now - 100 ms` by lerping between bracketing ticks. Smoother remote motion immediately; no server change.
+3. **Client-side prediction for local movement.** Factor the server's movement integrator into a pure function both sides can call. Client runs it on input, stores `(commandNumber, resultingState)` in a ring. On every `tick`, find the ack'd command, snap if divergent, replay the unacked commands. This is the big one — the server's movement code and the client's have to stay bit-identical or rubber-banding goes crazy.
+4. **Historical entity state on the server.** Ring buffer of positions per tick, indexed by tick number. No rewind yet — just the storage.
+5. **Lag compensation.** On every fire event, look up (commandNumber from input) → (tick it was sent) → rewind the entity positions used by ballistics to that tick. Only the hit check is rewound, not the simulation.
+6. **UDP transport.** Last because it touches everything. Either WebRTC data channels (browser-native unreliable delivery) or a node-UDP-in-userspace shim. Reliability layer on top for commands + critical events.
+
+Each step except #6 is independently shippable and provides value on its own. The natural first step is #2 (interp buffer) because it's pure client, no server change, and the smoothness win is immediate.
+
 ## Files
 
 | File | Purpose |
