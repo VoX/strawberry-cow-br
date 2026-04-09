@@ -4,13 +4,13 @@ import { cam, ren } from './renderer.js';
 import { initAudio } from './audio.js';
 import { send } from './network.js';
 
+const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 let vmGroupRef = null;
 export function setVmGroupRef(getter) { vmGroupRef = getter; }
 
 export function doAttack() {
   const dir = new THREE.Vector3(0, 0, -1); dir.applyQuaternion(cam.quaternion);
-  const flatDir = new THREE.Vector2(dir.x, dir.z).normalize();
-  send({ type: 'attack', aimX: flatDir.x, aimY: flatDir.y });
+  send({ type: 'attack', aimX: dir.x, aimY: dir.z, aimZ: dir.y, fireMode: S.fireMode });
 }
 
 export function doDash() {
@@ -19,17 +19,67 @@ export function doDash() {
 }
 
 // Pointer lock
+// Fire mode toggle for LR-300
+S.fireMode = 'burst';
+let mouseDown = false, autoFireActive = false, nextFireTime = 0;
+const AUTO_FIRE_INTERVAL = 72; // ms between shots — slightly over server cooldown (67ms) to avoid rejected shots
+
+function autoFireLoop() {
+  if (!autoFireActive) return;
+  if (!mouseDown || S.state !== 'playing' || !S.locked) { stopAutoFire(); return; }
+  const me = S.serverPlayers.find(p => p.id === S.myId);
+  if (!me || !me.alive || me.weapon !== 'burst') { stopAutoFire(); return; }
+  const now = performance.now();
+  if (now >= nextFireTime) {
+    doAttack();
+    nextFireTime = now + AUTO_FIRE_INTERVAL;
+  }
+  requestAnimationFrame(autoFireLoop);
+}
+
+function startAutoFire() {
+  if (autoFireActive) return;
+  autoFireActive = true;
+  // Don't reset nextFireTime — preserve the previous interval to prevent spam-click bursts
+  if (nextFireTime < performance.now()) nextFireTime = performance.now();
+  autoFireLoop();
+}
+function stopAutoFire() {
+  autoFireActive = false;
+}
+
 ren.domElement.style.cursor = 'pointer';
-ren.domElement.addEventListener('click', () => {
+function cycleSpectate(dir) {
+  const aliveOthers = S.serverPlayers.filter(p => p.alive && p.id !== S.myId);
+  if (aliveOthers.length === 0) { S.spectateTargetId = null; return; }
+  const curIdx = aliveOthers.findIndex(p => p.id === S.spectateTargetId);
+  const nextIdx = curIdx < 0 ? 0 : (curIdx + dir + aliveOthers.length) % aliveOthers.length;
+  S.spectateTargetId = aliveOthers[nextIdx].id;
+}
+ren.domElement.addEventListener('mousedown', e => {
+  if (e.button !== 0) return;
   initAudio();
   if (S.state !== 'playing') return;
+  const me = S.serverPlayers.find(p => p.id === S.myId);
+  // While spectating, click cycles to the next target instead of firing
+  if (!me || !me.alive) {
+    if (!S.locked) { ren.domElement.requestPointerLock(); return; }
+    cycleSpectate(1);
+    return;
+  }
   if (!S.locked) { ren.domElement.requestPointerLock(); return; }
-  doAttack();
+  mouseDown = true;
+  if (me.weapon === 'burst' && S.fireMode === 'auto') {
+    startAutoFire();
+  } else {
+    doAttack();
+  }
 });
+ren.domElement.addEventListener('mouseup', e => { if (e.button === 0) { mouseDown = false; stopAutoFire(); } });
 document.addEventListener('pointerlockchange', () => {
   S.locked = !!document.pointerLockElement;
   if (S.locked) document.getElementById('lockMsg').style.display = 'none';
-  else if (S.state === 'playing') setTimeout(() => { if (!S.locked && S.state === 'playing') document.getElementById('lockMsg').style.display = 'block'; }, 2000);
+  else if (S.state === 'playing' && !isMobile) setTimeout(() => { if (!S.locked && S.state === 'playing') document.getElementById('lockMsg').style.display = 'block'; }, 2000);
 });
 document.addEventListener('mousemove', e => {
   if (!S.locked) return;
@@ -64,7 +114,6 @@ document.addEventListener('mouseup', e => {
 document.addEventListener('contextmenu', e => e.preventDefault());
 
 // Mobile touch controls
-const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 if (isMobile) {
   document.getElementById('touchDpad').style.display = 'block';
   document.getElementById('touchShoot').style.display = 'block';
@@ -86,20 +135,92 @@ if (isMobile) {
     const len = Math.hypot(mx, mz);
     if (len > 0) { send({ type: 'move', dx: mx / len, dy: mz / len }); S.pingLast = performance.now(); }
   } else if (S.state === 'playing') { send({ type: 'move', dx: 0, dy: 0 }); } }, 50);
-  let lastTouchX = 0, lastTouchY = 0;
-  document.addEventListener('touchstart', e => { if (e.target === dp || e.target.id === 'touchShoot' || e.target.id === 'touchDash') return; const t = e.touches[e.touches.length - 1]; lastTouchX = t.clientX; lastTouchY = t.clientY; }, { passive: true });
-  document.addEventListener('touchmove', e => { if (e.target === dp) return; const t = e.touches[e.touches.length - 1]; const dx = t.clientX - lastTouchX, dy = t.clientY - lastTouchY; S.yaw -= dx * 0.004; S.pitch -= dy * 0.004; S.pitch = Math.max(-1.2, Math.min(1.2, S.pitch)); lastTouchX = t.clientX; lastTouchY = t.clientY; }, { passive: true });
+  const isTouchControl = (el) => el === dp || el.id === 'touchShoot' || el.id === 'touchDash';
+  // Track camera look touches by identifier for proper multitouch
+  const lookTouches = {};
+  document.addEventListener('touchstart', e => {
+    for (const t of e.changedTouches) {
+      if (isTouchControl(t.target)) continue;
+      lookTouches[t.identifier] = { x: t.clientX, y: t.clientY };
+    }
+  }, { passive: true });
+  document.addEventListener('touchmove', e => {
+    for (const t of e.changedTouches) {
+      const prev = lookTouches[t.identifier];
+      if (!prev) continue;
+      const dx = t.clientX - prev.x, dy = t.clientY - prev.y;
+      S.yaw -= dx * 0.004; S.pitch -= dy * 0.004;
+      S.pitch = Math.max(-1.2, Math.min(1.2, S.pitch));
+      prev.x = t.clientX; prev.y = t.clientY;
+    }
+  }, { passive: true });
+  document.addEventListener('touchend', e => { for (const t of e.changedTouches) delete lookTouches[t.identifier]; }, { passive: true });
+  document.addEventListener('touchcancel', e => { for (const t of e.changedTouches) delete lookTouches[t.identifier]; }, { passive: true });
   document.getElementById('touchShoot').addEventListener('touchstart', e => { e.preventDefault(); doAttack(); }, { passive: false });
   document.getElementById('touchDash').addEventListener('touchstart', e => { e.preventDefault(); doDash(); }, { passive: false });
+}
+
+// Chat input
+const chatInput = document.getElementById('chatInput');
+const chatInputWrap = document.getElementById('chatInputWrap');
+function openChat() {
+  if (!chatInputWrap) return;
+  S.chatOpen = true;
+  chatInputWrap.style.display = 'block';
+  chatInput.value = '';
+  chatInput.focus();
+  if (document.pointerLockElement) document.exitPointerLock();
+}
+function closeChat(doSend) {
+  if (!chatInputWrap) return;
+  const txt = (chatInput.value || '').trim();
+  if (doSend && txt) send({ type: 'chat', text: txt });
+  S.chatOpen = false;
+  chatInputWrap.style.display = 'none';
+  chatInput.blur();
+}
+if (chatInput) {
+  chatInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); closeChat(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); closeChat(false); }
+    e.stopPropagation();
+  });
 }
 
 // Keyboard
 addEventListener('keydown', e => {
   if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
   S.keys[e.code] = true;
+  if (e.code === 'KeyT' && S.state === 'playing' && !S.chatOpen) {
+    e.preventDefault(); openChat(); return;
+  }
+  // Spectate cycle while dead
+  const meK = S.serverPlayers.find(p => p.id === S.myId);
+  if (S.state === 'playing' && (!meK || !meK.alive)) {
+    if (e.code === 'ArrowRight' || e.code === 'KeyD') { cycleSpectate(1); return; }
+    if (e.code === 'ArrowLeft' || e.code === 'KeyA') { cycleSpectate(-1); return; }
+  }
   if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && S.state === 'playing') doDash();
-  if (e.code === 'Space') { e.preventDefault(); if (S.jumpH < 1) S.jumpVel = 120; }
+  if (e.code === 'Space') { e.preventDefault(); send({ type: 'jump' }); }
   if (e.code === 'KeyQ' && S.state === 'playing') send({ type: 'dropWeapon' });
+  if (e.code === 'KeyP') { S.debugMode = !S.debugMode; }
+  if (e.code === 'KeyR' && S.state === 'playing') send({ type: 'reload' });
+  if (e.code === 'KeyX' && S.state === 'playing') {
+    S.fireMode = S.fireMode === 'burst' ? 'auto' : 'burst';
+    S.killfeed.unshift({ txt: 'M16A2: ' + S.fireMode.toUpperCase() + ' mode', t: 2 });
+  }
+  if (e.code === 'KeyC' && S.state === 'playing') {
+    const meC = S.serverPlayers.find(p => p.id === S.myId);
+    if (meC && meC.alive) S.crouching = !S.crouching;
+  }
+  if (e.code === 'KeyB' && S.state === 'playing') {
+    const me = S.serverPlayers.find(p => p.id === S.myId);
+    if (me && me.alive && performance.now() >= S.barricadeReadyAt) {
+      const dir = new THREE.Vector3(0, 0, -1); dir.applyQuaternion(cam.quaternion); dir.y = 0;
+      if (dir.length() > 0.01) dir.normalize();
+      send({ type: 'placeBarricade', aimX: dir.x, aimY: dir.z });
+    }
+  }
   if (S.perkMenuOpen && window._perkChoices) {
     if (e.code === 'Digit1' && window._perkChoices[0]) window.pickPerk(window._perkChoices[0].id);
     if (e.code === 'Digit2' && window._perkChoices[1]) window.pickPerk(window._perkChoices[1].id);

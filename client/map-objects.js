@@ -8,9 +8,10 @@ import { getTerrainHeight } from './terrain.js';
 let _mapMeshes = [];
 export function buildMap() {
   if (S.mapBuilt) return; S.mapBuilt = true;
-  _mapMeshes.forEach(m => scene.remove(m)); _mapMeshes = [];
+  _mapMeshes.forEach(m => { scene.remove(m); m.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); }); }); _mapMeshes = [];
   function addMap(m) { scene.add(m); _mapMeshes.push(m); return m; }
-  const wm = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
+  const wm = new THREE.MeshLambertMaterial({ color: 0xaa3333 });
+  const trimMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
   const wallH = 70;
   (S.mapFeatures.walls || []).forEach(w => {
     const ww = Math.max(w.w, 20), wh = Math.max(w.h, 20);
@@ -27,6 +28,37 @@ export function buildMap() {
       const m = new THREE.Mesh(new THREE.BoxGeometry(sw + 1, wallH, sh + 1), wm);
       m.position.set(sx, wallH / 2 + th, sz); m.castShadow = true;
       addMap(m);
+      // White barn trim — horizontal stripe at 60% height
+      const trim1 = new THREE.Mesh(new THREE.BoxGeometry(sw + 1.5, 3, sh + 1.5), trimMat);
+      trim1.position.set(sx, wallH * 0.6 + th, sz); addMap(trim1);
+      // Brown top cap
+      const capMat = new THREE.MeshLambertMaterial({ color: 0x6a4422 });
+      const cap = new THREE.Mesh(new THREE.BoxGeometry(sw + 2, 5, sh + 2), capMat);
+      cap.position.set(sx, wallH + 2.5 + th, sz); addMap(cap);
+      // Red X crossbeams on wall face
+      const xMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+      const faceW = isHoriz ? sw : sh;
+      const diagLen = Math.hypot(faceW, wallH * 0.55);
+      const diagAngle = Math.atan2(wallH * 0.55, faceW);
+      const faceOffset = isHoriz ? sh / 2 + 1.5 : sw / 2 + 1.5;
+      // Front face X
+      const x1 = new THREE.Mesh(new THREE.BoxGeometry(diagLen, 2.5, 1), xMat);
+      x1.position.set(sx, wallH * 0.3 + th, isHoriz ? sz + faceOffset : sz);
+      if (isHoriz) { x1.rotation.z = diagAngle; } else { x1.position.x = sx + faceOffset; x1.position.z = sz; x1.rotation.set(0, Math.PI/2, diagAngle); }
+      addMap(x1);
+      const x2 = new THREE.Mesh(new THREE.BoxGeometry(diagLen, 2.5, 1), xMat);
+      x2.position.set(sx, wallH * 0.3 + th, isHoriz ? sz + faceOffset : sz);
+      if (isHoriz) { x2.rotation.z = -diagAngle; } else { x2.position.x = sx + faceOffset; x2.position.z = sz; x2.rotation.set(0, Math.PI/2, -diagAngle); }
+      addMap(x2);
+      // Back face X
+      const x3 = new THREE.Mesh(new THREE.BoxGeometry(diagLen, 2.5, 1), xMat);
+      x3.position.set(sx, wallH * 0.3 + th, isHoriz ? sz - faceOffset : sz);
+      if (isHoriz) { x3.rotation.z = diagAngle; } else { x3.position.x = sx - faceOffset; x3.position.z = sz; x3.rotation.set(0, Math.PI/2, diagAngle); }
+      addMap(x3);
+      const x4 = new THREE.Mesh(new THREE.BoxGeometry(diagLen, 2.5, 1), xMat);
+      x4.position.set(sx, wallH * 0.3 + th, isHoriz ? sz - faceOffset : sz);
+      if (isHoriz) { x4.rotation.z = -diagAngle; } else { x4.position.x = sx - faceOffset; x4.position.z = sz; x4.rotation.set(0, Math.PI/2, -diagAngle); }
+      addMap(x4);
     }
   });
   const pm = new THREE.MeshBasicMaterial({ color: 0xcc88ff, transparent: true, opacity: 0.6 });
@@ -86,115 +118,88 @@ export function buildMap() {
   });
 }
 
-// Center tower
+// Build a small wooden barricade mesh — planks with visible wood grain
+const _barricadeMeshes = {};
+export function addBarricade(b) {
+  if (_barricadeMeshes[b.id]) return;
+  S.barricades.push({ id: b.id, cx: b.cx, cy: b.cy, w: b.w, h: b.h, angle: b.angle });
+  const g = new THREE.Group();
+  const th = getTerrainHeight(b.cx, b.cy);
+  const plankMat = new THREE.MeshLambertMaterial({ color: 0x8b5a2b });
+  const darkPlank = new THREE.MeshLambertMaterial({ color: 0x6a4020 });
+  const H = 55;
+  // Build in local coords (centered at origin, long axis along X) then rotate/position the group
+  const body = new THREE.Mesh(new THREE.BoxGeometry(b.w, H, b.h), plankMat);
+  body.position.set(0, H/2, 0); body.castShadow = true;
+  g.add(body);
+  for (let i = 1; i < 4; i++) {
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(b.w + 0.2, 1.5, b.h + 0.2), darkPlank);
+    stripe.position.set(0, (H / 4) * i, 0);
+    g.add(stripe);
+  }
+  // Cross-beam along the long face (diagonal brace)
+  const beamLen = Math.hypot(b.w, H) * 0.95;
+  const beam1 = new THREE.Mesh(new THREE.BoxGeometry(beamLen, 3, 0.6), darkPlank);
+  beam1.position.set(0, H/2, b.h/2 + 0.5);
+  beam1.rotation.z = Math.atan2(H, b.w);
+  g.add(beam1);
+  const beam2 = new THREE.Mesh(new THREE.BoxGeometry(beamLen, 3, 0.6), darkPlank);
+  beam2.position.set(0, H/2, b.h/2 + 0.5);
+  beam2.rotation.z = -Math.atan2(H, b.w);
+  g.add(beam2);
+  // Position and rotate the whole group.
+  // Server angle is the aim direction (radians in XY world). In three.js the wall's long axis (X local)
+  // should be perpendicular to aim. Rotate around Y by (-angle - PI/2) because three.js uses left-handed Y-up
+  // and our server coord is (x, y) but three.js uses (x, z) for the ground plane.
+  g.position.set(b.cx, th, b.cy);
+  g.rotation.y = -b.angle - Math.PI / 2;
+  scene.add(g);
+  _barricadeMeshes[b.id] = g;
+}
+export function removeBarricade(id) {
+  const m = _barricadeMeshes[id];
+  if (!m) return;
+  scene.remove(m);
+  m.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); });
+  delete _barricadeMeshes[id];
+  S.barricades = S.barricades.filter(b => b.id !== id);
+}
+export function clearBarricades() {
+  for (const id in _barricadeMeshes) {
+    const m = _barricadeMeshes[id];
+    scene.remove(m);
+    m.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); });
+    delete _barricadeMeshes[id];
+  }
+  S.barricades = [];
+}
+
 const towerX = MW / 2, towerZ = MH / 2;
-const towerH = 200, towerSize = 60;
 let towerMesh = null;
 
 export function buildTowerIfNeeded() {
   if (towerMesh) return;
-  towerMesh = buildTower();
-}
-
-function buildTower() {
   const g = new THREE.Group();
   const th = getTerrainHeight(towerX, towerZ);
-  const stoneMat = new THREE.MeshLambertMaterial({ color: 0x999999 });
-  const stoneD = new THREE.MeshLambertMaterial({ color: 0x777777 });
-  const woodMat = new THREE.MeshLambertMaterial({ color: 0x8B5A2B });
-  const roofMat = new THREE.MeshLambertMaterial({ color: 0x884422 });
-  const metalMat = new THREE.MeshLambertMaterial({ color: 0x666666 });
-  const baseW = towerSize * 2, baseH = towerH;
-  const base = new THREE.Mesh(new THREE.BoxGeometry(baseW, baseH, baseW), stoneMat);
-  base.position.y = baseH / 2; base.castShadow = true; g.add(base);
-  for (let y = 0; y < baseH; y += 40) {
-    const band = new THREE.Mesh(new THREE.BoxGeometry(baseW + 2, 3, baseW + 2), stoneD);
-    band.position.y = y; g.add(band);
-  }
-  for (let i = 0; i < 16; i++) {
-    const a = (i / 16) * 4; const side = Math.floor(a); const frac = a - side;
-    let cx = 0, cz = 0; const hw = towerSize;
-    if (side === 0) { cx = -hw + frac * baseW; cz = -hw; }
-    else if (side === 1) { cx = hw; cz = -hw + frac * baseW; }
-    else if (side === 2) { cx = hw - frac * baseW; cz = hw; }
-    else { cx = -hw; cz = hw - frac * baseW; }
-    const cren = new THREE.Mesh(new THREE.BoxGeometry(8, 10, 8), stoneMat);
-    cren.position.set(cx, baseH + 5, cz); g.add(cren);
-  }
-  const platSize = baseW + 40;
-  const plat = new THREE.Mesh(new THREE.BoxGeometry(platSize, 4, platSize), woodMat);
-  plat.position.y = baseH + 12; g.add(plat);
-  const pillarH = 50; const pillarOff = platSize / 2 - 8;
-  [[-1, -1], [-1, 1], [1, -1], [1, 1]].forEach(([dx, dz]) => {
-    const pillar = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, pillarH, 6), stoneMat);
-    pillar.position.set(dx * pillarOff, baseH + 12 + pillarH / 2, dz * pillarOff); g.add(pillar);
-  });
-  const roofH = 40;
-  const roofGeo = new THREE.ConeGeometry(platSize * 0.7, roofH, 4);
-  const roof = new THREE.Mesh(roofGeo, roofMat);
-  roof.position.y = baseH + 12 + pillarH + roofH / 2;
-  roof.rotation.y = Math.PI / 4; g.add(roof);
-  [baseH + 16, baseH + 22].forEach(rh => {
-    let r;
-    r = new THREE.Mesh(new THREE.BoxGeometry(platSize, 2, 3), metalMat); r.position.set(0, rh, -platSize / 2); g.add(r);
-    r = new THREE.Mesh(new THREE.BoxGeometry(platSize, 2, 3), metalMat); r.position.set(0, rh, platSize / 2); g.add(r);
-    r = new THREE.Mesh(new THREE.BoxGeometry(3, 2, platSize), metalMat); r.position.set(-platSize / 2, rh, 0); g.add(r);
-    r = new THREE.Mesh(new THREE.BoxGeometry(3, 2, platSize), metalMat); r.position.set(platSize / 2, rh, 0); g.add(r);
-  });
-  for (let i = 0; i < 16; i++) {
-    const a = (i / 16) * 4; const side = Math.floor(a) % 4; const frac = a - Math.floor(a);
-    let px = 0, pz = 0; const hw = platSize / 2;
-    if (side === 0) { px = -hw + frac * platSize; pz = -hw; }
-    else if (side === 1) { px = hw; pz = -hw + frac * platSize; }
-    else if (side === 2) { px = hw - frac * platSize; pz = hw; }
-    else { px = -hw; pz = hw - frac * platSize; }
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 14, 4), metalMat);
-    post.position.set(px, baseH + 19, pz); g.add(post);
-  }
-  const rampW = 15, rampLevels = 8;
-  const rampMat2 = new THREE.MeshLambertMaterial({ color: 0x7a6a5a });
-  for (let i = 0; i < rampLevels; i++) {
-    const h = (i / rampLevels) * baseH; const side = i % 4;
-    const hw = towerSize + rampW / 2 + 2;
-    let rx = 0, rz = 0, rw, rd;
-    if (side === 0) { rx = 0; rz = -hw; rw = baseW; rd = rampW; }
-    else if (side === 1) { rx = hw; rz = 0; rw = rampW; rd = baseW; }
-    else if (side === 2) { rx = 0; rz = hw; rw = baseW; rd = rampW; }
-    else { rx = -hw; rz = 0; rw = rampW; rd = baseW; }
-    const ramp = new THREE.Mesh(new THREE.BoxGeometry(rw, 3, rd), rampMat2);
-    ramp.position.set(rx, h + 5, rz); g.add(ramp);
-    const railGeoH = new THREE.BoxGeometry(rw + 2, 8, 2);
-    const railGeoV = new THREE.BoxGeometry(2, 8, rd + 2);
-    const railOut = new THREE.Mesh((side === 1 || side === 3) ? railGeoV : railGeoH, metalMat);
-    if (side === 1 || side === 3) { railGeoH.dispose(); } else { railGeoV.dispose(); }
-    const railOff = side === 0 ? -hw - rampW / 2 : side === 2 ? hw + rampW / 2 : side === 1 ? hw + rampW / 2 : -hw - rampW / 2;
-    if (side === 0 || side === 2) railOut.position.set(0, h + 10, railOff);
-    else railOut.position.set(railOff, h + 10, 0);
-    g.add(railOut);
-  }
-  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 20, 4), metalMat);
-  pole.position.set(0, baseH + 12 + pillarH + roofH + 10, 0); g.add(pole);
-  const flag = new THREE.Mesh(new THREE.PlaneGeometry(18, 10), new THREE.MeshBasicMaterial({ color: 0xff4444, side: THREE.DoubleSide }));
-  flag.position.set(10, baseH + 12 + pillarH + roofH + 16, 0); g.add(flag);
+  // Flagpole
+  const poleMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 2, 80, 6), poleMat);
+  pole.position.y = 40; g.add(pole);
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(3, 6, 6), new THREE.MeshLambertMaterial({ color: 0xffdd44 }));
+  cap.position.y = 82; g.add(cap);
+  // Flag with cow pattern
+  const fc = document.createElement('canvas'); fc.width = 128; fc.height = 64;
+  const fctx = fc.getContext('2d');
+  fctx.fillStyle = '#ffffff'; fctx.fillRect(0, 0, 128, 64);
+  fctx.fillStyle = '#ff88aa';
+  fctx.beginPath(); fctx.arc(40, 25, 15, 0, Math.PI * 2); fctx.fill();
+  fctx.beginPath(); fctx.arc(85, 35, 12, 0, Math.PI * 2); fctx.fill();
+  fctx.beginPath(); fctx.arc(55, 48, 10, 0, Math.PI * 2); fctx.fill();
+  const ftex = new THREE.CanvasTexture(fc);
+  const flag = new THREE.Mesh(new THREE.PlaneGeometry(30, 18), new THREE.MeshBasicMaterial({ map: ftex, side: THREE.DoubleSide }));
+  flag.position.set(16, 70, 0); g.add(flag);
   g.position.set(towerX, th, towerZ);
   scene.add(g);
-  return g;
+  towerMesh = g;
 }
 
-export function getTowerHeight(x, z) {
-  const dx = x - towerX, dz = z - towerZ;
-  const dist = Math.max(Math.abs(dx), Math.abs(dz));
-  const rampInner = towerSize, rampOuter = towerSize + 17;
-  if (dist >= rampInner && dist <= rampOuter) {
-    const angle = Math.atan2(dz, dx);
-    const norm = ((angle + Math.PI) / (Math.PI * 2)) % 1;
-    return towerH * norm;
-  }
-  if (dist <= rampOuter + 20 && dist >= 0) {
-    const adx = Math.abs(dx), adz = Math.abs(dz);
-    if (adx <= towerSize + 20 && adz <= towerSize + 20 && dist > rampOuter) {
-      return towerH + 12;
-    }
-  }
-  return 0;
-}

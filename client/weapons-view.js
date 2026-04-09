@@ -16,8 +16,19 @@ export function buildViewmodel(type) {
   const olive = new THREE.MeshBasicMaterial({ color: 0x556B2F });
   const black = new THREE.MeshBasicMaterial({ color: 0x222222 });
   if (type === 'normal') {
-    const hoof = new THREE.Mesh(new THREE.BoxGeometry(3, 2, 4), new THREE.MeshBasicMaterial({ color: 0xff88aa }));
-    hoof.position.set(0, -1, -4); vmGroup.add(hoof);
+    // Pistol viewmodel
+    const slide = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.5, 6), dark);
+    slide.position.set(0, 0, -3); vmGroup.add(slide);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 3, 6), metal);
+    barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.2, -6.5); vmGroup.add(barrel);
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(1.5, 3.5, 1.8), dark);
+    grip.rotation.x = 0.2; grip.position.set(0, -2.5, -1); vmGroup.add(grip);
+    const mag = new THREE.Mesh(new THREE.BoxGeometry(1, 2.5, 1.2), new THREE.MeshBasicMaterial({ color: 0x333333 }));
+    mag.position.set(0, -3.5, -1); vmGroup.add(mag);
+    const trigger = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1, 0.8), metal);
+    trigger.position.set(0, -1.2, -1.5); vmGroup.add(trigger);
+    const sight = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 0.4), metal);
+    sight.position.set(0, 1, -5); vmGroup.add(sight);
   } else if (type === 'shotgun') {
     const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 18, 8), dark);
     barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.3, -10); vmGroup.add(barrel);
@@ -37,9 +48,9 @@ export function buildViewmodel(type) {
     const loader = new FBXLoader();
     loader.load('models/M16_ps1.fbx', fbx => {
       fbx.scale.set(0.08, 0.08, 0.08);
-      fbx.rotation.set(0, Math.PI, -Math.PI / 2);
-      fbx.position.set(0, -2, -4);
-      const grayMat = new THREE.MeshBasicMaterial({ color: 0x333333 });
+      fbx.rotation.set(0, -Math.PI / 2, 0);
+      fbx.position.set(0, -8, -7);
+      const grayMat = new THREE.MeshBasicMaterial({ color: 0x1a1a1a });
       fbx.traverse(c => { if (c.isMesh) c.material = grayMat; });
       vmGroup.add(fbx);
     }, undefined, () => {
@@ -51,14 +62,14 @@ export function buildViewmodel(type) {
   } else if (type === 'bolty') {
     const loader2 = new FBXLoader();
     loader2.load('models/Sniper.fbx', fbx => {
-      fbx.scale.set(0.08, 0.08, 0.08);
-      fbx.rotation.set(-Math.PI / 2, Math.PI, -Math.PI / 2);
-      fbx.position.set(0, -2, -4);
+      fbx.scale.set(0.06, 0.06, 0.06);
+      fbx.rotation.set(Math.PI, Math.PI, Math.PI);
+      fbx.position.set(6, -8, -7);
       fbx.traverse(c => {
         if (c.isMesh) {
           c.material = new THREE.ShaderMaterial({
             vertexShader: 'varying vec3 vPos;void main(){vPos=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
-            fragmentShader: 'varying vec3 vPos;void main(){float t=clamp((vPos.y+20.0)/40.0,0.0,1.0);vec3 col=mix(vec3(0.1,0.15,0.1),vec3(0.05,0.05,0.05),t);gl_FragColor=vec4(col,1.0);}'
+            fragmentShader: 'varying vec3 vPos;void main(){float t=clamp((vPos.y+20.0)/40.0,0.0,1.0);vec3 col=mix(vec3(0.2,0.27,0.12),vec3(0.15,0.2,0.08),t);gl_FragColor=vec4(col,1.0);}'
           });
         }
       });

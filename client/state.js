@@ -13,8 +13,6 @@ const S = {
   locked: false,
   keys: {},
   lastMoveMsg: 0,
-  jumpVel: 0,
-  jumpH: 0,
   adsActive: false,
   fpsFrames: 0,
   fpsLast: performance.now(),
@@ -32,6 +30,19 @@ const S = {
   pendingLevelUps: 0,
   perkMenuOpen: false,
   masterVol: 0.5,
+  recoilIndex: 0,
+  recoilTimer: 0,
+  debugMode: false,
+  musicStyle: 'classic',
+  hostId: null,
+  spectateTargetId: null,
+  killerId: null,
+  killerName: null,
+  barricadeReadyAt: 0, // performance.now() timestamp when next barricade can be placed
+  crouching: false, // C toggles walk/crouch mode (50% speed, reduced spread/recoil, lower camera)
+  chatLog: [], // { name, color, text, t (lifetime remaining in seconds) }
+  chatOpen: false,
+  barricades: [], // { id, cx, cy, w, h, angle } — mirrored from server for client-side projectile prediction
 };
 
 export default S;

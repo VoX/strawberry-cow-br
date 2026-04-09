@@ -19,8 +19,15 @@ const state = {
   readyCountdown: false,
   cowstrikeActive: false,
   botsEnabled: true,
+  botsFreeWill: true,
+  shuffledBotNames: [],
+  hostId: null,
   // Map features
   WALLS: [],
+  BARRICADES: [], // player-placed wooden walls, blocks everything except L96
+  barricadeIdCounter: 1,
+  BARRICADE_COOLDOWN_MS: 5000,
+  BOT_BARRICADE_COOLDOWN_MS: 10000, // bots get +100% longer cooldown
   MUD_PATCHES: [],
   HEAL_PONDS: [],
   PORTALS: [],

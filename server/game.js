@@ -2,6 +2,7 @@ const { TICK_RATE, MAP_W, MAP_H } = require('./config');
 const { broadcast, sendTo } = require('./network');
 const state = require('./state');
 const { generateMap } = require('./map');
+const { getGroundHeight, WALL_HEIGHT, generateTerrain, getSeed } = require('./terrain');
 const { spawnInitialFood, spawnFood, spawnGoldenFood, spawnWeaponPickup } = require('./spawning');
 const { spawnBots, updateBots } = require('./bots');
 const { getPlayerStates, eliminatePlayer, serializeFood } = require('./player');
@@ -14,6 +15,7 @@ function startGame() {
   state.gameState = 'playing';
   state.gameTime = 0;
   state.zone = { x: 0, y: 0, w: MAP_W, h: MAP_H };
+  generateTerrain(Math.random() * 10000);
   generateMap();
   spawnInitialFood();
   spawnBots();
@@ -31,13 +33,15 @@ function startGame() {
     if (p.inLobby) {
       const sp = spawnPoints[i % spawnPoints.length];
       Object.assign(p, {
-        x: sp.x, y: sp.y, hunger: 100, score: 0, alive: true,
+        x: sp.x, y: sp.y, z: 0, vz: 0, onGround: true, hunger: 100, score: 0, alive: true,
         inLobby: false, dir: 'south', eating: false, eatTimer: 0,
         foodEaten: 0, xp: 0, level: 0, xpToNext: 50, kills: 0,
         dashCooldown: 0, attackCooldown: 0, stunTimer: 0, lastAttacker: null,
         perks: { speedMult: 1, radiusMult: 1, drainMult: 1, magnetRange: 0, regen: 0, maxHunger: 100, sizeMult: 1, damage: 1 },
         weaponPerks: { velocity: 1, cooldown: 1, hungerDiscount: 0, extraProj: 0, damageMult: 1, piercing: false, burstMod: false },
         weapon: 'normal', weaponLevel: 0, weaponTimer: 0,
+        ammo: 15, reloading: 0,
+        spawnProtection: 1,
       });
       i++;
     }
@@ -45,12 +49,17 @@ function startGame() {
 
   state.aliveCount = 0;
   for (const [, p] of state.players) { if (p.alive) state.aliveCount++; }
+  // Clear player-placed barricades from previous round
+  state.BARRICADES = [];
+  for (const [, p] of state.players) { p.barricadeReadyAt = 0; }
   broadcast({
     type: 'start',
+    terrainSeed: getSeed(),
     players: getPlayerStates(),
     foods: state.foods.map(serializeFood),
     zone: state.zone,
     map: { walls: state.WALLS, mud: state.MUD_PATCHES, ponds: state.HEAL_PONDS, portals: state.PORTALS, shelters: state.SHELTERS },
+    barricades: state.BARRICADES,
     armorPickups: state.armorPickups.map(a => ({ id: a.id, x: a.x, y: a.y })),
     weapons: state.weaponPickups.map(w => ({ id: w.id, x: w.x, y: w.y, weapon: w.weapon })),
   });
@@ -80,6 +89,9 @@ function gameTick() {
 
     if (p.stunTimer > 0) { p.stunTimer -= dt; }
 
+    // Spawn protection
+    if (p.spawnProtection > 0) { p.spawnProtection -= dt; continue; }
+
     // Movement
     if (Math.abs(p.dx) + Math.abs(p.dy) > 0.01 && p.stunTimer <= 0) {
       const len = Math.hypot(p.dx, p.dy);
@@ -87,25 +99,59 @@ function gameTick() {
       const sizeSlowdown = 1 - Math.min(0.3, p.foodEaten * 0.01);
       let mudSlow = 1;
       for (const m of state.MUD_PATCHES) { if (Math.hypot(p.x - m.x, p.y - m.y) < m.r) { mudSlow = 0.5; break; } }
-      const speed = 180 * sizeSlowdown * p.perks.speedMult * mudSlow;
+      const walkMult = p.walking ? 0.5 : 1;
+      const speed = 108 * sizeSlowdown * p.perks.speedMult * mudSlow * walkMult;
       p.x += nx * speed * dt;
       p.y += ny * speed * dt;
       if (Math.abs(nx) > Math.abs(ny)) p.dir = nx > 0 ? 'east' : 'west';
       else p.dir = ny > 0 ? 'south' : 'north';
+      if (p.isBot) p.aimAngle = Math.atan2(-nx, ny);
     }
 
     // Wall collision
     for (const w of state.WALLS) {
       if (p.x > w.x - 15 && p.x < w.x + w.w + 15 && p.y > w.y - 15 && p.y < w.y + w.h + 15) {
-        const escL = p.x - (w.x - 15), escR = (w.x + w.w + 15) - p.x;
-        const escT = p.y - (w.y - 15), escB = (w.y + w.h + 15) - p.y;
-        const minEsc = Math.min(escL, escR, escT, escB);
-        if (minEsc === escL) p.x = w.x - 15;
-        else if (minEsc === escR) p.x = w.x + w.w + 15;
-        else if (minEsc === escT) p.y = w.y - 15;
-        else p.y = w.y + w.h + 15;
+        const wallTop = getGroundHeight(w.x + w.w/2, w.y + w.h/2) + WALL_HEIGHT;
+        if (p.z < wallTop) {
+          const escL = p.x - (w.x - 15), escR = (w.x + w.w + 15) - p.x;
+          const escT = p.y - (w.y - 15), escB = (w.y + w.h + 15) - p.y;
+          const minEsc = Math.min(escL, escR, escT, escB);
+          if (minEsc === escL) p.x = w.x - 15;
+          else if (minEsc === escR) p.x = w.x + w.w + 15;
+          else if (minEsc === escT) p.y = w.y - 15;
+          else p.y = w.y + w.h + 15;
+        }
       }
     }
+    // Barricade collision (OBB push-out) — 55 units tall
+    // Local axes: lx = along aim (thin, b.h), ly = perpendicular (wide, b.w)
+    for (const b of state.BARRICADES) {
+      const bTop = getGroundHeight(b.cx, b.cy) + 55;
+      if (p.z >= bTop) continue;
+      const dxB = p.x - b.cx, dyB = p.y - b.cy;
+      const cosA = Math.cos(b.angle), sinA = Math.sin(b.angle);
+      const lx = cosA * dxB + sinA * dyB;
+      const ly = -sinA * dxB + cosA * dyB;
+      const halfThin = b.h / 2 + 15, halfWide = b.w / 2 + 15;
+      if (Math.abs(lx) < halfThin && Math.abs(ly) < halfWide) {
+        // Push out along whichever axis has the shallower penetration
+        const overThin = halfThin - Math.abs(lx);
+        const overWide = halfWide - Math.abs(ly);
+        let newLx = lx, newLy = ly;
+        if (overThin < overWide) newLx = lx >= 0 ? halfThin : -halfThin;
+        else newLy = ly >= 0 ? halfWide : -halfWide;
+        p.x = b.cx + cosA * newLx - sinA * newLy;
+        p.y = b.cy + sinA * newLx + cosA * newLy;
+      }
+    }
+
+    // Height physics
+    const groundH = getGroundHeight(p.x, p.y);
+    if (p.vz === undefined) { p.z = groundH; p.vz = 0; }
+    p.vz -= 800 * dt; // gravity
+    p.z += p.vz * dt;
+    if (p.z <= groundH) { p.z = groundH; p.vz = 0; p.onGround = true; }
+    else { p.onGround = false; }
 
     // Portal teleportation
     if (!p._portalCooldown || p._portalCooldown <= 0) {
@@ -147,9 +193,11 @@ function gameTick() {
       p.hunger -= 8 * dt;
     }
 
-    // Hunger drain
-    const drainRate = 2 * p.perks.drainMult;
-    p.hunger -= drainRate * dt;
+    // Hunger drain (skip for bots when free will is off)
+    if (!(p.isBot && !state.botsFreeWill)) {
+      const drainRate = 2 * p.perks.drainMult;
+      p.hunger -= drainRate * dt;
+    }
 
     // Regen
     if (p.perks.regen > 0) {
@@ -159,13 +207,6 @@ function gameTick() {
     // Cooldowns
     if (p.dashCooldown > 0) p.dashCooldown -= dt; if (p.pickupCooldown > 0) p.pickupCooldown -= dt;
     if (p.attackCooldown > 0) p.attackCooldown -= dt;
-    if (p.weaponTimer > 0) {
-      p.weaponTimer -= dt;
-      if (p.weaponTimer <= 0 && p.weapon === 'cowtank') {
-        p.weapon = 'normal'; p.weaponLevel = 0;
-        sendTo(p.ws, { type: 'weaponExpired' });
-      }
-    }
 
     if (p.hunger <= 0) {
       p.hunger = 0;
@@ -210,7 +251,8 @@ function gameTick() {
           p.xp = Math.max(0, p.xp - p.xpToNext);
           p.level++;
           p.xpToNext = Math.floor(50 + p.level * 25 + p.level * p.level * 5);
-          sendTo(p.ws, { type: 'levelup', level: p.level });
+          if (p.isBot) { const { botPickRandomPerk } = require('./perks'); botPickRandomPerk(p); }
+          else sendTo(p.ws, { type: 'levelup', level: p.level });
         }
         p.eating = true;
         p.eatTimer = 0.5;
@@ -246,9 +288,6 @@ function gameTick() {
   // Update AI bots
   updateBots(dt);
 
-  // Bump combat
-  handleBumpCombat(dt);
-
   // Projectile updates
   updateProjectiles(dt);
 
@@ -258,7 +297,6 @@ function gameTick() {
     const roll = Math.random();
     let f;
     if (roll < 0.05) { f = spawnGoldenFood(); }
-    else if (roll < 0.15) { f = spawnFood(true); }
     else { f = spawnFood(false); }
     broadcast({ type: 'food', food: serializeFood(f) });
   }

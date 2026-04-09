@@ -1,0 +1,27 @@
+{
+  "name": "cowgun3d-desktop",
+  "version": "1.0.0",
+  "description": "Borderless desktop client for Cow Gun 3D",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:win": "electron-builder --win portable",
+    "build:linux": "electron-builder --linux AppImage"
+  },
+  "devDependencies": {
+    "electron": "^28.2.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "me.bitvox.cowgun3d",
+    "productName": "Cow Gun 3D",
+    "files": [
+      "main.js",
+      "package.json"
+    ],
+    "win": {
+      "target": "portable",
+      "artifactName": "CowGun3D.exe"
+    }
+  }
+}

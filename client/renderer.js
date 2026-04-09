@@ -8,6 +8,7 @@ cam.position.set(MW / 2, CH, MH / 2);
 export const ren = new THREE.WebGLRenderer({ antialias: true });
 ren.setSize(innerWidth, innerHeight); ren.setPixelRatio(Math.min(devicePixelRatio, 2));
 ren.shadowMap.enabled = true;
+ren.domElement.id = 'gameCanvas';
 document.body.appendChild(ren.domElement);
 
 // Lights

@@ -14,12 +14,15 @@ function getPlayerStates() {
   for (const [, p] of state.players) {
     if (p.alive || (!p.inLobby && state.gameState === 'playing')) {
       arr.push({
-        id: p.id, name: p.name, color: p.color, x: p.x, y: p.y, dir: p.dir,
+        id: p.id, name: p.name, color: p.color, x: p.x, y: p.y, z: p.z, dir: p.dir,
         hunger: p.hunger, score: p.score, alive: p.alive, eating: p.eating,
         foodEaten: p.foodEaten, level: p.level || 0, xp: p.xp || 0,
         xpToNext: p.xpToNext || 50, sizeMult: p.perks ? p.perks.sizeMult : 1, armor: p.armor || 0,
         kills: p.kills || 0, stunTimer: p.stunTimer || 0, weapon: p.weapon || 'normal', aimAngle: p.aimAngle || 0, weaponLevel: p.weaponLevel || 0,
-        dashCooldown: p.dashCooldown || 0, attackCooldown: p.attackCooldown || 0,
+        dashCooldown: p.dashCooldown || 0, attackCooldown: p.attackCooldown || 0, spawnProt: p.spawnProtection > 0,
+        ammo: p.ammo !== undefined ? p.ammo : -1, reloading: p.reloading > 0, recoilMult: p.recoilMult || 1, extMagMult: p.extMagMult || 1,
+        personality: p.personality || null,
+        crouching: !!p.walking,
       });
     }
   }
@@ -35,19 +38,27 @@ function eliminatePlayer(p, reason) {
     if (attacker && attacker.alive) {
       attacker.kills = (attacker.kills || 0) + 1;
       attacker.score += 50;
-      attacker.hunger = Math.min(attacker.perks.maxHunger, attacker.hunger + 25);
+      attacker.hunger = Math.min(attacker.perks.maxHunger, attacker.hunger + 18);
       const killXp = (attacker.xpToNext || 50) * 2;
       attacker.xp = (attacker.xp || 0) + killXp;
       while (attacker.xp >= attacker.xpToNext) {
         attacker.xp = Math.max(0, attacker.xp - attacker.xpToNext);
         attacker.level++;
         attacker.xpToNext = Math.floor(50 + attacker.level * 25 + attacker.level * attacker.level * 5);
-        sendTo(attacker.ws, { type: 'levelup', level: attacker.level });
+        if (attacker.isBot) { const { botPickRandomPerk } = require('./perks'); botPickRandomPerk(attacker); }
+        else sendTo(attacker.ws, { type: 'levelup', level: attacker.level });
       }
       broadcast({ type: 'kill', killerId: attacker.id, killerName: attacker.name, victimId: p.id, victimName: p.name });
     }
   }
-  broadcast({ type: 'eliminated', playerId: p.id, name: p.name, rank: state.aliveCount + 1 });
+  if (p.isBot) { delete p._lastPos; delete p._wanderTarget; delete p._volleyHits; }
+  // Drop weapon on death
+  if (p.weapon && p.weapon !== 'normal') {
+    state.weaponPickups.push({ id: state.foodIdCounter++, x: p.x + 15, y: p.y, weapon: p.weapon });
+    broadcast({ type: 'weaponSpawn', id: state.weaponPickups[state.weaponPickups.length-1].id, x: p.x + 15, y: p.y, weapon: p.weapon });
+    p.weapon = 'normal'; p.weaponLevel = 0;
+  }
+  broadcast({ type: 'eliminated', playerId: p.id, name: p.name, rank: state.aliveCount + 1, x: p.x, y: p.y, z: p.z });
 }
 
 function serializeFood(f) {

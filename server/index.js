@@ -7,7 +7,7 @@ const { broadcast, sendTo } = require('./network');
 const { assignColor, getPlayerStates, serializeFood } = require('./player');
 const { handlePerk } = require('./perks');
 const { handleDropWeapon } = require('./weapons');
-const { handleAttack, handleDash } = require('./combat');
+const { handleAttack, handleDash, handleReload, placeBarricadeForPlayer } = require('./combat');
 const { checkAllReady, getLobbyPlayers, startLobby } = require('./lobby');
 const { checkWinner } = require('./game');
 
@@ -31,21 +31,24 @@ wss.on('connection', (ws) => {
       const color = assignColor();
       player = {
         id: playerId, ws, name, color,
-        x: MAP_W / 2, y: MAP_H / 2, dx: 0, dy: 0, dir: 'south',
+        x: MAP_W / 2, y: MAP_H / 2, z: 0, vz: 0, onGround: true, dx: 0, dy: 0, dir: 'south',
         hunger: 100, score: 0, alive: false, inLobby: true,
         eating: false, eatTimer: 0, foodEaten: 0,
         kills: 0, dashCooldown: 0, attackCooldown: 0, stunTimer: 0, lastAttacker: null,
         perks: { speedMult: 1, radiusMult: 1, drainMult: 1, magnetRange: 0, regen: 0, maxHunger: 100, sizeMult: 1, damage: 1 },
         weaponPerks: { velocity: 1, cooldown: 1, hungerDiscount: 0, extraProj: 0, damageMult: 1, piercing: false, burstMod: false },
-        weapon: 'normal', weaponLevel: 0, weaponTimer: 0, armor: 0,
+        weapon: 'normal', weaponLevel: 0, weaponTimer: 0, ammo: 15, reloading: 0, armor: 0,
       };
       state.players.set(playerId, player);
-      sendTo(ws, { type: 'joined', id: playerId, color });
+      // Assign host if no current host
+      if (state.hostId === null) state.hostId = playerId;
+      sendTo(ws, { type: 'joined', id: playerId, color, botsEnabled: state.botsEnabled, botsFreeWill: state.botsFreeWill, hostId: state.hostId });
 
       if (state.gameState === 'lobby') {
         broadcast({ type: 'lobby', players: getLobbyPlayers(), countdown: state.lobbyCountdown });
       } else if (state.gameState === 'playing') {
-        sendTo(ws, { type: 'spectate', players: getPlayerStates(), foods: state.foods.map(serializeFood), zone: state.zone, map: { walls: state.WALLS, mud: state.MUD_PATCHES, ponds: state.HEAL_PONDS, portals: state.PORTALS, shelters: state.SHELTERS }, weapons: state.weaponPickups.map(w => ({ id: w.id, x: w.x, y: w.y, weapon: w.weapon })), armorPickups: state.armorPickups.map(a => ({ id: a.id, x: a.x, y: a.y })) });
+        const { getSeed } = require('./terrain');
+        sendTo(ws, { type: 'spectate', terrainSeed: getSeed(), players: getPlayerStates(), foods: state.foods.map(serializeFood), zone: state.zone, map: { walls: state.WALLS, mud: state.MUD_PATCHES, ponds: state.HEAL_PONDS, portals: state.PORTALS, shelters: state.SHELTERS }, barricades: state.BARRICADES, weapons: state.weaponPickups.map(w => ({ id: w.id, x: w.x, y: w.y, weapon: w.weapon })), armorPickups: state.armorPickups.map(a => ({ id: a.id, x: a.x, y: a.y })) });
       }
 
       if (!state.lobbyTimer && state.gameState !== 'playing' && state.gameState !== 'ending') {
@@ -62,27 +65,76 @@ wss.on('connection', (ws) => {
       broadcast({ type: 'botsToggled', enabled: state.botsEnabled });
     }
 
+    if (msg.type === 'toggleBotsFreeWill') {
+      state.botsFreeWill = !state.botsFreeWill;
+      broadcast({ type: 'botsFreeWillToggled', enabled: state.botsFreeWill });
+    }
+
     if (msg.type === 'dropWeapon') {
       handleDropWeapon(player);
     }
 
     if (msg.type === 'ready' && player && player.inLobby) {
-      player.ready = true;
+      player.ready = !player.ready;
+      // Immediately start/cancel countdown on ready change
+      let anyReady = false;
+      for (const [, pp] of state.players) { if (pp.inLobby && !pp.isBot && pp.ready) { anyReady = true; break; } }
+      if (anyReady && !state.readyCountdown) {
+        state.readyCountdown = true;
+        state.lobbyCountdown = 20;
+      } else if (!anyReady && state.readyCountdown) {
+        state.readyCountdown = false;
+        state.lobbyCountdown = 20;
+      }
+      if (state.readyCountdown && checkAllReady() && state.lobbyCountdown > 4) {
+        state.lobbyCountdown = 4;
+      }
       broadcast({ type: 'lobby', players: getLobbyPlayers(), countdown: state.readyCountdown ? state.lobbyCountdown : -1, allReady: checkAllReady() });
+    }
+
+    if (msg.type === 'kick' && player && player.id === state.hostId && state.gameState === 'lobby') {
+      const target = state.players.get(msg.targetId);
+      if (target && !target.isBot && target.id !== state.hostId) {
+        sendTo(target.ws, { type: 'kicked' });
+        if (target.ws) try { target.ws.close(); } catch(e) {}
+        state.players.delete(msg.targetId);
+        broadcast({ type: 'lobby', players: getLobbyPlayers(), countdown: state.readyCountdown ? state.lobbyCountdown : -1, allReady: checkAllReady() });
+      }
     }
 
     if (msg.type === 'move' && player && player.alive) {
       player.dx = Math.max(-1, Math.min(1, msg.dx || 0));
       if (Math.abs(msg.dx || 0) + Math.abs(msg.dy || 0) > 0.1) player.aimAngle = Math.atan2(-(msg.dx || 0), msg.dy || 0);
       player.dy = Math.max(-1, Math.min(1, msg.dy || 0));
+      player.walking = !!msg.walking;
     }
 
     if (msg.type === 'attack') {
       handleAttack(player, msg);
     }
 
+    if (msg.type === 'reload') {
+      handleReload(player);
+    }
+
     if (msg.type === 'dash') {
       handleDash(player);
+    }
+
+    if (msg.type === 'jump' && player && player.alive && player.onGround) {
+      player.vz = 200;
+      player.onGround = false;
+    }
+
+    if (msg.type === 'placeBarricade' && player && player.alive) {
+      placeBarricadeForPlayer(player, msg.aimX || 0, msg.aimY || 0);
+    }
+
+    if (msg.type === 'chat' && player) {
+      const txt = String(msg.text || '').slice(0, 120).trim();
+      if (txt) {
+        broadcast({ type: 'chat', name: player.name, color: player.color, text: txt });
+      }
     }
   });
 
@@ -95,6 +147,13 @@ wss.on('connection', (ws) => {
         checkWinner();
       }
       state.players.delete(playerId);
+      // Reassign host if this was the host
+      if (state.hostId === playerId) {
+        state.hostId = null;
+        for (const [id, p] of state.players) { if (!p.isBot) { state.hostId = id; break; } }
+        // Tell remaining players about the new host
+        for (const [, p] of state.players) { if (!p.isBot && p.ws) sendTo(p.ws, { type: 'newHost', hostId: state.hostId }); }
+      }
       if (state.gameState === 'lobby') {
         broadcast({ type: 'lobby', players: getLobbyPlayers(), countdown: state.lobbyCountdown });
       }
