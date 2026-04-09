@@ -9,20 +9,28 @@
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;outline:none}
 body{background:#1a0a2e;overflow:hidden;font-family:'Segoe UI',sans-serif}
 #gameCanvas{display:block;position:absolute;top:0;left:0;z-index:1}
-#joinScreen{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:url('strawberry-cow-bg.png') center/cover no-repeat,linear-gradient(135deg,#1a0a2e,#2d1b69,#1a0a2e);z-index:100}
-#joinScreen h1{font-size:44px;color:#ff88aa;text-shadow:0 0 20px rgba(255,136,170,0.5);margin-bottom:5px}
+#joinScreen{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:8vh;background:url('strawberry-cow-bg.png') center/cover no-repeat,linear-gradient(135deg,#1a0a2e,#2d1b69,#1a0a2e);z-index:100}
+#titleWrap{display:flex;gap:6px;margin-bottom:8px;perspective:600px}
+.tl{font-size:72px;font-weight:900;display:inline-block;animation:titleBounce 1.2s ease-in-out infinite;text-shadow:0 0 20px rgba(255,136,170,0.6),0 4px 0 #cc4477,0 6px 10px rgba(0,0,0,0.4);font-family:'Segoe UI',sans-serif}
+@keyframes titleBounce{0%,100%{transform:translateY(0) rotateY(0) scale(1)}25%{transform:translateY(-12px) rotateY(-15deg) scale(1.1)}50%{transform:translateY(0) rotateY(0) scale(1)}75%{transform:translateY(-6px) rotateY(10deg) scale(1.05)}}
+#confettiCanvas{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:101}
+#joinScreen h1{display:none}
 #joinScreen h2{font-size:16px;color:#cc88ff;margin-bottom:5px}
 #joinScreen .mode{font-size:13px;color:#88ff88;letter-spacing:3px;margin-bottom:20px}
 #joinScreen input[type=text]{padding:10px 20px;font-size:18px;border:2px solid #cc88ff;border-radius:8px;background:rgba(255,255,255,0.1);color:#fff;text-align:center;width:260px;outline:none;margin-bottom:12px}
 #joinScreen button{padding:10px 40px;font-size:20px;border:none;border-radius:8px;background:linear-gradient(135deg,#ff88aa,#cc88ff);color:#fff;cursor:pointer;font-weight:bold}
 #hud{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;display:none;z-index:10;color:#fff;font-size:13px}
-#crosshair{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:4px;height:4px;background:#ff88aa;border-radius:50%;box-shadow:0 0 6px #ff88aa}
+#crosshair{position:absolute;top:50%;left:50%;width:0;height:0;pointer-events:none}
+#chDot{position:absolute;left:0;top:0;width:3px;height:3px;background:#ffffff;margin:-1.5px 0 0 -1.5px;border-radius:50%;box-shadow:0 0 3px rgba(0,0,0,0.9)}
+#chN,#chS{position:absolute;left:0;top:0;width:2px;height:6px;background:#ffffff;margin-left:-1px;box-shadow:0 0 3px rgba(0,0,0,0.9)}
+#chE,#chW{position:absolute;left:0;top:0;width:6px;height:2px;background:#ffffff;margin-top:-1px;box-shadow:0 0 3px rgba(0,0,0,0.9)}
 #hunger{position:absolute;bottom:30px;left:50%;transform:translateX(-50%);width:400px;height:36px;background:rgba(0,0,0,0.6);border-radius:5px}
 #hungerFill{height:100%;border-radius:4px;background:#ffffff;transition:width 0.15s}
 #hungerTxt{position:absolute;width:100%;text-align:center;top:7px;font-size:14px;font-weight:bold;text-shadow:1px 1px #000}
 #score{position:absolute;bottom:60px;left:15px;font-size:14px;color:#ffdd44;text-shadow:1px 1px #000}
-#weapon{position:absolute;bottom:60px;right:15px;font-size:14px;color:#aaa;text-shadow:1px 1px #000;text-align:right}
-#killfeed{position:absolute;top:10px;left:10px;font-size:12px;text-shadow:1px 1px #000}
+#weapon{position:absolute;bottom:60px;right:15px;font-size:56px;color:#aaa;text-shadow:2px 2px #000;text-align:right}
+#killfeed{position:absolute;top:10px;left:10px;font-size:15px;text-shadow:1px 1px #000;max-width:400px}
+#headshotMarker{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:18px;color:#ff2222;font-weight:bold;text-shadow:0 0 8px #ff0000;pointer-events:none;display:none;z-index:12}
 #playerCount{position:absolute;top:10px;right:10px;font-size:16px;font-weight:bold;color:#ff88aa;text-shadow:1px 1px #000}
 #lockMsg{display:none!important}
 #minimap{position:absolute;top:35px;right:10px;border:1px solid #cc88ff;background:rgba(0,0,0,0.5)}
@@ -30,23 +38,40 @@ body{background:#1a0a2e;overflow:hidden;font-family:'Segoe UI',sans-serif}
 </head>
 <body>
 <div id="joinScreen">
-<h1>COW GUN 3D</h1>
-<h2>Battle Royale</h2>
-<input type="text" id="nameIn" placeholder="your name" maxlength="12">
+<canvas id="confettiCanvas"></canvas>
+<div id="titleWrap"></div>
+<h2 style="margin-bottom:8px">Enter Cow Name:</h2>
+<div style="display:flex;gap:6px;align-items:center;margin-bottom:12px">
+<input type="text" id="nameIn" placeholder="your name" maxlength="12" style="margin-bottom:0">
+<button id="randomNameBtn" style="padding:10px 14px;font-size:14px;border:none;border-radius:8px;background:linear-gradient(135deg,#cc88ff,#88aaff);color:#fff;cursor:pointer;font-weight:bold">Random</button>
+</div>
 <button id="joinBtn">QUEUE FOR MEADOW</button>
+<button id="fullscreenBtn" style="margin-top:8px;padding:6px 20px;font-size:14px;background:rgba(204,136,255,0.25);border:1px solid #cc88ff;color:#eee;border-radius:6px;cursor:pointer">Fullscreen [O]</button>
 <div style="margin-top:12px;color:#cc88ff;font-size:13px"><label><input type="checkbox" id="botsCheck" checked style="vertical-align:middle"> Include Artificial Bovine Intelligence</label></div>
-<div style="margin-top:4px;color:#cc88ff;font-size:13px"><label><input type="checkbox" id="botsFreeWillCheck" checked style="vertical-align:middle"> Allow Artificial Bovine Intelligence Free Will</label></div>
+<div style="margin-top:4px;color:#cc88ff;font-size:13px"><label><input type="checkbox" id="botsFreeWillCheck" checked style="vertical-align:middle"> Replicate Artificial Bovine Intelligence Free Will</label></div>
+<div style="margin-top:4px;color:#cc88ff;font-size:13px"><label><input type="checkbox" id="nightCheck" style="vertical-align:middle"> Nocturnal Meadow</label></div>
 <div style="margin-top:8px;color:#cc88ff;font-size:13px">Volume: <input id="volSlider" type="range" min="0" max="100" value="50" style="width:120px;vertical-align:middle"> <span id="volLbl">50%</span></div>
+<div style="margin-top:8px;color:#cc88ff;font-size:13px">Music: <select id="musicSelect" style="background:#000;color:#fff;border:1px solid #cc88ff;border-radius:4px;padding:2px 8px;font-size:13px"><option value="classic" style="background:#000">Classic Cowbell</option><option value="industrial" style="background:#000">Dark Industrial</option><option value="tribal" style="background:#000">Tribal Drums</option><option value="money" style="background:#000">Money (Wall Street)</option><option value="boy" style="background:#000">BoyMusic (Fruity)</option><option value="custom" style="background:#000">Custom</option><option value="radio" style="background:#000">Radio</option></select></div>
 <div id="serverStatus" style="margin-top:12px;font-size:13px;color:#ffaa44">&#x23F3; finding meadow...</div>
 </div>
 <div id="hud">
-<div id="crosshair"></div>
+<div id="crosshair"><div id="chDot"></div><div id="chN"></div><div id="chS"></div><div id="chE"></div><div id="chW"></div></div>
+<div id="headshotMarker">HEADSHOT</div>
+<div id="debugOverlay" style="position:absolute;top:40px;left:10px;font-size:11px;color:#44ff44;text-shadow:1px 1px #000;font-family:monospace;display:none;white-space:pre;z-index:20;pointer-events:none"></div>
 <div id="fpsCounter" style="position:absolute;bottom:80px;left:50%;transform:translateX(-50%);font-size:10px;color:rgba(255,255,255,0.5);text-shadow:1px 1px #000"></div>
 <div id="armorBar" style="position:absolute;bottom:92px;left:50%;transform:translateX(-50%);width:400px;height:18px;background:rgba(0,0,0,0.6);border-radius:4px;display:none"><div id="armorFill" style="height:100%;border-radius:4px;background:#5588ff;width:0%"></div><div id="armorTxt" style="position:absolute;width:100%;text-align:center;top:1px;font-size:11px;text-shadow:1px 1px #000"></div></div>
 <div id="hunger"><div id="hungerFill"></div><div id="hungerTxt"></div></div>
 <div id="score"></div>
 <div id="xpBar" style="position:absolute;bottom:70px;left:50%;transform:translateX(-50%);width:400px;height:18px;background:rgba(0,0,0,0.6);border-radius:4px"><div id="xpFill" style="height:100%;border-radius:4px;background:#cc88ff;width:0%"></div><div id="xpTxt" style="position:absolute;width:100%;text-align:center;top:1px;font-size:11px;text-shadow:1px 1px #000"></div></div>
 <div id="weapon"></div>
+<div id="dashBar" style="position:absolute;bottom:15px;right:15px;width:160px;height:16px;background:rgba(0,0,0,0.5);border-radius:3px"><div id="dashFill" style="height:100%;border-radius:3px;background:#44aaff;width:0%"></div></div>
+<div id="barricadeBar" style="position:absolute;bottom:15px;left:15px;width:160px;height:16px;background:rgba(0,0,0,0.5);border-radius:3px"><div id="barricadeFill" style="height:100%;border-radius:3px;background:#aa6633;width:0%"></div></div>
+<div id="barricadeLabel" style="position:absolute;bottom:32px;left:15px;font-size:12px;color:#aa6633;text-shadow:1px 1px #000">BARRICADE [B]</div>
+<div id="dashLabel" style="position:absolute;bottom:32px;right:15px;font-size:12px;color:#44aaff;text-shadow:1px 1px #000">DASH</div>
+<div id="atkBar" style="position:absolute;bottom:15px;right:185px;width:160px;height:16px;background:rgba(0,0,0,0.5);border-radius:3px"><div id="atkFill" style="height:100%;border-radius:3px;background:#ff6644;width:0%"></div></div>
+<div id="atkLabel" style="position:absolute;bottom:32px;right:185px;font-size:12px;color:#ff6644;text-shadow:1px 1px #000">FIRE</div>
+<div id="chatLog" style="position:absolute;bottom:130px;left:15px;max-width:620px;font-size:19px;color:#fff;text-shadow:1px 1px #000,0 0 3px #000;z-index:40;pointer-events:none"></div>
+<div id="chatInputWrap" style="position:absolute;bottom:95px;left:15px;display:none;z-index:45"><input id="chatInput" type="text" maxlength="120" placeholder="press enter to send, esc to cancel" style="width:620px;padding:10px 14px;background:rgba(0,0,0,0.6);border:2px solid #ff88aa;border-radius:6px;color:#fff;font-size:19px;font-family:'Segoe UI',sans-serif"></div>
 <div id="killfeed"></div>
 <div id="playerCount"></div>
 <canvas id="minimap" width="120" height="90"></canvas>
@@ -61,6 +86,7 @@ body{background:#1a0a2e;overflow:hidden;font-family:'Segoe UI',sans-serif}
 </style>
 <div id="scopeOverlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:8;display:none"><div style="position:absolute;top:0;left:0;width:100%;height:100%;background:radial-gradient(circle at center,transparent 35%,rgba(0,0,0,0.95) 36%);"></div><div style="position:absolute;top:50%;left:0;width:100%;height:1px;background:rgba(255,100,100,0.5)"></div><div style="position:absolute;top:0;left:50%;width:1px;height:100%;background:rgba(255,100,100,0.5)"></div><div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:8px;height:8px;border:1px solid rgba(255,100,100,0.6);border-radius:50%"></div></div>
 <div id="lowHealthOverlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:6;display:none;background:radial-gradient(ellipse at center,transparent 50%,rgba(255,0,0,0.4) 100%)"></div>
+<div id="spawnProtOverlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:5;display:none;background:radial-gradient(ellipse at center,transparent 60%,rgba(255,238,68,0.4) 100%);border:3px solid rgba(255,238,68,0.3);box-sizing:border-box"></div>
 <div id="hitFlash" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:7;opacity:0;background:rgba(255,0,0,0.3)"></div>
 <div id="winScreen" style="position:absolute;top:0;left:0;width:100%;height:100%;display:none;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,0.75);z-index:90">
 <div id="winCrown" style="font-size:80px;animation:winBounce 1s ease-in-out infinite">&#x1F451;</div>
@@ -69,9 +95,59 @@ body{background:#1a0a2e;overflow:hidden;font-family:'Segoe UI',sans-serif}
 <div id="winRestart" style="font-size:18px;color:#aaddaa"></div>
 </div>
 <style>@keyframes winBounce{0%,100%{transform:scale(1) translateY(0)}50%{transform:scale(1.15) translateY(-10px)}}</style>
-<div id="spectateMsg" style="position:absolute;bottom:80px;left:50%;transform:translateX(-50%);font-size:18px;color:#ffaa00;display:none;z-index:50;text-shadow:0 0 10px #000;background:rgba(0,0,0,0.5);padding:10px 20px;border-radius:8px">SPECTATING - waiting for next round</div>
+<div id="spectateMsg" style="position:absolute;bottom:30px;left:50%;transform:translateX(-50%);font-size:18px;color:#ffaa00;display:none;z-index:50;text-shadow:0 0 10px #000;background:rgba(0,0,0,0.5);padding:10px 20px;border-radius:8px;text-align:center">SPECTATING - waiting for next round</div>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
 <script type="module" src="bundle.js"></script>
 <script>if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');</script>
+<script>
+// Animated title letters
+(function(){
+  const title = 'COW GUN 3D';
+  const colors = ['#ff88aa','#88aaff','#88ff88','#ffdd44','#cc88ff','#ff4444','#ff8844','#44ffdd','#ff88aa','#88aaff'];
+  const wrap = document.getElementById('titleWrap');
+  title.split('').forEach((ch, i) => {
+    const span = document.createElement('span');
+    span.className = 'tl';
+    span.textContent = ch === ' ' ? '\u00A0' : ch;
+    span.style.color = colors[i % colors.length];
+    span.style.animationDelay = (i * 0.1) + 's';
+    wrap.appendChild(span);
+  });
+  // Confetti
+  const cv = document.getElementById('confettiCanvas');
+  const ctx = cv.getContext('2d');
+  function resize() { cv.width = innerWidth; cv.height = innerHeight; }
+  resize(); addEventListener('resize', resize);
+  const confetti = [];
+  for (let i = 0; i < 80; i++) {
+    confetti.push({
+      x: Math.random() * innerWidth, y: Math.random() * innerHeight,
+      w: 4 + Math.random() * 6, h: 8 + Math.random() * 8,
+      vx: (Math.random() - 0.5) * 1.5, vy: 0.5 + Math.random() * 2,
+      rot: Math.random() * Math.PI * 2, vr: (Math.random() - 0.5) * 0.1,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      opacity: 0.6 + Math.random() * 0.4,
+    });
+  }
+  function drawConfetti() {
+    if (document.getElementById('joinScreen').style.display === 'none') { requestAnimationFrame(drawConfetti); return; }
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    for (const c of confetti) {
+      c.x += c.vx; c.y += c.vy; c.rot += c.vr;
+      if (c.y > cv.height + 10) { c.y = -10; c.x = Math.random() * cv.width; }
+      if (c.x < -10) c.x = cv.width + 10;
+      if (c.x > cv.width + 10) c.x = -10;
+      ctx.save();
+      ctx.translate(c.x, c.y); ctx.rotate(c.rot);
+      ctx.globalAlpha = c.opacity;
+      ctx.fillStyle = c.color;
+      ctx.fillRect(-c.w/2, -c.h/2, c.w, c.h);
+      ctx.restore();
+    }
+    requestAnimationFrame(drawConfetti);
+  }
+  drawConfetti();
+})();
+</script>
 </body>
 </html>

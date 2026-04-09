@@ -1,7 +1,12 @@
 import S from './state.js';
 import { PERKS } from './config.js';
 import { send } from './network.js';
-import { startMenuMusic, stopMenuMusic } from './audio.js';
+import { startMenuMusic, stopMenuMusic, customMusicAvailable } from './audio.js';
+import { setNightMode } from './renderer.js';
+import { toggleFullscreen } from './input.js';
+
+const fullscreenBtn = document.getElementById('fullscreenBtn');
+if (fullscreenBtn) fullscreenBtn.addEventListener('click', toggleFullscreen);
 
 // Load saved name + volume
 try { const sn = localStorage.getItem('cowName3d'); if (sn) document.getElementById('nameIn').value = sn; } catch (e) {}
@@ -9,6 +14,20 @@ try { const sv = localStorage.getItem('cowVol3d'); if (sv) { document.getElement
 S.masterVol = parseFloat(document.getElementById('volSlider').value) / 100;
 
 try { const sm = localStorage.getItem('cowMusic3d'); if (sm) { S.musicStyle = sm; document.getElementById('musicSelect').value = sm; } } catch(e) {}
+// Custom music pack files are gitignored — check they exist on this deploy
+// and hide the dropdown option if they don't, so players can't pick a dead
+// style. If the stored preference was custom on a deploy without the files,
+// fall back to classic to avoid silent music.
+customMusicAvailable().then(ok => {
+  if (ok) return;
+  const opt = document.querySelector('#musicSelect option[value="custom"]');
+  if (opt) opt.remove();
+  if (S.musicStyle === 'custom') {
+    S.musicStyle = 'classic';
+    document.getElementById('musicSelect').value = 'classic';
+    try { localStorage.setItem('cowMusic3d', 'classic'); } catch (ex) {}
+  }
+});
 document.getElementById('musicSelect').addEventListener('change', e => {
   S.musicStyle = e.target.value;
   try { localStorage.setItem('cowMusic3d', e.target.value); } catch(ex) {}
@@ -16,8 +35,27 @@ document.getElementById('musicSelect').addEventListener('change', e => {
   if (S.state !== 'playing') { stopMenuMusic(); startMenuMusic(); }
 });
 
-document.getElementById('botsCheck').addEventListener('change', e => { send({ type: 'toggleBots' }); });
-document.getElementById('botsFreeWillCheck').addEventListener('change', e => { send({ type: 'toggleBotsFreeWill' }); });
+// Night mode — host-only control, server-synced to all players.
+// Null-safe: if the HTML somehow ships without #nightCheck, skip wiring instead
+// of crashing module init (which would stop the whole bundle from loading).
+const _nightCheckEl = document.getElementById('nightCheck');
+if (_nightCheckEl) _nightCheckEl.addEventListener('change', e => {
+  if (S.hostId && S.myId === S.hostId) {
+    send({ type: 'toggleNight' });
+  } else {
+    // Revert UI state for non-hosts — reflect the authoritative server value
+    e.target.checked = !e.target.checked;
+  }
+});
+
+document.getElementById('botsCheck').addEventListener('change', e => {
+  if (S.hostId && S.myId === S.hostId) send({ type: 'toggleBots' });
+  else e.target.checked = !e.target.checked;
+});
+document.getElementById('botsFreeWillCheck').addEventListener('change', e => {
+  if (S.hostId && S.myId === S.hostId) send({ type: 'toggleBotsFreeWill' });
+  else e.target.checked = !e.target.checked;
+});
 document.getElementById('volSlider').addEventListener('input', e => {
   S.masterVol = e.target.value / 100; document.getElementById('volLbl').textContent = e.target.value + '%';
   try { localStorage.setItem('cowVol3d', e.target.value); } catch (ex) {}
@@ -33,6 +71,9 @@ if (randomBtn) {
   randomBtn.addEventListener('click', () => {
     _nameIdx = (_nameIdx + 1) % COW_NAMES.length;
     document.getElementById('nameIn').value = COW_NAMES[_nameIdx];
+    // Push to server if already in the lobby — otherwise it just updates the
+    // pre-join input and the name rides along on the 'join' message.
+    commitLobbyName();
   });
 }
 
@@ -41,12 +82,27 @@ document.getElementById('joinBtn').addEventListener('click', () => {
   document.getElementById('nameIn').value = n;
   try { localStorage.setItem('cowName3d', n); } catch (e) {}
   send({ type: 'join', name: n });
+  document.getElementById('joinBtn').style.display = 'none';
 });
-document.getElementById('nameIn').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('joinBtn').click(); });
+// In-lobby name updates — blur or enter commits the new name
+function commitLobbyName() {
+  if (!S.myId || S.state !== 'lobby') return;
+  const n = document.getElementById('nameIn').value.trim();
+  if (!n) return;
+  try { localStorage.setItem('cowName3d', n); } catch (e) {}
+  send({ type: 'setName', name: n });
+}
+document.getElementById('nameIn').addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    if (!S.myId) document.getElementById('joinBtn').click();
+    else { commitLobbyName(); e.target.blur(); }
+  }
+});
+document.getElementById('nameIn').addEventListener('blur', commitLobbyName);
 
 export function showPerkMenu() {
   S.perkMenuOpen = true;
-  const me = S.serverPlayers ? S.serverPlayers.find(p => p.id === S.myId) : null;
+  const me = S.me;
   const choices = []; const pool = [...PERKS].filter(p => {
     if (p.id === 'cowstrike' && Math.random() >= 0.15) return false;
     if (p.id === 'extmag' && me && me.extMagMult > 1) return false;

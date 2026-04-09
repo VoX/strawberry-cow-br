@@ -1,62 +1,37 @@
 import * as THREE from 'three';
 import { MW, MH } from './config.js';
 import { scene } from './renderer.js';
+// Shared terrain math lives in shared/terrain-math.js so client and server
+// are bit-identical by construction. Required for CSP (Phase 4) where the
+// client simulates movement locally and needs the same getGroundHeight
+// output the server uses for collision + z-clamping.
+import { GRID_W, GRID_H, generateHeightMap, sampleHeight } from '../shared/terrain-math.js';
 
-const GRID_W = 200, GRID_H = 150;
 const heightMap = new Float32Array((GRID_W + 1) * (GRID_H + 1));
 
-function generateHeightMap(seed) {
-  const s1 = Math.sin(seed * 1.1) * 0.002 + 0.004;
-  const s2 = Math.cos(seed * 2.3) * 0.002 + 0.005;
-  const s3 = Math.sin(seed * 3.7) * 0.004 + 0.01;
-  const s4 = Math.cos(seed * 4.1) * 0.003 + 0.007;
-  const s5 = Math.sin(seed * 5.3) * 0.001 + 0.003;
-  const s6 = Math.cos(seed * 6.7) * 0.002 + 0.004;
-  const a1 = 15 + Math.sin(seed * 7.1) * 8;
-  const a2 = 12 + Math.cos(seed * 8.3) * 6;
-  const a3 = 8 + Math.sin(seed * 9.7) * 5;
-  const a4 = 10 + Math.cos(seed * 10.1) * 6;
-  for (let row = 0; row <= GRID_H; row++) {
-    for (let col = 0; col <= GRID_W; col++) {
-      const wx = col * MW / GRID_W;
-      const wz = row * MH / GRID_H;
-      const h = Math.sin(wx * s1) * a1 + Math.cos(wz * s2) * a2 + Math.sin(wx * s3 + wz * s4) * a3 + Math.cos(wx * s5 - wz * s6) * a4;
-      heightMap[row * (GRID_W + 1) + col] = h;
-    }
-  }
-}
-
-// Initial generation
-generateHeightMap(0);
+// Initial generation (seed 0 — overwritten by rebuildTerrain on start/spectate)
+generateHeightMap(0, heightMap, MW, MH);
 
 export function getTerrainHeight(x, z) {
-  const gx = Math.max(0, Math.min(GRID_W, x / MW * GRID_W));
-  const gy = Math.max(0, Math.min(GRID_H, z / MH * GRID_H));
-  const col = Math.floor(gx), row = Math.floor(gy);
-  const fx = gx - col, fy = gy - row;
-  const c1 = Math.min(col + 1, GRID_W), r1 = Math.min(row + 1, GRID_H);
-  const h00 = heightMap[row * (GRID_W + 1) + col];
-  const h10 = heightMap[row * (GRID_W + 1) + c1];
-  const h01 = heightMap[r1 * (GRID_W + 1) + col];
-  const h11 = heightMap[r1 * (GRID_W + 1) + c1];
-  return h00 * (1 - fx) * (1 - fy) + h10 * fx * (1 - fy) + h01 * (1 - fx) * fy + h11 * fx * fy;
+  return sampleHeight(heightMap, MW, MH, x, z);
 }
 
 // Shared geometry refs for rebuilding
 const gndPad = 800;
 const extW = MW + gndPad * 2, extH = MH + gndPad * 2;
-const grassMat = new THREE.MeshLambertMaterial({ color: 0x4a9b3a });
+const grassMat = new THREE.MeshLambertMaterial({ color: 0x3a7830 });
 const mtMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
 const snowMat = new THREE.MeshLambertMaterial({ color: 0xeeeeff });
 
 let gndMesh = null, mtMesh = null, snowMesh = null, waterMesh = null;
-let fenceMeshes = [];
+// Fence is consolidated into 2 InstancedMeshes — posts and rails — instead of ~240 individual meshes
+let fencePostMesh = null, fenceRailMesh = null;
 
 function clearTerrainMeshes() {
   [gndMesh, waterMesh].forEach(m => { if (m) { scene.remove(m); m.geometry.dispose(); if (m.material) m.material.dispose(); } });
   [mtMesh, snowMesh].forEach(m => { if (m) { scene.remove(m); m.geometry.dispose(); } });
-  fenceMeshes.forEach(m => { scene.remove(m); if (m.geometry) m.geometry.dispose(); });
-  fenceMeshes = [];
+  [fencePostMesh, fenceRailMesh].forEach(m => { if (m) { scene.remove(m); m.geometry.dispose(); } });
+  fencePostMesh = fenceRailMesh = null;
   gndMesh = mtMesh = snowMesh = waterMesh = null;
 }
 
@@ -118,35 +93,60 @@ function buildTerrainMeshes() {
   waterMesh.rotation.x = -Math.PI / 2; waterMesh.position.set(MW / 2, -30, MH / 2);
   scene.add(waterMesh);
 
-  // Fence
+  // Fence — consolidated into 2 InstancedMeshes (posts + rails) instead of ~240 individual meshes
   const bm = new THREE.MeshLambertMaterial({ color: 0xeeeeee });
   const postGeo = new THREE.CylinderGeometry(2, 2, 30, 5);
+  // Unit rail geometry (length 1 on Z) — each instance scales Z to its actual length
+  const railGeo = new THREE.BoxGeometry(3, 3, 1);
   const fenceStep = 25;
-  function addFencePost(x, z) {
-    const th = getTerrainHeight(x, z);
-    const post = new THREE.Mesh(postGeo, bm);
-    post.position.set(x, th + 15, z);
-    scene.add(post); fenceMeshes.push(post);
-  }
-  function addFenceRail(x1, z1, x2, z2) {
-    const th1 = getTerrainHeight(x1, z1), th2 = getTerrainHeight(x2, z2);
-    const mx = (x1+x2)/2, mz = (z1+z2)/2, mth = (th1+th2)/2;
-    const dist = Math.hypot(x2-x1, z2-z1);
-    const angle = Math.atan2(x2-x1, z2-z1);
-    for (const rh of [22, 12]) {
-      const rail = new THREE.Mesh(new THREE.BoxGeometry(3, 3, dist), bm);
-      rail.position.set(mx, mth + rh, mz); rail.rotation.y = angle;
-      scene.add(rail); fenceMeshes.push(rail);
-    }
-  }
+
+  // Pre-count posts and rails so we can allocate exact-size InstancedMeshes
+  const postSlots = [];
+  const railSlots = [];
   for (let x = 0; x <= MW; x += fenceStep) {
-    addFencePost(x, 0); addFencePost(x, MH);
-    if (x < MW) { addFenceRail(x, 0, x+fenceStep, 0); addFenceRail(x, MH, x+fenceStep, MH); }
+    postSlots.push([x, 0]); postSlots.push([x, MH]);
+    if (x < MW) { railSlots.push([x, 0, x + fenceStep, 0]); railSlots.push([x, MH, x + fenceStep, MH]); }
   }
   for (let z = 0; z <= MH; z += fenceStep) {
-    addFencePost(0, z); addFencePost(MW, z);
-    if (z < MH) { addFenceRail(0, z, 0, z+fenceStep); addFenceRail(MW, z, MW, z+fenceStep); }
+    postSlots.push([0, z]); postSlots.push([MW, z]);
+    if (z < MH) { railSlots.push([0, z, 0, z + fenceStep]); railSlots.push([MW, z, MW, z + fenceStep]); }
   }
+
+  fencePostMesh = new THREE.InstancedMesh(postGeo, bm, postSlots.length);
+  const postMat4 = new THREE.Matrix4();
+  const postPos = new THREE.Vector3();
+  for (let i = 0; i < postSlots.length; i++) {
+    const [x, z] = postSlots[i];
+    postPos.set(x, getTerrainHeight(x, z) + 15, z);
+    postMat4.makeTranslation(postPos.x, postPos.y, postPos.z);
+    fencePostMesh.setMatrixAt(i, postMat4);
+  }
+  fencePostMesh.instanceMatrix.needsUpdate = true;
+  scene.add(fencePostMesh);
+
+  // Rails: 2 per segment (high + low), so instance count is railSlots.length * 2
+  fenceRailMesh = new THREE.InstancedMesh(railGeo, bm, railSlots.length * 2);
+  const railMat4 = new THREE.Matrix4();
+  const railPos = new THREE.Vector3();
+  const railQuat = new THREE.Quaternion();
+  const railScale = new THREE.Vector3();
+  const _railYAxis = new THREE.Vector3(0, 1, 0);
+  let railIdx = 0;
+  for (const [x1, z1, x2, z2] of railSlots) {
+    const th1 = getTerrainHeight(x1, z1), th2 = getTerrainHeight(x2, z2);
+    const mx = (x1 + x2) / 2, mz = (z1 + z2) / 2, mth = (th1 + th2) / 2;
+    const dist = Math.hypot(x2 - x1, z2 - z1);
+    const angle = Math.atan2(x2 - x1, z2 - z1);
+    railQuat.setFromAxisAngle(_railYAxis, angle);
+    railScale.set(1, 1, dist);
+    for (const rh of [22, 12]) {
+      railPos.set(mx, mth + rh, mz);
+      railMat4.compose(railPos, railQuat, railScale);
+      fenceRailMesh.setMatrixAt(railIdx++, railMat4);
+    }
+  }
+  fenceRailMesh.instanceMatrix.needsUpdate = true;
+  scene.add(fenceRailMesh);
 }
 
 // Build initial terrain
@@ -154,6 +154,6 @@ buildTerrainMeshes();
 
 export function rebuildTerrain(seed) {
   clearTerrainMeshes();
-  generateHeightMap(seed);
+  generateHeightMap(seed, heightMap, MW, MH);
   buildTerrainMeshes();
 }

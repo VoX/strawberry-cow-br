@@ -535,7 +535,7 @@ for each player:
   }, 1000 / player.updateRate);
 ```
 
-Client tells the server its desired update rate via a new `setUpdateRate` C2S message (rate-limited to 1/sec). Valid range [15, 60]. Default 30. Server stores on `player.updateRate`.
+Client tells the server its desired update rate via a new `setUpdateRate` C2S message (rate-limited to 1/sec). Valid range [5, 30] (actually shipped — lower bound protects against dead-silent clients, upper bound matches server TICK_RATE since the sim doesn't run faster). Default 30. Server stores on `player.updateRate`.
 
 `buildTickFor(player)` uses the MOST RECENT sim state — it doesn't snapshot per-broadcast. Fast players see newer state than slow ones, by the broadcast granularity.
 

@@ -1,9 +1,14 @@
 const { MAP_W, MAP_H } = require('./config');
 const { broadcast } = require('./network');
-const state = require('./state');
+const gameState = require('./game-state');
 const { getTerrainHeight, getGroundHeight, WALL_HEIGHT } = require('./terrain');
+const ballistics = require('./ballistics');
+const weaponFire = require('./weapon-fire');
+const { applyHungerDelta, applyArmorDelta, broadcastPlayerSnapshot } = require('./player');
 
-const MAG_SIZES = { normal: 15, burst: 30, shotgun: 6, bolty: 5 };
+const MAG_SIZES = weaponFire.MAG_SIZES;
+// Extended-mag perk values — specific per weapon (dual-wield multiplies these by 2)
+const EXT_MAG_SIZES = { normal: 19, burst: 25, shotgun: 8, bolty: 7 };
 
 const BASE_EYE_HEIGHT = 35;
 function eyeHeight(p) {
@@ -27,18 +32,17 @@ function handleAttack(player, msg) {
     const { sendTo } = require('./network');
     sendTo(player.ws, { type: 'emptyMag' });
     player.attackCooldown = 0.3;
-    // Auto-reload
     handleReload(player);
     return;
   }
-  if (state.projectiles.length >= 200) return;
-  const wLvl = player.weaponLevel || 0;
-  const wp = player.weaponPerks || { velocity: 1, cooldown: 1, hungerDiscount: 0, extraProj: 0, damageMult: 1, piercing: false };
-  const cdMult = Math.max(0.3, (1 - wLvl * 0.1) * wp.cooldown);
-  const dmgMult = (1 + wLvl * 0.15) * wp.damageMult;
-  const hungerDiscount = wLvl + wp.hungerDiscount;
-  const velMult = wp.velocity;
-  const burstMod = wp.burstMod;
+  const { cdMult, dmgMult, hungerDiscount } = weaponFire.extractShooterModifiers(player);
+  const dualWield = !!player.dualWield;
+
+  // Resolve stats (applies hungerDiscount to the per-shot cost/gate pairs)
+  const stats = weaponFire.resolvePlayerStats(weapon, hungerDiscount);
+  if (player.hunger <= stats.hungerGate) return;
+
+  // Normalize aim with cardinal-direction fallback for idle shooters
   let ax = msg.aimX || 0, ay = msg.aimY || 0, az = msg.aimZ || 0;
   const alen3d = Math.hypot(ax, ay, az);
   if (alen3d < 0.1) {
@@ -46,193 +50,163 @@ function handleAttack(player, msg) {
     const dd = dirMap[player.dir] || [0,1];
     ax = dd[0]; ay = dd[1]; az = 0;
   } else { ax /= alen3d; ay /= alen3d; az /= alen3d; }
-  const aimZ = az;
 
-  const walkSpreadMult = player.walking ? 0.73 : 1;
-  if (weapon === 'shotgun' && player.hunger > Math.max(3, 10 - hungerDiscount)) {
-    player.hunger -= Math.max(3, 9 - hungerDiscount);
-    player.attackCooldown = 1.0 * cdMult;
-    const volleyId = state.foodIdCounter++;
-    for (let b = 0; b < 5; b++) {
-      const spread = (Math.random() - 0.5) * 0.157 * walkSpreadMult;
-      const bx = ax * Math.cos(spread) - ay * Math.sin(spread);
-      const by = ax * Math.sin(spread) + ay * Math.cos(spread);
-      const projId = state.foodIdCounter++;
-      const dmg = 5 * player.perks.damage * dmgMult;
-      const spreadVz = aimZ + (Math.random() - 0.5) * 0.2 * walkSpreadMult;
-      const proj = { id: projId, ownerId: player.id, x: player.x + bx * 40, y: player.y + by * 40, z: player.z + eyeHeight(player), vx: bx * 1200 * velMult, vy: by * 1200 * velMult, vz: spreadVz * 1200 * velMult, life: 999, dmg, volleyId, piercing: wp.piercing };
-      state.projectiles.push(proj);
-      broadcast({ type: 'projectile', id: projId, ownerId: player.id, x: proj.x, y: proj.y, z: proj.z, vx: proj.vx, vy: proj.vy, vz: proj.vz, color: player.color, shotgun: b === 0 });
-    }
-    if (magSize) player.ammo--;
-  } else if (weapon === 'burst' && player.hunger > Math.max(2, 6 - hungerDiscount)) {
-    const autoMode = msg.fireMode === 'auto';
-    if (autoMode) {
-      // Full auto — single shot, low cooldown, slight spread
-      player.hunger -= Math.max(1, 2 - hungerDiscount);
-      player.attackCooldown = 0.067 * cdMult; // exactly 2 ticks @ 30Hz — avoids quantization stutter
-      const projId = state.foodIdCounter++;
-      const dmg = 3 * player.perks.damage * dmgMult;
-      const spread = 0.026 * walkSpreadMult;
-      const sax = ax + (Math.random() - 0.5) * spread * 2;
-      const say = ay + (Math.random() - 0.5) * spread * 2;
-      const saz = aimZ + (Math.random() - 0.5) * spread * 2;
-      const proj = { id: projId, ownerId: player.id, x: player.x + sax * 40, y: player.y + say * 40, z: player.z + eyeHeight(player), vx: sax * 1600 * velMult, vy: say * 1600 * velMult, vz: saz * 1600 * velMult, life: 999, dmg, piercing: wp.piercing };
-      state.projectiles.push(proj);
-      broadcast({ type: 'projectile', id: projId, ownerId: player.id, x: proj.x, y: proj.y, z: proj.z, vx: proj.vx, vy: proj.vy, vz: proj.vz, color: player.color });
-      if (magSize) player.ammo--;
-    } else {
-      // Burst mode — 3 (or 5) shot burst
-      const burstCount = burstMod ? 5 : 3;
-      player.hunger -= Math.max(2, 5 - hungerDiscount);
-      player.attackCooldown = 0.8 * cdMult;
-      for (let b = 0; b < burstCount; b++) {
-        const projId = state.foodIdCounter++;
-        const dmg = 6 * player.perks.damage * dmgMult;
-        const offset = b * 15;
-        const proj = { id: projId, ownerId: player.id, x: player.x + ax * (40 + offset), y: player.y + ay * (40 + offset), z: player.z + eyeHeight(player), vx: ax * 1760 * velMult, vy: ay * 1760 * velMult, vz: aimZ * 1760 * velMult, life: 999, dmg, piercing: wp.piercing };
-        state.projectiles.push(proj);
-        const bb = b;
-        setTimeout(() => {
-          broadcast({ type: 'projectile', id: projId, ownerId: player.id, x: proj.x, y: proj.y, z: proj.z, vx: proj.vx, vy: proj.vy, vz: proj.vz, color: player.color, burst: bb === 0 });
-        }, bb * 80);
-      }
-      if (magSize) player.ammo = Math.max(0, player.ammo - burstCount);
-    }
-  } else if (weapon === 'bolty' && player.hunger > Math.max(3, 8 - hungerDiscount)) {
-    player.hunger -= Math.max(3, 7 - hungerDiscount);
-    player.attackCooldown = 2.5 * cdMult;
-    const projId = state.foodIdCounter++;
-    const dmg = 28 * player.perks.damage * dmgMult;
-    const proj = { id: projId, ownerId: player.id, x: player.x + ax * 40, y: player.y + ay * 40, z: player.z + eyeHeight(player), vx: ax * 16800 * velMult, vy: ay * 16800 * velMult, vz: aimZ * 16800 * velMult, life: 999, dmg, piercing: wp.piercing, wallPiercing: true };
-    state.projectiles.push(proj);
-    broadcast({ type: 'projectile', id: projId, ownerId: player.id, x: proj.x, y: proj.y, z: proj.z, vx: proj.vx, vy: proj.vy, vz: proj.vz, color: player.color, bolty: true });
-    if (magSize) player.ammo--;
-  } else if (weapon === 'cowtank' && player.hunger > Math.max(2, 6 - hungerDiscount)) {
-    player.hunger -= Math.max(2, 5 - hungerDiscount);
-    player.attackCooldown = 1.0 * cdMult;
-    const projId = state.foodIdCounter++;
-    const dmg = 38 * player.perks.damage * dmgMult;
-    const proj = { id: projId, ownerId: player.id, x: player.x + ax * 40, y: player.y + ay * 40, z: player.z + eyeHeight(player), vx: ax * 2000 * velMult, vy: ay * 2000 * velMult, vz: aimZ * 2000 * velMult, life: 999, dmg, explosive: true, blastRadius: 180 };
-    state.projectiles.push(proj);
-    broadcast({ type: 'projectile', id: projId, ownerId: player.id, x: proj.x, y: proj.y, z: proj.z, vx: proj.vx, vy: proj.vy, vz: proj.vz, color: player.color, cowtank: true });
-    // Single use — weapon disappears after firing
-    player.weapon = 'normal'; player.weaponLevel = 0;
+  const fired = weaponFire.fireWeapon(player, weapon, { ax, ay, az }, stats, {
+    walkSpreadMult: player.walking ? 0.73 : 1,
+    dualWield,
+    fireMode: msg.fireMode === 'auto' ? 'auto' : msg.fireMode === 'semi' ? 'semi' : 'burst',
+    emitMuzzleFlag: true,
+    cdMult,
+    dmgMult,
+    eyeHeight,
+    // Phase 6 lag comp: client sends `displayTick` = S.lastTickNum minus
+    // interp delay ticks (= the tick they were actually rendering). Server
+    // rewinds entity positions to that tick for the hit check. Clamped to
+    // avoid abuse — see updateProjectiles for the bounds logic.
+    fireDisplayTick: typeof msg.displayTick === 'number' ? msg.displayTick : null,
+  });
+  if (!fired) return;
+
+  // Cowtank is single-use — drop back to normal weapon after firing. Sticky
+  // fields (weapon, dualWield, ammo) changed, so emit a snapshot or the
+  // client viewmodel/HUD will stay on the cowtank until the next unrelated event.
+  if (weapon === 'cowtank') {
+    player.weapon = 'normal';
+    player.dualWield = false;
     player.ammo = Math.ceil(15 * (player.extMagMult || 1));
     player.reloading = 0;
     broadcast({ type: 'weaponDrop', playerId: player.id, name: player.name });
-  } else if (weapon === 'normal' && player.hunger > Math.max(1, 3 - hungerDiscount)) {
-    player.hunger -= Math.max(1, 2 - hungerDiscount);
-    player.attackCooldown = 1.0 * cdMult;
-    const shotCount = burstMod ? 3 : 1;
-    for (let b = 0; b < shotCount; b++) {
-      const projId = state.foodIdCounter++;
-      const dmg = 8 * player.perks.damage * dmgMult;
-      const offset = b * 12;
-      const proj = { id: projId, ownerId: player.id, x: player.x + ax * (40 + offset), y: player.y + ay * (40 + offset), z: player.z + eyeHeight(player), vx: ax * 1400 * velMult, vy: ay * 1400 * velMult, vz: aimZ * 1400 * velMult, life: 999, dmg, piercing: wp.piercing };
-      state.projectiles.push(proj);
-      const bcast = { type: 'projectile', id: projId, ownerId: player.id, x: proj.x, y: proj.y, z: proj.z, vx: proj.vx, vy: proj.vy, vz: proj.vz, color: player.color };
-      if (shotCount > 1) bcast.burst = b === 0;
-      broadcast(bcast);
-    }
-    if (magSize) player.ammo = Math.max(0, player.ammo - shotCount);
+    broadcastPlayerSnapshot(player);
   }
 }
 
 function applyExplosion(pr, excludeId) {
-  const blastRadius = pr.blastRadius || 120;
-  // Destroy barricades caught in the blast
-  for (let i = state.BARRICADES.length - 1; i >= 0; i--) {
-    const b = state.BARRICADES[i];
-    if (Math.hypot(b.cx - pr.x, b.cy - pr.y) < blastRadius) {
-      broadcast({ type: 'barricadeDestroyed', id: b.id });
-      state.BARRICADES.splice(i, 1);
+  const walls = gameState.getWalls();
+  const barricades = gameState.getBarricades();
+  const players = gameState.getPlayers();
+  // Ballistics returns pure selections — we mutate + broadcast in here.
+  const sel = ballistics.computeBlastVictims(pr, players, walls, barricades, excludeId, eyeHeight);
+  // Destroy barricades caught in the blast (indices are descending-order)
+  for (const i of sel.barricadeIdxs) {
+    const b = barricades[i];
+    broadcast({ type: 'barricadeDestroyed', id: b.id });
+    gameState.removeBarricadeAt(i);
+  }
+  // Damage map walls — each takes `hp` explosions to destroy
+  for (const i of sel.wallIdxs) {
+    const w = walls[i];
+    w.hp = (w.hp || 1) - 1;
+    if (w.hp <= 0) {
+      broadcast({ type: 'wallDestroyed', id: w.id });
+      gameState.removeWallAt(i);
+    } else {
+      broadcast({ type: 'wallDamaged', id: w.id, hp: w.hp });
     }
   }
-  for (const [, t] of state.players) {
-    if (!t.alive || t.id === pr.ownerId || t.id === excludeId) continue;
-    const bdist = Math.hypot(t.x - pr.x, t.y - pr.y, (t.z + eyeHeight(t) / 2) - pr.z);
-    if (bdist < blastRadius) {
-      const falloff = 1 - bdist / blastRadius;
-      if (t.armor > 0) { broadcast({ type: 'shieldBreak', playerId: t.id, x: t.x, y: t.y }); t.armor = 0; }
-      const dmg = excludeId ? pr.dmg * 0.6 : 100;
-      t.hunger -= dmg * falloff;
-      t.stunTimer = 0.3;
-      t.lastAttacker = pr.ownerId;
-    }
+  // Damage players in blast
+  for (const v of sel.playerVictims) {
+    const t = v.player;
+    applyArmorDelta(t, -(t.armor || 0));
+    const dmg = excludeId ? pr.dmg * 0.6 : 100;
+    t.stunTimer = 0.3;
+    applyHungerDelta(t, -dmg * v.falloff, pr.ownerId);
   }
-  // Knockback — push ALL players (including shooter) away from blast in 3D
-  for (const [, t] of state.players) {
-    if (!t.alive) continue;
-    const dx = t.x - pr.x, dy = t.y - pr.y, dz = (t.z + eyeHeight(t) / 2) - pr.z;
-    const bdist = Math.hypot(dx, dy, dz);
-    if (bdist < blastRadius && bdist > 1) {
-      const falloff = 1 - bdist / blastRadius;
-      const pushForce = 300 * falloff;
-      const nx = dx / bdist, ny = dy / bdist, nz = dz / bdist;
-      t.x += nx * pushForce; t.y += ny * pushForce;
-      t.vz = (t.vz || 0) + nz * pushForce + 80 * falloff;
-      // Wall collision after knockback
-      for (const w of state.WALLS) {
-        if (t.x > w.x - 15 && t.x < w.x + w.w + 15 && t.y > w.y - 15 && t.y < w.y + w.h + 15) {
-          const escL = t.x - (w.x - 15), escR = (w.x + w.w + 15) - t.x;
-          const escT = t.y - (w.y - 15), escB = (w.y + w.h + 15) - t.y;
-          const minEsc = Math.min(escL, escR, escT, escB);
-          if (minEsc === escL) t.x = w.x - 15;
-          else if (minEsc === escR) t.x = w.x + w.w + 15;
-          else if (minEsc === escT) t.y = w.y - 15;
-          else t.y = w.y + w.h + 15;
-        }
-      }
-    }
+  // Knockback mutates players — pure-ish helper keeps the physics with the rest
+  ballistics.blastKnockback(pr, players, walls, sel.blastRadius, eyeHeight);
+  broadcast({ type: 'explosion', x: pr.x, y: pr.y, radius: sel.blastRadius, blastRadius: sel.blastRadius });
+}
+
+// Phase 6 lag comp: reconstruct a Map<id, playerLike> from a history
+// snapshot + the live players map so `findPlayerHit` sees rewound
+// positions for the tick the client was rendering at fire time.
+// Position, sizeMult, stunTimer, and spawn protection come from the
+// snapshot (they may have changed since fire time). Every other field
+// that post-hit code reads — perks.damageReduction, armor, ws — is
+// pulled from the LIVE player so damage, shieldHit broadcast, and
+// milksteal heal all apply to the current entity.
+//
+// sizeMult gets its own override on a shallow-cloned perks object
+// because findPlayerHit reads `p.perks.sizeMult` to size the capsule.
+// Without the override we'd be checking live-size hitboxes against
+// rewound positions — exactly the desync lag comp is meant to prevent.
+function _buildRewoundPlayers(snapshot, livePlayers) {
+  const out = new Map();
+  for (const entry of snapshot.positions) {
+    const live = livePlayers.get(entry.id);
+    if (!live || !live.alive) continue; // dead-between path: no hit
+    const rewoundPerks = Object.assign({}, live.perks, { sizeMult: entry.sizeMult });
+    out.set(entry.id, {
+      id: entry.id,
+      x: entry.x, y: entry.y, z: entry.z,
+      alive: true,
+      stunTimer: entry.stunTimer,
+      spawnProtection: entry.spawnProtection,
+      perks: rewoundPerks,
+      _rewound: true,    // diagnostic flag
+    });
   }
-  broadcast({ type: 'explosion', x: pr.x, y: pr.y, radius: blastRadius, blastRadius });
+  return out;
 }
 
 function updateProjectiles(dt) {
-  for (let i = state.projectiles.length - 1; i >= 0; i--) {
-    const pr = state.projectiles[i];
-    const prevX = pr.x, prevY = pr.y, prevZ = pr.z, prevVz = pr.vz;
-    pr.x += pr.vx * dt; pr.y += pr.vy * dt; pr.life -= dt;
-    pr.z += pr.vz * dt;
-    // Cowtank has full gravity, others have minimal
-    if (pr.explosive) pr.vz = pr.vz - 400 * dt;
-    else pr.vz = pr.vz - 50 * dt;
-    const speed = Math.hypot(pr.vx, pr.vy);
-    // Hit detection FIRST — ray-segment vs cylinder intersection (before terrain/wall checks)
-    const dx = pr.x - prevX, dy = pr.y - prevY, dz = pr.z - prevZ;
-    let hitPlayer = null, hitT = Infinity;
-    for (const [, p] of state.players) {
-      if (!p.alive || p.id === pr.ownerId || p.spawnProtection > 0) continue;
-      const eh = eyeHeight(p);
-      const headBase = p.z + eh * 0.75;
-      const hitboxes = [
-        { r: 18, zMin: p.z - 3, zMax: headBase, head: false },
-        { r: 12, zMin: headBase, zMax: headBase + 20, head: true },
-      ];
-      for (const hb of hitboxes) {
-        // 2D ray-circle: find t where |prev + t*d - p|^2 = r^2 in XY plane
-        const ox = prevX - p.x, oy = prevY - p.y;
-        const a = dx * dx + dy * dy;
-        const b = 2 * (ox * dx + oy * dy);
-        const c = ox * ox + oy * oy - hb.r * hb.r;
-        const disc = b * b - 4 * a * c;
-        if (disc < 0) continue;
-        const sqrtDisc = Math.sqrt(disc);
-        for (const sign of [-1, 1]) {
-          const t = (-b + sign * sqrtDisc) / (2 * a);
-          if (t < 0 || t > 1) continue;
-          const iz = prevZ + dz * t;
-          if (iz >= hb.zMin && iz <= hb.zMax && t < hitT) {
-            hitT = t; hitPlayer = p;
-            p._wasHeadshot = hb.head;
-          }
-        }
+  const projectiles = gameState.getProjectiles();
+  const walls = gameState.getWalls();
+  const barricades = gameState.getBarricades();
+  const players = gameState.getPlayers();
+  const HISTORY_TICKS = gameState.HISTORY_TICKS;
+  const currentTickNum = gameState.getTickNum();
+  for (let i = projectiles.length - 1; i >= 0; i--) {
+    const pr = projectiles[i];
+    // Advance the "age in ticks" counter before anything else so the
+    // rewind lookup computes (fireDisplayTick + ticksAlive) for the
+    // snapshot that matches this frame of the projectile's flight.
+    pr.ticksAlive = (pr.ticksAlive || 0) + 1;
+    // Step 1: integrate motion + gravity, capture prev position
+    const { prevX, prevY, prevZ } = ballistics.integrateProjectile(pr, dt);
+    // Step 2: analytical pre-scan for walls/barricades along this tick's segment.
+    // Skip the scan entirely for near-stationary ticks — matches original behaviour.
+    const segDx = pr.x - prevX, segDy = pr.y - prevY;
+    const segDist = Math.hypot(segDx, segDy);
+    let blockT = 1.01;
+    let hitWallObj = null;
+    let hitBarricade = null;
+    if (segDist > 0.5) {
+      if (!pr.wallPiercing) {
+        const wres = ballistics.segVsWalls(prevX, prevY, prevZ, pr.x, pr.y, pr.z, walls, getTerrainHeight, WALL_HEIGHT);
+        blockT = wres.blockT;
+        hitWallObj = wres.hitWall;
+      }
+      const bres = ballistics.segVsBarricades(prevX, prevY, prevZ, pr.x, pr.y, pr.z, barricades, blockT);
+      if (bres.hitBarricade) {
+        blockT = bres.blockT;
+        hitBarricade = bres.hitBarricade;
+        hitWallObj = null; // barricade is nearer than any wall we found
       }
     }
+    // Step 3: closest player hit within blockT (sets p._wasHeadshot).
+    // Phase 6 lag comp: if the client sent fireDisplayTick at spawn, look
+    // up the historical snapshot at (fireDisplayTick + ticksAlive) and
+    // run the hit check against THOSE positions. Clamped to avoid clients
+    // forging ancient or future-tick values for abuse.
+    let playersForHit = players;
+    if (typeof pr.fireDisplayTick === 'number') {
+      const targetTick = pr.fireDisplayTick + pr.ticksAlive;
+      const minTick = Math.max(0, currentTickNum - HISTORY_TICKS);
+      const clampedTick = Math.max(minTick, Math.min(currentTickNum, targetTick));
+      const snap = gameState.getHistorySnapshot(clampedTick);
+      if (snap) playersForHit = _buildRewoundPlayers(snap, players);
+    }
+    const hitPlayer = ballistics.findPlayerHit(prevX, prevY, prevZ, pr.x, pr.y, pr.z, playersForHit, pr.ownerId, blockT, eyeHeight);
     if (hitPlayer) {
-      const p = hitPlayer;
-      const headshot = !!p._wasHeadshot;
+      // findPlayerHit may return a rewound "lite" player from the lag-comp
+      // snapshot. Mutations (damage, armor, volley hit tracking, stun) must
+      // apply to the LIVE player, not the rewound copy — otherwise damage
+      // would vanish when the lite object goes out of scope. Preserve
+      // `_wasHeadshot` since it was set on whichever object went through
+      // findPlayerHit (rewound or live).
+      const headshot = !!hitPlayer._wasHeadshot;
+      const p = hitPlayer._rewound ? players.get(hitPlayer.id) : hitPlayer;
+      if (!p || !p.alive) { gameState.removeProjectileAt(i); continue; }
         let dmg = pr.dmg;
         if (headshot) dmg *= (pr.volleyId ? 1.2 : 1.8);
         if (pr.volleyId) {
@@ -245,121 +219,65 @@ function updateProjectiles(dt) {
         if (p.perks && p.perks.damageReduction) armor *= (1 - p.perks.damageReduction);
         let actualDmg = dmg * armor;
         if (pr.explosive && p.armor > 0) {
-          broadcast({ type: 'shieldBreak', playerId: p.id, x: p.x, y: p.y });
-          p.armor = 0;
+          // Explosive fully strips the shield; helper emits the break visual.
+          applyArmorDelta(p, -(p.armor || 0));
         } else if (p.armor > 0) {
+          // Regular absorption: armor soaks actualDmg up to its current value;
+          // overflow bleeds to hunger. shieldHit visual stays inline (helper
+          // only owns the shieldBreak crossing).
           const absorbed = Math.min(p.armor, actualDmg);
-          const hadArmor = p.armor;
-          p.armor -= absorbed; actualDmg -= absorbed;
+          actualDmg -= absorbed;
+          applyArmorDelta(p, -absorbed);
           broadcast({ type: 'shieldHit', playerId: p.id, x: p.x, y: p.y });
-          if (hadArmor > 0 && p.armor <= 0) broadcast({ type: 'shieldBreak', playerId: p.id, x: p.x, y: p.y });
         }
-        p.hunger -= actualDmg;
         p.stunTimer = 0.5;
-        p.lastAttacker = pr.ownerId;
+        applyHungerDelta(p, -actualDmg, pr.ownerId);
         if (pr.explosive) applyExplosion(pr, p.id);
         // Milksteal: heal owner 1% on hit
-        const owner = state.players.get(pr.ownerId);
+        const owner = gameState.getPlayer(pr.ownerId);
         if (owner && owner.milksteal && owner.alive) {
-          owner.hunger = Math.min(owner.perks.maxHunger, owner.hunger + 0.5);
+          applyHungerDelta(owner, 0.5);
         }
         broadcast({ type: 'projectileHit', projectileId: pr.id, targetId: p.id, ownerId: pr.ownerId, dmg: Math.round(dmg), headshot });
-        if (pr.piercing) {
-          pr.piercing = false;
-          pr.dmg *= 0.6;
-        } else {
-          state.projectiles.splice(i, 1); continue;
-        }
+        gameState.removeProjectileAt(i); continue;
     }
     // Terrain collision
     if (pr.z < getTerrainHeight(pr.x, pr.y)) {
       if (pr.explosive) applyExplosion(pr, null);
       broadcast({ type: 'projectileHit', projectileId: pr.id, targetId: null, ownerId: pr.ownerId, wall: true, x: pr.x, y: pr.y });
-      state.projectiles.splice(i, 1); continue;
+      gameState.removeProjectileAt(i); continue;
     }
     // Bounds / lifetime
     if (pr.life <= 0 || pr.x < 0 || pr.x > MAP_W || pr.y < 0 || pr.y > MAP_H) {
       if (pr.explosive) applyExplosion(pr, null);
       broadcast({ type: 'projectileHit', projectileId: pr.id, targetId: null, ownerId: pr.ownerId, wall: true, x: pr.x, y: pr.y });
-      state.projectiles.splice(i, 1); continue;
+      gameState.removeProjectileAt(i); continue;
     }
-    // Wall collision
-    let hitWall = false;
-    let hitBarricade = false;
-    const steps = Math.max(1, Math.ceil(speed * dt / 15));
-    const stepX = pr.vx * dt / steps, stepY = pr.vy * dt / steps;
-    let checkX = prevX, checkY = prevY;
-    for (let s = 0; s <= steps && !hitWall && !hitBarricade; s++) {
-      for (const w of state.WALLS) {
-        const wx1 = w.x - 10, wy1 = w.y - 10;
-        const wx2 = w.x + Math.max(w.w, 20) + 10, wy2 = w.y + Math.max(w.h, 20) + 10;
-        if (checkX > wx1 && checkX < wx2 && checkY > wy1 && checkY < wy2) { hitWall = true; break; }
-      }
-      // Barricades block everything except L96 (which has wallPiercing)
-      if (!hitWall && !pr.wallPiercing) {
-        for (const b of state.BARRICADES) {
-          // Transform check point into barricade's local (unrotated) frame.
-          // lx = projection along aim direction (thin axis, h)
-          // ly = projection perpendicular to aim (wide axis, w)
-          const dxB = checkX - b.cx, dyB = checkY - b.cy;
-          const cosA = Math.cos(b.angle), sinA = Math.sin(b.angle);
-          const lx = cosA * dxB + sinA * dyB;
-          const ly = -sinA * dxB + cosA * dyB;
-          if (Math.abs(lx) < b.h / 2 && Math.abs(ly) < b.w / 2) {
-            const bTerrainH = getTerrainHeight(b.cx, b.cy);
-            if (pr.z <= bTerrainH + 55) { hitBarricade = true; break; }
-          }
-        }
-      }
-      checkX += stepX; checkY += stepY;
-    }
-    if (hitWall) {
-      const wallTerrainH = getTerrainHeight(checkX, checkY);
-      if (pr.z > wallTerrainH + WALL_HEIGHT) hitWall = false;
-    }
-    if (hitWall && pr.wallPiercing) {
-      // Wall-piercing projectile — show impact and decrement penetration count
-      broadcast({ type: 'wallImpact', x: checkX, y: checkY, z: pr.z });
+    // Use the analytical pre-scan result — no second stepped scan needed
+    if (hitWallObj && pr.wallPiercing) {
+      const impactX = prevX + segDx * blockT;
+      const impactY = prevY + segDy * blockT;
+      broadcast({ type: 'wallImpact', x: impactX, y: impactY, z: pr.z });
       pr._wallHits = (pr._wallHits || 0) + 1;
       if (pr._wallHits >= 2) {
-        broadcast({ type: 'projectileHit', projectileId: pr.id, targetId: null, ownerId: pr.ownerId, wall: true, x: checkX, y: checkY });
-        state.projectiles.splice(i, 1); continue;
+        broadcast({ type: 'projectileHit', projectileId: pr.id, targetId: null, ownerId: pr.ownerId, wall: true, x: impactX, y: impactY });
+        gameState.removeProjectileAt(i); continue;
       }
-    } else if (hitWall || hitBarricade) {
-      if (pr.explosive) applyExplosion(pr, null);
-      broadcast({ type: 'projectileHit', projectileId: pr.id, targetId: null, ownerId: pr.ownerId, wall: true, x: checkX, y: checkY });
-      state.projectiles.splice(i, 1); continue;
-    }
-  }
-}
-
-function handleBumpCombat(dt) {
-  const alivePlayers = [];
-  for (const [, p] of state.players) { if (p.alive) alivePlayers.push(p); }
-  for (let i = 0; i < alivePlayers.length; i++) {
-    for (let j = i + 1; j < alivePlayers.length; j++) {
-      const a = alivePlayers[i], b = alivePlayers[j];
-      const dist = Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
-      if (dist < 65) {
-        const aSpeed = Math.hypot(a.dx, a.dy);
-        const bSpeed = Math.hypot(b.dx, b.dy);
-        const sizeDiffA = Math.min(1.3, Math.max(0.5, 1 + (a.foodEaten - b.foodEaten) * 0.03));
-        const sizeDiffB = Math.min(1.3, Math.max(0.5, 1 + (b.foodEaten - a.foodEaten) * 0.03));
-        const baseDmg = 6 * dt;
-        const aCharge = aSpeed > 0.5 ? 1.3 : 0.7;
-        const bCharge = bSpeed > 0.5 ? 1.3 : 0.7;
-        b.hunger -= baseDmg * sizeDiffA * aCharge * a.perks.damage;
-        a.hunger -= baseDmg * sizeDiffB * bCharge * b.perks.damage;
-        a.lastAttacker = b.id;
-        b.lastAttacker = a.id;
-        if (dist > 1) {
-          const nx = (b.x - a.x) / dist, ny = (b.y - a.y) / dist;
-          const push = 150 * dt;
-          a.x -= nx * push; a.y -= ny * push;
-          b.x += nx * push; b.y += ny * push;
+    } else if (hitWallObj || hitBarricade) {
+      const impactX = prevX + segDx * blockT;
+      const impactY = prevY + segDy * blockT;
+      if (hitBarricade) {
+        const dmgDealt = Math.round(pr.dmg);
+        hitBarricade.hp -= dmgDealt;
+        broadcast({ type: 'barricadeHit', id: hitBarricade.id, dmg: dmgDealt, x: hitBarricade.cx, y: hitBarricade.cy });
+        if (hitBarricade.hp <= 0) {
+          gameState.removeBarricade(hitBarricade.id);
+          broadcast({ type: 'barricadeDestroyed', id: hitBarricade.id });
         }
-        broadcast({ type: 'bump', a: a.id, b: b.id });
       }
+      if (pr.explosive) applyExplosion(pr, null);
+      broadcast({ type: 'projectileHit', projectileId: pr.id, targetId: null, ownerId: pr.ownerId, wall: true, x: impactX, y: impactY });
+      gameState.removeProjectileAt(i); continue;
     }
   }
 }
@@ -369,17 +287,17 @@ function handleDash(player) {
   const len = Math.hypot(player.dx, player.dy);
   if (len > 0.1) {
     const nx = player.dx / len, ny = player.dy / len;
-    const dashSteps = Math.round(12 * (player.dashDistMult || 1));
+    const dashSteps = 12;
     for (let step = 0; step < dashSteps; step++) {
       player.x += nx * 10; player.y += ny * 10;
       let blocked = false;
-      for (const w of state.WALLS) {
+      for (const w of gameState.getWalls()) {
         if (player.x > w.x - 15 && player.x < w.x + w.w + 15 && player.y > w.y - 15 && player.y < w.y + w.h + 15) {
           blocked = true; break;
         }
       }
       if (!blocked) {
-        for (const b of state.BARRICADES) {
+        for (const b of gameState.getBarricades()) {
           const dxB = player.x - b.cx, dyB = player.y - b.cy;
           const cosA = Math.cos(b.angle), sinA = Math.sin(b.angle);
           const lx = cosA * dxB + sinA * dyB;
@@ -389,8 +307,9 @@ function handleDash(player) {
       }
       if (blocked) { player.x -= nx * 10; player.y -= ny * 10; break; }
     }
-    player.x = Math.max(state.zone.x + 20, Math.min(state.zone.x + state.zone.w - 20, player.x));
-    player.y = Math.max(state.zone.y + 20, Math.min(state.zone.y + state.zone.h - 20, player.y));
+    const zone = gameState.getZone();
+    player.x = Math.max(zone.x + 20, Math.min(zone.x + zone.w - 20, player.x));
+    player.y = Math.max(zone.y + 20, Math.min(zone.y + zone.h - 20, player.y));
     player.z = getGroundHeight(player.x, player.y);
     player.vz = 0;
     player.dashCooldown = 3 * (player.dashCdMult || 1);
@@ -401,7 +320,10 @@ function handleDash(player) {
 function getMaxAmmo(player, weapon) {
   const base = MAG_SIZES[weapon];
   if (!base) return 0;
-  return Math.ceil(base * (player.extMagMult || 1));
+  const extBase = player._hasExtMag ? (EXT_MAG_SIZES[weapon] || base) : base;
+  // Dual-wielded M16A2/benelli get 2x magazine
+  const dualMult = (player.dualWield && (weapon === 'burst' || weapon === 'shotgun')) ? 2 : 1;
+  return extBase * dualMult;
 }
 
 function handleReload(player) {
@@ -411,8 +333,10 @@ function handleReload(player) {
   if (!maxAmmo || player.ammo >= maxAmmo) return;
   player.reloading = 1;
 
+  const dualMult = player.dualWield ? 2 : 1;
   if (weapon === 'shotgun') {
-    // Shell by shell reload
+    // Shell by shell reload — benelli keeps the same per-shell speed when dual-wielding
+    const shellMs = 750;
     const loadShell = () => {
       if (!player.alive || player.weapon !== 'shotgun' || player.ammo >= getMaxAmmo(player, 'shotgun')) {
         player.reloading = 0;
@@ -422,17 +346,17 @@ function handleReload(player) {
       player.ammo++;
       broadcast({ type: 'shellLoaded', playerId: player.id, ammo: player.ammo });
       if (player.ammo < getMaxAmmo(player, 'shotgun')) {
-        player.reloadTimer = setTimeout(loadShell, 750);
+        player.reloadTimer = gameState.scheduleRoundTimer(loadShell, shellMs);
       } else {
         player.reloading = 0;
         broadcast({ type: 'reloaded', playerId: player.id, weapon: 'shotgun' });
       }
     };
-    player.reloadTimer = setTimeout(loadShell, 750);
+    player.reloadTimer = gameState.scheduleRoundTimer(loadShell, shellMs);
   } else {
-    // Full mag reload for other weapons
-    const reloadTime = weapon === 'bolty' ? 2500 : 2000;
-    player.reloadTimer = setTimeout(() => {
+    // Full mag reload for other weapons — 2x time when dual-wielding
+    const reloadTime = (weapon === 'bolty' ? 2500 : 2000) * dualMult;
+    player.reloadTimer = gameState.scheduleRoundTimer(() => {
       player.ammo = getMaxAmmo(player, player.weapon);
       player.reloading = 0;
       broadcast({ type: 'reloaded', playerId: player.id, weapon });
@@ -454,12 +378,18 @@ function placeBarricadeForPlayer(player, aimX, aimY) {
   const cy = player.y + ay * 45;
   const angle = Math.atan2(ay, ax);
   const W = 52, H = 8;
-  const bid = state.barricadeIdCounter++;
-  state.BARRICADES.push({ id: bid, cx, cy, w: W, h: H, angle, ownerId: player.id, placedAt: nowMs });
-  const cdMs = player.isBot ? state.BOT_BARRICADE_COOLDOWN_MS : state.BARRICADE_COOLDOWN_MS;
+  const bid = gameState.nextBarricadeId();
+  // Cache cos/sin and terrain height — barricades are static so this never changes
+  gameState.addBarricade({
+    id: bid, cx, cy, w: W, h: H, angle,
+    _cosA: Math.cos(angle), _sinA: Math.sin(angle),
+    _terrainH: getTerrainHeight(cx, cy),
+    ownerId: player.id, placedAt: nowMs, hp: 50,
+  });
+  const cdMs = player.isBot ? gameState.BOT_BARRICADE_COOLDOWN_MS : gameState.BARRICADE_COOLDOWN_MS;
   player.barricadeReadyAt = nowMs + cdMs;
   broadcast({ type: 'barricadePlaced', id: bid, cx, cy, w: W, h: H, angle, ownerId: player.id });
   return true;
 }
 
-module.exports = { handleAttack, updateProjectiles, handleBumpCombat, handleDash, handleReload, MAG_SIZES, placeBarricadeForPlayer };
+module.exports = { handleAttack, updateProjectiles, handleDash, handleReload, getMaxAmmo, placeBarricadeForPlayer, eyeHeight };

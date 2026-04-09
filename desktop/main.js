@@ -1,5 +1,11 @@
 const { app, BrowserWindow, globalShortcut } = require('electron');
 
+// Force SwiftShader for ALL rendering (including WebGL) — bypasses the GPU entirely
+app.disableHardwareAcceleration();
+app.commandLine.appendSwitch('use-gl', 'swiftshader');
+app.commandLine.appendSwitch('no-sandbox');
+app.commandLine.appendSwitch('disable-gpu');
+
 const GAME_URL = 'https://claw.bitvox.me/strawberrycow/';
 
 let mainWindow = null;
@@ -38,6 +44,13 @@ function createWindow() {
   });
   mainWindow.webContents.on('did-finish-load', () => {
     console.log('loaded ok:', mainWindow.webContents.getURL());
+  });
+  // Catch renderer crashes
+  mainWindow.webContents.on('render-process-gone', (_e, details) => {
+    console.error('RENDERER GONE:', details);
+  });
+  mainWindow.webContents.on('unresponsive', () => {
+    console.error('RENDERER UNRESPONSIVE');
   });
 
   // Auto-grant all permissions

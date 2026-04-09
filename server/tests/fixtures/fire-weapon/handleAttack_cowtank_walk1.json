@@ -1,0 +1,77 @@
+{
+  "broadcasts": [
+    {
+      "color": 16777215,
+      "cowtank": true,
+      "id": 1,
+      "ownerId": 100,
+      "type": "projectile",
+      "vx": 1997.504678,
+      "vy": 0,
+      "vz": 99.875234,
+      "x": 1039.950094,
+      "y": 1000,
+      "z": 15.75
+    },
+    {
+      "name": "TestPlayer",
+      "playerId": 100,
+      "type": "weaponDrop"
+    },
+    {
+      "player": {
+        "aimAngle": 0,
+        "alive": true,
+        "ammo": 15,
+        "armor": 0,
+        "attackCooldown": 1,
+        "color": 16777215,
+        "crouching": true,
+        "dashCooldown": 0,
+        "dir": "south",
+        "dualWield": false,
+        "extMagMult": 1,
+        "hunger": 95,
+        "id": 100,
+        "kills": 0,
+        "level": 0,
+        "name": "TestPlayer",
+        "personality": null,
+        "recoilMult": 1,
+        "reloading": false,
+        "sizeMult": 1,
+        "spawnProt": false,
+        "speedMult": 1,
+        "stunTimer": 0,
+        "weapon": "normal",
+        "x": 1000,
+        "xp": 0,
+        "xpToNext": 50,
+        "y": 1000,
+        "z": 0
+      },
+      "type": "playerSnapshot"
+    }
+  ],
+  "mutations": {
+    "ammo": 15,
+    "attackCooldown": 1,
+    "hunger": 95,
+    "weapon": "normal"
+  },
+  "projectiles": [
+    {
+      "blastRadius": 180,
+      "dmg": 38,
+      "explosive": true,
+      "id": 1,
+      "ownerId": 100,
+      "vx": 1997.504678,
+      "vy": 0,
+      "vz": 99.875234,
+      "x": 1039.950094,
+      "y": 1000,
+      "z": 15.75
+    }
+  ]
+}

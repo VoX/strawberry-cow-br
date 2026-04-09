@@ -226,10 +226,16 @@ function startMenuMusicTribal() {
 }
 
 export function startMenuMusic() {
+  // Radio is checked first so _stopRadioIfRunning (below) doesn't nuke the
+  // stream before we had a chance to resume it.
+  if (S.musicStyle === 'radio') { startMenuMusicRadio(); return; }
+  _stopRadioIfRunning(); // any non-radio style: tear down the live stream
+  if (S.musicStyle === 'custom') { startMenuMusicCustom(); return; }
   if (S.musicStyle === 'tribal') { startMenuMusicTribal(); return; }
   if (S.musicStyle === 'industrial') { startMenuMusicIndustrial(); return; }
   if (S.musicStyle === 'money') { startMenuMusicMoney(); return; }
   if (S.musicStyle === 'boy') { startMenuMusicBoy(); return; }
+  if (S.musicStyle === 'neo') { startMenuMusicNeo(); return; }
   if (!actx || menuMusicInterval) return;
   let beat = 0;
   const chords = [[0,4,7],[5,9,12],[7,11,14],[3,7,10]];
@@ -332,7 +338,167 @@ function startMenuMusicIndustrial() {
   }, 300);
 }
 
-export function stopMenuMusic() { if (menuMusicInterval) { clearInterval(menuMusicInterval); menuMusicInterval = null; } }
+export function stopMenuMusic() {
+  if (menuMusicInterval) { clearInterval(menuMusicInterval); menuMusicInterval = null; }
+  // Custom menu music is a looping BufferSource, not an interval — stop it
+  // here so the existing menu→game transition path (ui.js: stop+start on style
+  // change, index.js: stop when state becomes 'playing') cleans up properly.
+  if (_customMenuNode) {
+    try { _customMenuNode.stop(); } catch (e) {}
+    _customMenuNode.disconnect();
+    _customMenuNode = null;
+  }
+  if (_customMenuGain) { _customMenuGain.disconnect(); _customMenuGain = null; }
+}
+
+// --- Custom sample-based music pack ---
+// Every other music style in this file is procedural WebAudio oscillator work.
+// The custom pack is different: 4 prerecorded .ogg files (menu + 3 combat
+// moods) loaded once from /music/custom/<slot>.ogg, played as looping
+// BufferSources, crossfaded on mood transition. Lazy-loaded the first time
+// the user picks this style so the audio doesn't download unless used.
+// Files are gitignored — drop ogg files into dist/music/custom/ on each host
+// to enable this style. Missing files degrade to silence, not crash.
+const customBuffers = { menu: null, chill: null, tense: null, frantic: null };
+let _customLoading = false, _customLoaded = false, _customWarned = false;
+function loadCustomBuffers() {
+  if (_customLoading || _customLoaded || !actx) return;
+  _customLoading = true;
+  const files = { menu: 'music/custom/menu.ogg', chill: 'music/custom/chill.ogg', tense: 'music/custom/tense.ogg', frantic: 'music/custom/frantic.ogg' };
+  let remaining = 4;
+  const warnMissing = (url, reason) => {
+    if (_customWarned) return;
+    _customWarned = true;
+    console.warn('[audio] custom music pack unavailable — ' + url + ' ' + reason + '. Copy ogg files to dist/music/custom/ to enable.');
+  };
+  for (const [k, url] of Object.entries(files)) {
+    fetch(url).then(r => {
+      if (!r.ok) { warnMissing(url, 'HTTP ' + r.status); throw new Error('HTTP ' + r.status); }
+      return r.arrayBuffer();
+    }).then(buf => actx.decodeAudioData(buf)).then(d => {
+      customBuffers[k] = d;
+      if (--remaining === 0) { _customLoaded = true; _customLoading = false; }
+    }).catch((err) => {
+      warnMissing(url, err && err.message ? err.message : 'fetch failed');
+      if (--remaining === 0) { _customLoaded = true; _customLoading = false; }
+    });
+  }
+}
+
+// Lightweight HEAD probe for the UI to gate the custom dropdown option.
+// Resolves true if menu.ogg exists, false otherwise. Used at startup by
+// ui.js to hide the option when the files aren't present on the deploy.
+export function customMusicAvailable() {
+  return fetch('music/custom/menu.ogg', { method: 'HEAD' }).then(r => r.ok).catch(() => false);
+}
+
+// Menu music: one looping BufferSource on its own gain node so masterVol can
+// be applied at start and stopMenuMusic can disconnect cleanly.
+let _customMenuNode = null, _customMenuGain = null;
+function startMenuMusicCustom() {
+  if (!actx || menuMusicInterval || _customMenuNode) return;
+  loadCustomBuffers();
+  // Use an interval to wait-and-retry until the menu buffer finishes decoding.
+  // Reuses menuMusicInterval so stopMenuMusic's clearInterval tears it down if
+  // the user switches styles mid-load.
+  menuMusicInterval = setInterval(() => {
+    if (S.state === 'playing') { stopMenuMusic(); return; }
+    if (!customBuffers.menu) return;
+    // Buffer ready — swap the wait-interval out for the real BufferSource.
+    clearInterval(menuMusicInterval); menuMusicInterval = null;
+    const src = actx.createBufferSource(); src.buffer = customBuffers.menu; src.loop = true;
+    const g = actx.createGain(); g.gain.value = 0.35 * masterVol();
+    src.connect(g); g.connect(actx.destination); src.start();
+    _customMenuNode = src; _customMenuGain = g;
+  }, 100);
+}
+
+// In-game music: hold one active BufferSource + GainNode per mood transition.
+// On mood change, start the new buffer with gain ramping 0 → target over 2s and
+// fade the old one target → 0 over 2s, then stop the old node. Gain is updated
+// every tick from masterVol() so volume slider changes respond live.
+let _customActiveNode = null, _customActiveGain = null, _customActiveMood = null;
+const _CUSTOM_MOOD_GAIN = { chill: 0.35, tense: 0.35, frantic: 0.35, menu: 0.35 };
+function tickMusicCustom() {
+  if (!actx || !musicPlaying || S.state !== 'playing') return;
+  loadCustomBuffers();
+  const buf = customBuffers[musicMood];
+  if (!buf) return; // still decoding
+  const v = masterVol();
+  if (_customActiveMood !== musicMood) {
+    // Mood changed (or first tick): spin up the new node with a 2s fade-in and
+    // fade the outgoing node out in parallel, then stop it.
+    const t = actx.currentTime;
+    const targetGain = (_CUSTOM_MOOD_GAIN[musicMood] || 0.35) * v;
+    const newSrc = actx.createBufferSource(); newSrc.buffer = buf; newSrc.loop = true;
+    const newGain = actx.createGain();
+    newGain.gain.setValueAtTime(0, t);
+    newGain.gain.linearRampToValueAtTime(targetGain, t + 2);
+    newSrc.connect(newGain); newGain.connect(actx.destination); newSrc.start();
+    if (_customActiveNode) {
+      const oldNode = _customActiveNode, oldGain = _customActiveGain;
+      oldGain.gain.cancelScheduledValues(t);
+      oldGain.gain.setValueAtTime(oldGain.gain.value, t);
+      oldGain.gain.linearRampToValueAtTime(0, t + 2);
+      setTimeout(() => { try { oldNode.stop(); } catch (e) {} oldNode.disconnect(); oldGain.disconnect(); }, 2100);
+    }
+    _customActiveNode = newSrc; _customActiveGain = newGain; _customActiveMood = musicMood;
+  } else if (_customActiveGain) {
+    // Same mood — keep the active gain in sync with the volume slider. Only
+    // touch it if the crossfade ramp has already completed, otherwise we'd
+    // stomp the linearRampToValueAtTime.
+    const t = actx.currentTime;
+    const targetGain = (_CUSTOM_MOOD_GAIN[musicMood] || 0.35) * v;
+    _customActiveGain.gain.setValueAtTime(targetGain, t);
+  }
+}
+// Reset custom music state when the game ends so the next round starts clean.
+// Called from resetMusic() below.
+function resetCustomMusic() {
+  if (_customActiveNode) {
+    try { _customActiveNode.stop(); } catch (e) {}
+    _customActiveNode.disconnect();
+    if (_customActiveGain) _customActiveGain.disconnect();
+  }
+  _customActiveNode = null; _customActiveGain = null; _customActiveMood = null;
+}
+
+// --- Radio streaming ---
+// Continuous live stream via an HTMLAudioElement. Unlike every other music
+// style in this file (all procedural WebAudio synth or decoded buffers), this
+// is a live stream proxied through /strawberrycow-radio/rudefm. Server-side
+// proxy in server/index.js handles the ICY → HTTP rewrite from the SHOUTcast
+// origin so Caddy's strict Go HTTP transport doesn't 502.
+//
+// Semantics differ from other styles: radio plays CONTINUOUSLY regardless of
+// lobby/game state transitions. Only a style change away from radio stops
+// it — via _stopRadioIfRunning() called at the top of startMenuMusic() and
+// tickMusic() for non-radio branches. stopMenuMusic/resetMusic deliberately
+// do NOT touch the radio so it keeps streaming across round transitions.
+let _radioAudio = null;
+function startMenuMusicRadio() {
+  if (!_radioAudio) {
+    _radioAudio = new Audio('/strawberrycow-radio/rudefm');
+    _radioAudio.crossOrigin = 'anonymous';
+    _radioAudio.preload = 'none';
+  }
+  _radioAudio.volume = 0.5 * masterVol();
+  if (_radioAudio.paused) {
+    _radioAudio.play().catch(err => console.warn('[audio] radio play failed:', err));
+  }
+}
+function tickMusicRadio() {
+  if (!_radioAudio) { startMenuMusicRadio(); return; }
+  _radioAudio.volume = 0.5 * masterVol();
+  if (_radioAudio.paused) {
+    _radioAudio.play().catch(() => {});
+  }
+}
+function _stopRadioIfRunning() {
+  if (!_radioAudio) return;
+  try { _radioAudio.pause(); _radioAudio.src = ''; _radioAudio.load(); } catch (e) {}
+  _radioAudio = null;
+}
 
 // --- Dynamic In-Game Music ---
 let musicPlaying = false, nextNote = 0, musicMood = 'chill';
@@ -344,11 +510,10 @@ const SCALES = {
 const TEMPOS = { chill: 0.28, tense: 0.2, frantic: 0.14 };
 
 export function setMusicPlaying(val) { musicPlaying = val; }
-export function resetMusic() { nextNote = 0; musicMood = 'chill'; }
-export function initMusic() {}
+export function resetMusic() { nextNote = 0; musicMood = 'chill'; resetCustomMusic(); }
 
 export function updateMusicMood() {
-  const me = S.serverPlayers ? S.serverPlayers.find(p => p.id === S.myId) : null;
+  const me = S.me;
   const alive = S.serverPlayers ? S.serverPlayers.filter(p => p.alive).length : 8;
   if (!me || !me.alive) { musicMood = 'chill'; return; }
   if (me.hunger < 20 || alive <= 2) musicMood = 'frantic';
@@ -1052,12 +1217,220 @@ function startMenuMusicBoy() {
   }, 240);
 }
 
+// ---- Neo Gospel (Spyro-inspired) helpers ----
+function jazz7Chord(t, vol, rootFreq, isMinor) {
+  if (!actx) return;
+  // Root, 3rd, 5th, 7th — stacked Rhodes-ish electric piano
+  const intervals = isMinor ? [0, 3, 7, 10] : [0, 4, 7, 11];
+  for (const semi of intervals) {
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = 'sine'; o.frequency.value = rootFreq * Math.pow(2, semi / 12);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol * 0.25, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.9);
+    o.connect(g); g.connect(actx.destination); o.start(t); o.stop(t + 0.95);
+  }
+  // Chime layer — bell-like harmonics on top
+  for (const semi of [12, 19]) {
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = 'triangle'; o.frequency.value = rootFreq * Math.pow(2, semi / 12) * 1.003;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol * 0.08, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 1.4);
+    o.connect(g); g.connect(actx.destination); o.start(t); o.stop(t + 1.5);
+  }
+}
+function spyroLead(t, vol, freq, dur) {
+  if (!actx) return;
+  const o = actx.createOscillator(), g = actx.createGain();
+  o.type = 'triangle'; o.frequency.value = freq;
+  // Subtle vibrato — the dreamy quality
+  const lfo = actx.createOscillator(), lfoGain = actx.createGain();
+  lfo.frequency.value = 5.5; lfoGain.gain.value = freq * 0.012;
+  lfo.connect(lfoGain); lfoGain.connect(o.frequency);
+  const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2200; lp.Q.value = 1.5;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(vol, t + 0.04);
+  g.gain.linearRampToValueAtTime(vol * 0.7, t + dur * 0.6);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(lp); lp.connect(g); g.connect(actx.destination);
+  o.start(t); o.stop(t + dur);
+  lfo.start(t); lfo.stop(t + dur);
+}
+function cleanGuitar(t, vol, freq) {
+  if (!actx) return;
+  // Square through lowpass for a clean electric guitar chord stab
+  const o = actx.createOscillator(), g = actx.createGain();
+  o.type = 'square'; o.frequency.value = freq;
+  const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1400; lp.Q.value = 2;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(vol, t + 0.005);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+  o.connect(lp); lp.connect(g); g.connect(actx.destination);
+  o.start(t); o.stop(t + 0.4);
+}
+function rhythmKick(t, vol) {
+  if (!actx) return;
+  const o = actx.createOscillator(), g = actx.createGain();
+  o.type = 'sine'; o.frequency.setValueAtTime(110, t); o.frequency.exponentialRampToValueAtTime(38, t + 0.07);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+  o.connect(g); g.connect(actx.destination); o.start(t); o.stop(t + 0.14);
+}
+function liveSnare(t, vol) {
+  if (!actx) return;
+  const bs = actx.sampleRate * 0.06, buf = actx.createBuffer(1, bs, actx.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < bs; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / bs * 4);
+  const n = actx.createBufferSource(); n.buffer = buf;
+  const bp = actx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2100; bp.Q.value = 1.2;
+  const g = actx.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+  // Tonal body
+  const o = actx.createOscillator(), og = actx.createGain();
+  o.type = 'sine'; o.frequency.setValueAtTime(180, t); o.frequency.exponentialRampToValueAtTime(90, t + 0.05);
+  og.gain.setValueAtTime(vol * 0.5, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+  o.connect(og); og.connect(actx.destination); o.start(t); o.stop(t + 0.08);
+  n.connect(bp); bp.connect(g); g.connect(actx.destination); n.start(t); n.stop(t + 0.08);
+}
+function walkBass(t, vol, freq) {
+  if (!actx) return;
+  const o = actx.createOscillator(), g = actx.createGain();
+  o.type = 'triangle'; o.frequency.value = freq;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(vol, t + 0.005);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+  const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 800;
+  o.connect(lp); lp.connect(g); g.connect(actx.destination); o.start(t); o.stop(t + 0.3);
+}
+
+let _neoBeat = 0, _neoSection = 0, _neoSectionStart = 0;
+function tickMusicNeo() {
+  if (!actx || !musicPlaying || S.state !== 'playing') return;
+  const t = actx.currentTime;
+  const tempos = { chill: 0.19, tense: 0.16, frantic: 0.13 };
+  const tempo = tempos[musicMood] || 0.19;
+  if (t < nextNote - 0.03) return;
+  const v = masterVol();
+  _neoBeat++;
+
+  const beatInSection = _neoBeat - _neoSectionStart;
+  if (beatInSection >= 32) {
+    _neoSection = (_neoSection + 1) % 4;
+    _neoSectionStart = _neoBeat;
+  }
+
+  // Dorian scale — the "magical jazzy exploration" mode
+  const scale = [0, 2, 3, 5, 7, 9, 10, 12, 14];
+
+  const sections = [
+    { // Exploration — gentle, sparse drums, wandering melody
+      melody: [0, -1, -1, 4, -1, 5, -1, 7, -1, -1, 5, -1, 4, -1, 2, -1, 0, -1, 2, -1, 4, -1, 5, -1, 7, -1, 5, -1, 4, -1, -1, -1],
+      bassPat:[1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0],
+      kickPat:[1,0,0,0, 0,0,1,0, 0,0,0,0, 0,1,0,0, 1,0,0,0, 0,0,1,0, 0,0,0,0, 0,1,0,0],
+      snarePat:[0,0,0,0, 1,0,0,0, 0,0,0,0, 0,0,1,0, 0,0,0,0, 1,0,0,0, 0,0,0,0, 0,0,1,0],
+      guitarPat:[0,0,0,0, 0,0,0,0, 0,0,1,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,1,0, 0,0,0,0],
+      root: 0, isMinor: false,
+    },
+    { // Curious discovery — more layers, swelling
+      melody: [4, 2, 0, 2, 4, 5, 7, 5, 4, 2, 4, 5, 7, 9, 7, 5, 4, 2, 0, 2, 4, 5, 7, 9, 11, 9, 7, 5, 4, 2, 0, -1],
+      bassPat:[1,0,1,0, 0,0,1,0, 1,0,1,0, 0,0,1,0, 1,0,1,0, 0,0,1,0, 1,0,1,0, 0,0,1,0],
+      kickPat:[1,0,0,1, 0,0,1,0, 1,0,0,0, 0,1,1,0, 1,0,0,1, 0,0,1,0, 1,0,0,0, 0,1,1,0],
+      snarePat:[0,0,0,0, 1,0,0,1, 0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,1, 0,0,0,0, 1,0,0,0],
+      guitarPat:[0,0,1,0, 0,0,0,0, 0,0,1,0, 0,0,0,0, 0,0,1,0, 0,0,0,0, 0,0,1,0, 0,0,0,0],
+      root: 5, isMinor: false,
+    },
+    { // Mystery — minor, contemplative, spacious
+      melody: [7, -1, -1, 5, 4, -1, -1, 7, 5, -1, -1, 4, 2, -1, -1, 0, 2, -1, -1, 4, 5, -1, -1, 7, 5, -1, 4, -1, 2, -1, 0, -1],
+      bassPat:[1,0,0,0, 0,0,0,1, 1,0,0,0, 0,0,0,1, 1,0,0,0, 0,0,0,1, 1,0,0,0, 0,0,0,1],
+      kickPat:[1,0,0,0, 0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,1, 0,0,0,0],
+      snarePat:[0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,1],
+      guitarPat:[0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 1,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0],
+      root: -3, isMinor: true,
+    },
+    { // Celebration — full energy, memorable hook
+      melody: [7, 9, 11, 12, 11, 9, 7, 5, 4, 7, 9, 12, 14, 12, 9, 7, 7, 9, 11, 12, 11, 9, 7, 12, 14, 12, 9, 7, 5, 4, 2, 0],
+      bassPat:[1,0,1,1, 1,0,1,0, 1,1,0,1, 1,0,1,0, 1,0,1,1, 1,0,1,0, 1,1,0,1, 1,0,1,1],
+      kickPat:[1,0,0,1, 0,0,1,0, 1,0,0,1, 0,0,1,1, 1,0,0,1, 0,0,1,0, 1,0,0,1, 0,0,1,1],
+      snarePat:[0,0,1,0, 1,0,0,1, 0,0,1,0, 1,0,0,0, 0,0,1,0, 1,0,0,1, 0,0,1,0, 1,0,0,0],
+      guitarPat:[1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0],
+      root: 0, isMinor: false,
+    },
+  ];
+  const sec = sections[_neoSection];
+  const step = beatInSection % 32;
+  const rootFreq = 220 * Math.pow(2, sec.root / 12);
+
+  // Section transition: full jazz 7 chord swell
+  if (step === 0) {
+    jazz7Chord(t, 0.08 * v, rootFreq * 0.5, sec.isMinor);
+  }
+
+  // Melody — triangle lead with vibrato
+  const noteIdx = sec.melody[step];
+  if (noteIdx !== undefined && noteIdx >= 0) {
+    const scaleNote = scale[noteIdx % scale.length];
+    const freq = rootFreq * Math.pow(2, scaleNote / 12);
+    spyroLead(t, 0.05 * v, freq, tempo * 1.4);
+  }
+
+  // Walking bass
+  if (sec.bassPat[step]) {
+    const walkIdx = Math.floor(step / 4) % scale.length;
+    const bassFreq = rootFreq * 0.25 * Math.pow(2, scale[walkIdx] / 12);
+    walkBass(t, 0.06 * v, bassFreq);
+  }
+
+  // Guitar chord stabs
+  if (sec.guitarPat[step]) {
+    cleanGuitar(t, 0.04 * v, rootFreq);
+    cleanGuitar(t, 0.04 * v, rootFreq * Math.pow(2, (sec.isMinor ? 3 : 4) / 12));
+    cleanGuitar(t, 0.04 * v, rootFreq * Math.pow(2, 7 / 12));
+  }
+
+  // Kick + snare
+  if (sec.kickPat[step]) rhythmKick(t, 0.07 * v);
+  if (sec.snarePat[step]) liveSnare(t, 0.05 * v);
+
+  // Hi-hat on off-beats (eighth-note shuffle)
+  if (step % 2 === 1) {
+    const hbs = actx.sampleRate * 0.014, hbuf = actx.createBuffer(1, hbs, actx.sampleRate), hd = hbuf.getChannelData(0);
+    for (let i = 0; i < hbs; i++) hd[i] = (Math.random() * 2 - 1) * 0.3 * Math.exp(-i / hbs * 10);
+    const hh = actx.createBufferSource(); hh.buffer = hbuf;
+    const hg = actx.createGain(); hg.gain.setValueAtTime(0.018 * v, t); hg.gain.exponentialRampToValueAtTime(0.001, t + 0.018);
+    const hhf = actx.createBiquadFilter(); hhf.type = 'highpass'; hhf.frequency.value = 7500;
+    hh.connect(hhf); hhf.connect(hg); hg.connect(actx.destination); hh.start(t); hh.stop(t + 0.018);
+  }
+
+  nextNote = t + tempo;
+}
+function startMenuMusicNeo() {
+  if (!actx || menuMusicInterval) return;
+  let beat = 0;
+  menuMusicInterval = setInterval(() => {
+    if (S.state === 'playing') { stopMenuMusic(); return; }
+    const t = actx.currentTime;
+    const v = masterVol();
+    const scale = [0, 2, 3, 5, 7, 9, 10];
+    if (beat % 8 === 0) jazz7Chord(t, 0.06 * v, 110, false);
+    if (beat % 2 === 0) walkBass(t, 0.04 * v, 55 * Math.pow(2, scale[Math.floor(beat / 2) % scale.length] / 12));
+    if (beat % 4 === 0) rhythmKick(t, 0.04 * v);
+    if (beat % 4 === 2) liveSnare(t, 0.035 * v);
+    if (beat % 16 === 0) {
+      const note = scale[(beat / 16) % scale.length];
+      spyroLead(t, 0.04 * v, 220 * Math.pow(2, note / 12), 1.5);
+    }
+    beat++;
+  }, 220);
+}
+
 let _classicBeat = 0, _classicSection = 0, _classicSectionStart = 0;
 export function tickMusic() {
+  if (S.musicStyle === 'radio') { tickMusicRadio(); return; }
+  _stopRadioIfRunning(); // defensive: stop radio if the style changed mid-game
+  if (S.musicStyle === 'custom') { tickMusicCustom(); return; }
   if (S.musicStyle === 'tribal') { tickMusicTribal(); return; }
   if (S.musicStyle === 'industrial') { tickMusicIndustrial(); return; }
   if (S.musicStyle === 'money') { tickMusicMoney(); return; }
   if (S.musicStyle === 'boy') { tickMusicBoy(); return; }
+  if (S.musicStyle === 'neo') { tickMusicNeo(); return; }
   if (!actx || !musicPlaying || S.state !== 'playing') return;
   const t = actx.currentTime;
   const tempo = TEMPOS[musicMood] || 0.28;

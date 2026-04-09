@@ -4,9 +4,14 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build:client": "esbuild client/index.js --bundle --outfile=dist/bundle.js --format=esm --external:three --external:three/*",
-    "watch:client": "esbuild client/index.js --bundle --outfile=dist/bundle.js --format=esm --external:three --external:three/* --watch",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "check:dom-ids": "node scripts/check-dom-ids.js",
+    "prebuild:client": "node scripts/check-dom-ids.js",
+    "build:client": "esbuild client/index.js --bundle --outfile=dist/bundle.js --format=esm --external:three --external:three/* --sourcemap=linked",
+    "watch:client": "esbuild client/index.js --bundle --outfile=dist/bundle.js --format=esm --external:three --external:three/* --watch --sourcemap=linked",
+    "test:fire-weapon": "node server/tests/fire-weapon.characterization.js",
+    "test:terrain": "node server/tests/terrain-determinism.test.js",
+    "test:movement": "node server/tests/movement.characterization.js",
+    "test": "npm run test:terrain && npm run test:movement && npm run test:fire-weapon"
   },
   "keywords": [],
   "author": "",

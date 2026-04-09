@@ -3,19 +3,49 @@ import S from './state.js';
 import { cam, ren } from './renderer.js';
 import { initAudio } from './audio.js';
 import { send } from './network.js';
+import { INTERP_DELAY_MS } from './interp.js';
+import { TICK_RATE } from '../shared/constants.js';
+
+// Phase 6 lag comp: the tick offset between the newest server tick and the
+// one the client is actually rendering (due to the interpolation delay).
+// Attack messages carry `displayTick = S.lastTickNum - INTERP_DELAY_TICKS`
+// so the server can rewind entity positions to match what the shooter saw.
+const INTERP_DELAY_TICKS = Math.round(INTERP_DELAY_MS * TICK_RATE / 1000);
 
 const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 let vmGroupRef = null;
 export function setVmGroupRef(getter) { vmGroupRef = getter; }
 
+// Shared Vector3 temp for input handlers — avoids allocating per action
+const _inputDir = new THREE.Vector3();
+
 export function doAttack() {
-  const dir = new THREE.Vector3(0, 0, -1); dir.applyQuaternion(cam.quaternion);
-  send({ type: 'attack', aimX: dir.x, aimY: dir.z, aimZ: dir.y, fireMode: S.fireMode });
+  _inputDir.set(0, 0, -1).applyQuaternion(cam.quaternion);
+  send({
+    type: 'attack',
+    aimX: _inputDir.x, aimY: _inputDir.z, aimZ: _inputDir.y,
+    fireMode: S.fireMode,
+    // displayTick: the server tick the interp buffer is currently showing.
+    // Server uses this to rewind entity positions for hit detection.
+    displayTick: Math.max(0, S.lastTickNum - INTERP_DELAY_TICKS),
+  });
 }
 
 export function doDash() {
-  const dir = new THREE.Vector3(0, 0, -1); dir.applyQuaternion(cam.quaternion); dir.y = 0; dir.normalize();
-  send({ type: 'dash', dirX: dir.x, dirY: dir.z });
+  _inputDir.set(0, 0, -1).applyQuaternion(cam.quaternion);
+  _inputDir.y = 0; _inputDir.normalize();
+  send({ type: 'dash', dirX: _inputDir.x, dirY: _inputDir.z });
+}
+
+// Fullscreen toggle — bound to the O key and a lobby button. The Fullscreen API
+// rejects the promise if called outside a user gesture, which is fine: the keydown
+// handler and button click both qualify.
+export function toggleFullscreen() {
+  if (document.fullscreenElement) {
+    document.exitFullscreen().catch(() => {});
+  } else {
+    document.documentElement.requestFullscreen().catch(() => {});
+  }
 }
 
 // Pointer lock
@@ -27,7 +57,7 @@ const AUTO_FIRE_INTERVAL = 72; // ms between shots — slightly over server cool
 function autoFireLoop() {
   if (!autoFireActive) return;
   if (!mouseDown || S.state !== 'playing' || !S.locked) { stopAutoFire(); return; }
-  const me = S.serverPlayers.find(p => p.id === S.myId);
+  const me = S.me;
   if (!me || !me.alive || me.weapon !== 'burst') { stopAutoFire(); return; }
   const now = performance.now();
   if (now >= nextFireTime) {
@@ -60,7 +90,7 @@ ren.domElement.addEventListener('mousedown', e => {
   if (e.button !== 0) return;
   initAudio();
   if (S.state !== 'playing') return;
-  const me = S.serverPlayers.find(p => p.id === S.myId);
+  const me = S.me;
   // While spectating, click cycles to the next target instead of firing
   if (!me || !me.alive) {
     if (!S.locked) { ren.domElement.requestPointerLock(); return; }
@@ -90,7 +120,7 @@ document.addEventListener('mousemove', e => {
 // Right click for ADS (bolty only)
 document.addEventListener('mousedown', e => {
   if (e.button === 2 && S.locked && S.state === 'playing') {
-    const me = S.serverPlayers.find(p => p.id === S.myId);
+    const me = S.me;
     if (me && me.alive && me.weapon === 'bolty') {
       S.adsActive = true;
       cam.fov = 12.5; cam.updateProjectionMatrix();
@@ -127,11 +157,13 @@ if (isMobile) {
   dp.addEventListener('touchstart', handleDp, { passive: false });
   dp.addEventListener('touchmove', handleDp, { passive: false });
   dp.addEventListener('touchend', e => { e.preventDefault(); tdx = tdy = 0; drawDp(0, 0); }, { passive: false });
+  const _mobFwd = new THREE.Vector3();
+  const _mobRight = new THREE.Vector3();
   setInterval(() => { if (S.state === 'playing' && (Math.abs(tdx) + Math.abs(tdy)) > 0.1) {
-    const fwd = new THREE.Vector3(0, 0, -1); fwd.applyQuaternion(cam.quaternion); fwd.y = 0; if (fwd.length() > 0.01) fwd.normalize();
-    const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
-    const mx = fwd.x * (-tdy) + right.x * tdx;
-    const mz = fwd.z * (-tdy) + right.z * tdx;
+    _mobFwd.set(0, 0, -1).applyQuaternion(cam.quaternion); _mobFwd.y = 0; if (_mobFwd.length() > 0.01) _mobFwd.normalize();
+    _mobRight.set(-_mobFwd.z, 0, _mobFwd.x);
+    const mx = _mobFwd.x * (-tdy) + _mobRight.x * tdx;
+    const mz = _mobFwd.z * (-tdy) + _mobRight.z * tdx;
     const len = Math.hypot(mx, mz);
     if (len > 0) { send({ type: 'move', dx: mx / len, dy: mz / len }); S.pingLast = performance.now(); }
   } else if (S.state === 'playing') { send({ type: 'move', dx: 0, dy: 0 }); } }, 50);
@@ -195,7 +227,7 @@ addEventListener('keydown', e => {
     e.preventDefault(); openChat(); return;
   }
   // Spectate cycle while dead
-  const meK = S.serverPlayers.find(p => p.id === S.myId);
+  const meK = S.me;
   if (S.state === 'playing' && (!meK || !meK.alive)) {
     if (e.code === 'ArrowRight' || e.code === 'KeyD') { cycleSpectate(1); return; }
     if (e.code === 'ArrowLeft' || e.code === 'KeyA') { cycleSpectate(-1); return; }
@@ -204,21 +236,26 @@ addEventListener('keydown', e => {
   if (e.code === 'Space') { e.preventDefault(); send({ type: 'jump' }); }
   if (e.code === 'KeyQ' && S.state === 'playing') send({ type: 'dropWeapon' });
   if (e.code === 'KeyP') { S.debugMode = !S.debugMode; }
+  if (e.code === 'KeyO') { toggleFullscreen(); }
   if (e.code === 'KeyR' && S.state === 'playing') send({ type: 'reload' });
   if (e.code === 'KeyX' && S.state === 'playing') {
-    S.fireMode = S.fireMode === 'burst' ? 'auto' : 'burst';
+    // Cycle burst → auto → semi → burst.
+    S.fireMode = S.fireMode === 'burst' ? 'auto'
+               : S.fireMode === 'auto'  ? 'semi'
+               : 'burst';
     S.killfeed.unshift({ txt: 'M16A2: ' + S.fireMode.toUpperCase() + ' mode', t: 2 });
   }
   if (e.code === 'KeyC' && S.state === 'playing') {
-    const meC = S.serverPlayers.find(p => p.id === S.myId);
+    const meC = S.me;
     if (meC && meC.alive) S.crouching = !S.crouching;
   }
   if (e.code === 'KeyB' && S.state === 'playing') {
-    const me = S.serverPlayers.find(p => p.id === S.myId);
+    const me = S.me;
     if (me && me.alive && performance.now() >= S.barricadeReadyAt) {
-      const dir = new THREE.Vector3(0, 0, -1); dir.applyQuaternion(cam.quaternion); dir.y = 0;
-      if (dir.length() > 0.01) dir.normalize();
-      send({ type: 'placeBarricade', aimX: dir.x, aimY: dir.z });
+      _inputDir.set(0, 0, -1).applyQuaternion(cam.quaternion);
+      _inputDir.y = 0;
+      if (_inputDir.length() > 0.01) _inputDir.normalize();
+      send({ type: 'placeBarricade', aimX: _inputDir.x, aimY: _inputDir.z });
     }
   }
   if (S.perkMenuOpen && window._perkChoices) {

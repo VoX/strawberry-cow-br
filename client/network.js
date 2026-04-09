@@ -1,4 +1,5 @@
 import S from './state.js';
+import { STATEFUL_INPUT_TYPES } from '../shared/constants.js';
 
 let msgHandler = null;
 export function setMessageHandler(fn) { msgHandler = fn; }
@@ -28,4 +29,10 @@ export function connect() {
   S.ws.onerror = () => { const ss = document.getElementById('serverStatus'); if (ss) { ss.textContent = '\u274C meadow offline'; ss.style.color = '#ff6666'; } };
 }
 
-export function send(m) { if (S.ws && S.ws.readyState === 1) S.ws.send(JSON.stringify(m)); }
+export function send(m) {
+  if (!S.ws || S.ws.readyState !== 1) return;
+  if (m && STATEFUL_INPUT_TYPES.has(m.type)) {
+    m.seq = ++S.inputSeq;
+  }
+  S.ws.send(JSON.stringify(m));
+}

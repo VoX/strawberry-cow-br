@@ -1,6 +1,6 @@
 const { MAP_W, MAP_H } = require('./config');
 const { rand } = require('./utils');
-const state = require('./state');
+const gameState = require('./game-state');
 
 const TOWER_CX = MAP_W / 2, TOWER_CY = MAP_H / 2, TOWER_CLEAR = 200;
 
@@ -10,15 +10,61 @@ function tooCloseToTower(x, y, w, h) {
 }
 
 function addWall(x, y, w, h) {
-  if (!tooCloseToTower(x, y, w, h)) state.WALLS.push({x, y, w, h});
+  if (!tooCloseToTower(x, y, w, h)) gameState.addWall({ id: gameState.nextBarricadeId(), x, y, w, h, hp: 1 });
+}
+
+// House: a rectangular footprint with 4 wall sides and a door gap in one side.
+// cx/cy is the house CENTER; w/d are the outer dimensions; doorSide ∈ 'N'|'S'|'E'|'W'.
+// Wall thickness is fixed at 20 (matching other walls). Door gap is 60 units wide.
+function addHouse(cx, cy, w, d, doorSide) {
+  const T = 20;         // wall thickness
+  const DOOR_W = 60;    // door opening width
+  const halfW = w / 2, halfD = d / 2;
+  const left = cx - halfW, right = cx + halfW;
+  const top = cy - halfD, bot = cy + halfD;
+  // North (top) and South (bottom) walls may be split by a door
+  const addSideNS = (y, side) => {
+    if (doorSide === side) {
+      // Split into two segments around the door centered on the wall
+      const gapStart = cx - DOOR_W / 2;
+      const gapEnd = cx + DOOR_W / 2;
+      const leftLen = gapStart - left;
+      const rightLen = right - gapEnd;
+      if (leftLen > 0) addWall(left, y, leftLen, T);
+      if (rightLen > 0) addWall(gapEnd, y, rightLen, T);
+    } else {
+      addWall(left, y, w, T);
+    }
+  };
+  const addSideEW = (x, side) => {
+    if (doorSide === side) {
+      const gapStart = cy - DOOR_W / 2;
+      const gapEnd = cy + DOOR_W / 2;
+      const topLen = gapStart - (top + T);
+      const botLen = (bot - T) - gapEnd;
+      if (topLen > 0) addWall(x, top + T, T, topLen);
+      if (botLen > 0) addWall(x, gapEnd, T, botLen);
+    } else {
+      // Interior length excludes the corner overlap with N/S walls
+      addWall(x, top + T, T, d - 2 * T);
+    }
+  };
+  addSideNS(top, 'N');
+  addSideNS(bot - T, 'S');
+  addSideEW(left, 'W');
+  addSideEW(right - T, 'E');
+  gameState.addHouse({ cx, cy, w, d, doorSide });
 }
 
 function generateMap() {
-  state.WALLS = [];
-  state.MUD_PATCHES = [];
-  state.HEAL_PONDS = [];
-  state.PORTALS = [];
-  state.SHELTERS = [];
+  // (gameState.resetRound() already cleared these collections before we were called.)
+
+  // One house roughly off-center, door facing south so the player can walk in from open ground.
+  // Size is modest so it fits between the scattered walls but is big enough to be a shelter.
+  const houseCx = rand(500, MAP_W - 500);
+  const houseCy = rand(400, MAP_H - 400);
+  const doorSides = ['N', 'S', 'E', 'W'];
+  addHouse(houseCx, houseCy, 180, 160, doorSides[Math.floor(Math.random() * 4)]);
   // Random L-shaped walls in corners (with variation)
   const corners = [
     {x: rand(200,400), y: rand(200,400)},
@@ -59,10 +105,10 @@ function generateMap() {
   }
 
   // Shelters — touching the outer fence on one side
-  state.SHELTERS.push({ x: MAP_W / 2, y: 60, r: 60 });
-  state.SHELTERS.push({ x: MAP_W / 2, y: MAP_H - 60, r: 60 });
-  state.SHELTERS.push({ x: 60, y: MAP_H / 2, r: 60 });
-  state.SHELTERS.push({ x: MAP_W - 60, y: MAP_H / 2, r: 60 });
+  gameState.addShelter({ x: MAP_W / 2, y: 60, r: 60 });
+  gameState.addShelter({ x: MAP_W / 2, y: MAP_H - 60, r: 60 });
+  gameState.addShelter({ x: 60, y: MAP_H / 2, r: 60 });
+  gameState.addShelter({ x: MAP_W - 60, y: MAP_H / 2, r: 60 });
 }
 
 module.exports = { generateMap };
