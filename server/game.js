@@ -28,18 +28,16 @@ function startGame() {
   // Drop any hunger-death ids that late-firing cowstrike callbacks (or any
   // end-of-round death path) may have left in the set while the round was ending.
   clearPendingDeaths();
-  // Reset per-player input seq counters — CSP (Phase 4) replays inputs-since-ack,
-  // and carrying seqs across a round boundary would reference sim state that
-  // no longer exists. Client mirrors this reset in the `start` handler. The
-  // ackSnapshot follows the same lifecycle — clear it so the first inputAck
-  // of the new round doesn't ship a stale-round position to the client.
+  // Reset per-player move queue state across round boundaries.
   for (const [, p] of gameState.getPlayers()) {
     p.lastInputSeq = 0;
     p._lastRecvMoveSeq = 0;
     p._moveQueue = null;
     p._lastMoveSpeedMult = 1;
-    p._ackSnapshot = null;
   }
+  // Clear the SI vault — stale snapshots from the previous round would
+  // pollute lag-compensation lookups in the new round.
+  SI.vault.clear();
   gameState.setGameTime(0);
   gameState.setZone({ x: 0, y: 0, w: MAP_W, h: MAP_H });
   generateTerrain(Math.random() * 10000);

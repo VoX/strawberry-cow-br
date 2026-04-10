@@ -202,7 +202,7 @@ export const handlers = {
     // `start` handler — without this, a reconnect-without-reload would
     // carry stale seqs into the new round and the first reconcile would
     // walk an invalid ring.
-    S.inputSeq = 0; S.lastAckedInput = 0;
+    S.inputSeq = 0;
     S.localHitSlowEndsAt = 0;
     document.getElementById('joinScreen').style.display = 'none';
     document.getElementById('hud').style.display = 'block';
@@ -225,7 +225,7 @@ export const handlers = {
     updateHostControls();
     // Reset input seq counters — mirrors server/game.js::startGame. Carrying
     // seqs across rounds would reference sim state that no longer exists.
-    S.inputSeq = 0; S.lastAckedInput = 0;
+    S.inputSeq = 0;
     S.localHitSlowEndsAt = 0;
     document.getElementById('joinScreen').style.display = 'none';
     document.getElementById('hud').style.display = 'block';

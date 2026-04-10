@@ -285,12 +285,6 @@ export function updateHud(me, time, dt) {
           let variance = 0; for (const g of ns.tickGaps) { const d = g - mean; variance += d * d; }
           jitter = Math.sqrt(variance / ns.tickGaps.length);
         }
-        // inputAck mean gap.
-        let ackGap = 0;
-        if (ns.inputAckArrivals.length > 1) {
-          const span = ns.inputAckArrivals[ns.inputAckArrivals.length - 1] - ns.inputAckArrivals[0];
-          ackGap = Math.round(span / (ns.inputAckArrivals.length - 1));
-        }
         // Reconcile snap stats.
         let snaps = 0, totalDrift = 0;
         for (const r of ns.reconcileSnapsWindow) {
@@ -303,8 +297,6 @@ export function updateHud(me, time, dt) {
         netLine =
           '\nTICK rcv: ' + tickRcvPct + '% (' + tickRcv + '/' + (tickRcv + tickGap) + ')' +
           ' jit=' + jitter.toFixed(1) + 'ms' +
-          '\nMOVE rcv: ' + (ns.moveArrivedPct || 0) + '% (server)' +
-          '\nACK gap: ' + ackGap + 'ms' +
           '\nRECONCILE: ' + snaps + ' snaps, drift avg ' + avgDrift + 'u';
       }
       dbg.textContent =

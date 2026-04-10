@@ -45,8 +45,7 @@ const S = {
   barricades: [], // { id, cx, cy, w, h, angle } — mirrored from server for client-side projectile prediction
   lastTickNum: 0, // monotonic server tick counter — updated from every `tick` broadcast. Consumers: phases 1/4/5/6 of the netcode plan.
   inputSeq: 0,    // client-side monotonic counter for STATEFUL_INPUT_TYPES. Incremented in network.js::send.
-  lastAckedInput: 0, // highest seq the server has confirmed applying — echoed via inputAck broadcast. Phase 4 reconcile baseline.
-  mePredicted: null, // Phase 4 predicted local player state (x/y/z/vz/dir/...). Camera reads from here; reconciled against S.me on every inputAck.
+  mePredicted: null, // predicted local player state — camera reads from here, reconciled via SI snapshots.
   localHitSlowEndsAt: 0, // performance.now() ms — local on-hit slowdown timer (client-authoritative)
   localPrimaryWeapon: null, // last-held primary stashed when switching to knife
   _hudTick: 0,              // 10 Hz throttle accumulator for HUD chat/minimap
@@ -60,9 +59,7 @@ const S = {
     expectedNextTickNum: 0,
     tickGapCount: 0,  // total skipped tick numbers in window
     tickRcvCount: 0,  // total ticks received in window
-    inputAckArrivals: [], // performance.now() of each ack recv
     reconcileSnapsWindow: [], // [{t, drift}] sliding 1s
-    moveArrivedPct: 100, // last value reported by server inputAck
   },
 };
 
