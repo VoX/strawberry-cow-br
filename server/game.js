@@ -14,6 +14,7 @@ const { handleWeaponPickups, handleArmorPickups } = require('./weapons');
 const { updateProjectiles } = require('./combat');
 const { rand } = require('./utils');
 const { spawnResourceNodes, tickResourceNodes, serializeActiveNodes } = require('./resources');
+const { loadWorld, startAutoSave } = require('./world-persistence');
 const gameFsm = require('./game-fsm');
 
 // Default stats applied to every player on spawn/respawn. Kept here so
@@ -62,6 +63,9 @@ function initWorld() {
   spawnInitialFood();
   spawnBots();
   spawnResourceNodes();
+  // Restore saved world state (barricades, tool cupboards, sleeping bags)
+  loadWorld();
+  startAutoSave();
   gameState.clearTickInterval();
   gameState.setTickInterval(setInterval(gameTick, 1000 / TICK_RATE));
 }
