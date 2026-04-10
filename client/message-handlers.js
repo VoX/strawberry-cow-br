@@ -232,7 +232,7 @@ export const handlers = {
     clearNodes();
     S._resourceNodePositions = [];
     if (msg.resourceNodes) {
-      msg.resourceNodes.forEach(n => { spawnNode(n); S._resourceNodePositions.push({ x: n.x, y: n.y, type: n.type }); });
+      msg.resourceNodes.forEach(n => { spawnNode(n); S._resourceNodePositions.push({ id: n.id, x: n.x, y: n.y, type: n.type }); });
     }
     clearSleepingBags();
     if (msg.sleepingBags) msg.sleepingBags.forEach(b => spawnSleepingBag(b));
@@ -847,15 +847,15 @@ export const handlers = {
   resourceNodeSpawn(msg) {
     if (msg.node) {
       spawnNode(msg.node);
-      if (S._resourceNodePositions) S._resourceNodePositions.push({ x: msg.node.x, y: msg.node.y, type: msg.node.type });
+      if (S._resourceNodePositions) S._resourceNodePositions.push({ id: msg.node.id, x: msg.node.x, y: msg.node.y, type: msg.node.type });
     }
   },
 
   resourceNodeDepleted(msg) {
     removeNode(msg.id);
     if (S._resourceNodePositions) {
-      const idx = S._resourceNodePositions.findIndex(n => n.x != null); // simplified — remove by reference won't work easily
-      // Resource nodes respawn at new positions, so just leave stale markers; they refresh on next spawn
+      const idx = S._resourceNodePositions.findIndex(n => n.id === msg.id);
+      if (idx >= 0) S._resourceNodePositions.splice(idx, 1);
     }
   },
 
@@ -874,6 +874,7 @@ export const handlers = {
 
   sleepingBagRemoved(msg) {
     removeSleepingBag(msg.id);
+    S._sleepingBagPos = null;
   },
 
   lootBagSpawn(msg) {
