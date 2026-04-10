@@ -28,10 +28,13 @@ const transport = require('./transport');
 // Unreliable types: tick (30Hz state) + temp entities (cosmetic visuals).
 // If a packet carrying any of these is lost, the game state is unaffected —
 // the next tick supersedes state, and missing a visual effect is acceptable.
+// Unreliable types: tick (30Hz state) + temp entities (cosmetic visuals).
+// projectileHit is NOT here — it controls client-side projectile mesh
+// lifecycle (removal). Dropping it leaves ghost projectiles flying forever.
 const UNRELIABLE_TYPES = new Set([
   'tick',
   // Temp entities — fire-and-forget visuals/audio:
-  'projectileHit', 'wallImpact', 'explosion',
+  'wallImpact', 'explosion',
   'meleeSwing', 'meleeHit', 'shieldHit',
   'mooTaunt', 'cowstrikeWarning', 'cowstrike',
 ]);
