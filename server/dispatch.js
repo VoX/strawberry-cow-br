@@ -18,6 +18,7 @@ const { handleDropWeapon } = require('./weapons');
 const { handleAttack, handleMelee, handleDash, handleReload, cancelReload, placeBarricadeForPlayer } = require('./combat');
 const { spawnPlayerIntoWorld, buildWorldSnapshot } = require('./game');
 const gameFsm = require('./game-fsm');
+const { savePlayer, restorePlayer } = require('./persistence');
 const transport = require('./transport');
 
 // Create a fresh player object. Called from the transport's onConnect
@@ -79,6 +80,8 @@ function dispatchMessage(player, msg) {
     gameFsm.ensureWorldReady();
     // Spawn into the live world immediately — no lobby, no ready-up
     spawnPlayerIntoWorld(player);
+    // Restore saved progress if this player name has a save file
+    restorePlayer(player);
     sendTo(player.ws, {
       type: 'joined', id: player.id, color: player.color,
       botsEnabled: gameState.isBotsEnabled(), botsFreeWill: gameState.isBotsFreeWill(),
@@ -284,6 +287,8 @@ function dispatchMessage(player, msg) {
 
 function handleDisconnect(player) {
   if (!player || !player._joined) return;
+  // Save progress before cleanup so resources/weapon/level persist
+  savePlayer(player);
   cancelReload(player);
   const projs = gameState.getProjectiles();
   for (let i = projs.length - 1; i >= 0; i--) {
@@ -291,7 +296,6 @@ function handleDisconnect(player) {
   }
   if (player.alive) {
     eliminatePlayer(player, 'disconnect');
-    checkWinner();
   }
   gameState.removePlayer(player.id);
   if (lobbyState.getHostId() === player.id) {
