@@ -340,12 +340,15 @@ export const handlers = {
       }
     }
 
-    // Process event flags from tick data — these fire visuals/audio that
-    // previously came as separate reliable messages.
-    for (const p of S.serverPlayers) {
-      if (p.justDashed) {
-        // Trigger dash dust effect (was the 'dash' handler).
-        const smooth = p.id === S.myId ? { x: p.x, y: p.y } : getInterpolatedEntity(p);
+    // Process event flags from the INCOMING tick data (not cached state).
+    // With delta compression, a flag that's true for one tick then reverts
+    // to false may not appear in the next delta (false matches the old
+    // baseline). Reading from the incoming data guarantees we only fire
+    // the event once — when the flag is explicitly present and true.
+    for (const t of tickPlayers) {
+      const cachedP = S.serverPlayers.find(sp => sp.id === t.id);
+      if (t.justDashed && cachedP) {
+        const smooth = cachedP.id === S.myId ? { x: cachedP.x, y: cachedP.y } : getInterpolatedEntity(cachedP);
         const th = getTerrainHeight(smooth.x, smooth.y);
         for (let i = 0; i < 15; i++) {
           const sz = 3 + Math.random() * 4;
@@ -353,10 +356,10 @@ export const handlers = {
         }
         sfx(300, 0.15, 'sine', 0.08);
       }
-      if (p.justEliminated) {
-        // Trigger elimination effects (was the 'eliminated' handler).
-        addKillFeed(p.name + ' eliminated (#' + (p.eliminatedRank || '?') + ')', 5);
-        if (p.id === S.myId) {
+      if (t.justEliminated) {
+        const name = (cachedP && cachedP.name) || t.name || '?';
+        addKillFeed(name + ' eliminated (#' + (t.eliminatedRank || '?') + ')', 5);
+        if (t.id === S.myId) {
           sfxDeath();
           S.perkMenuOpen = false;
           S.pendingLevelUps = 0;
