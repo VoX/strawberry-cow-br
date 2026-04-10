@@ -12,6 +12,7 @@ import * as THREE from 'three';
 import S from './state.js';
 import { sfx, sfxShoot, sfxBolty, sfxShotgun, sfxRocket, sfxLR, sfxExplosion, sfxHit, sfxEat, sfxLevelUp, sfxDeath, sfxEmptyMag, sfxReloadLR, sfxReloadBolty, sfxShellLoad, sfxMoo, sfxMeleeSwing, sfxMeleeHit, setMusicPlaying, resetMusic, getAudioCtx, startMenuMusic, stopMenuMusic, initAudio } from './audio.js';
 import { scene, cam, setNightMode } from './renderer.js';
+import { getVmGroup } from './weapons-view.js';
 import { getTerrainHeight, rebuildTerrain } from './terrain.js';
 import { send, closeActive as closeActiveTransport } from './network.js';
 import { showPerkMenu } from './ui.js';
@@ -28,10 +29,26 @@ import { INTERP_HIST_CAP, interpSamplePlayer } from './interp.js';
 import { reconcilePrediction } from './prediction.js';
 import { spawnBulletHole, clearBulletHoles, removeBulletHolesBySurfaceKey } from './bullet-holes.js';
 
-// Reusable temp vector for the projectile muzzle-offset transform. Was shared
-// with the render loop in index.js via `_tmpDir`; we get our own private one so
-// the module is self-contained.
+// Reusable temp vector for the projectile muzzle-offset transform.
 const _tmpDir = new THREE.Vector3();
+
+// Pending L96 laser origins — keyed by projectile ID. When the bolty
+// fires we stash the muzzle position; when projectileHit arrives we
+// draw a laser line from origin to impact.
+const _pendingBoltyOrigins = {};
+
+// Shared un-ADS helper — restores FOV, hides scope overlays, shows
+// crosshair + viewmodel. Called on reload, empty mag, and bolt rack.
+function forceUnADS() {
+  if (!S.adsActive) return;
+  S.adsActive = false;
+  cam.fov = 75; cam.updateProjectionMatrix();
+  const sO = document.getElementById('scopeOverlay'); if (sO) sO.style.display = 'none';
+  const aO = document.getElementById('augScopeOverlay'); if (aO) aO.style.display = 'none';
+  document.getElementById('crosshair').style.display = 'block';
+  const vg = getVmGroup();
+  if (vg) vg.visible = true;
+}
 
 // DOM element refs cached on first use — avoids repeated getElementById lookups
 // in handlers that fire on every hit or frame-adjacent event (projectileHit,
@@ -92,7 +109,10 @@ export const handlers = {
   serverStatus(msg) {
     const el = document.getElementById('gameStatus');
     if (el) {
-      if (msg.gameState === 'playing') {
+      if (msg.debugScene) {
+        el.textContent = '\u{1F527} DEBUG MODE — ' + (msg.total || 0) + ' player' + ((msg.total || 0) !== 1 ? 's' : '');
+        el.style.color = '#ffaa44';
+      } else if (msg.gameState === 'playing') {
         el.textContent = '\u{1F3AF} Match in progress — ' + msg.alive + '/' + msg.total + ' cows remaining';
         el.style.color = '#ffaa44';
       } else if (msg.gameState === 'lobby') {
@@ -105,11 +125,10 @@ export const handlers = {
         el.textContent = '';
       }
     }
-    // Relabel the join button when a round is already running so the
-    // player knows their first click will drop them in as a spectator.
+    document.title = (msg.debugScene ? '[DEBUG] ' : '') + 'Strawberry Cow';
     const jb = document.getElementById('joinBtn');
     if (jb && !S.myId) {
-      jb.textContent = msg.gameState === 'playing' ? 'SPECTATE MEADOW' : 'QUEUE FOR MEADOW';
+      jb.textContent = msg.debugScene ? 'JOIN DEBUG' : (msg.gameState === 'playing' ? 'SPECTATE MEADOW' : 'QUEUE FOR MEADOW');
     }
   },
 
@@ -217,7 +236,7 @@ export const handlers = {
     if (msg.zone) S.serverZone = msg.zone;
     if (msg.map) { S.mapFeatures = msg.map; S.mapBuilt = false; }
     if (msg.weapons) S.clientWeapons = msg.weapons;
-    S.chatLog = []; stopMenuMusic(); resetMusic(); setMusicPlaying(true);
+    S.chatLog = []; S.fireMode = 'auto'; stopMenuMusic(); resetMusic(); setMusicPlaying(true);
     S.spectateTargetId = null; S.killerId = null; S.killerName = null;
     S.barricadeReadyAt = 0;
     clearBarricades();
@@ -423,6 +442,9 @@ export const handlers = {
         cowtank: { x: 2.0, y: -3.0, z: -22 },
         aug:     { x: 3.5, y: -2.6, z: -22 },
         mp5k:    { x: 2.0, y: -2.8, z: -16 },
+        thompson:{ x: 2.0, y: -2.5, z: -18 },
+        sks:     { x: 2.5, y: -2.6, z: -22 },
+        akm:     { x: 2.5, y: -2.6, z: -20 },
       };
       let m = MUZZLES[myWep] || MUZZLES.normal;
       // Dual-wield M16: volley 1 uses the left barrel
@@ -495,9 +517,10 @@ export const handlers = {
       if (msg.shotgun === false) { /* skip extra pellets */ }
       else if (myWep === 'bolty' || msg.bolty) {
         sfxBolty();
-        // Un-ADS during bolt rack (500ms after shot, lasts ~500ms)
-        setTimeout(() => { S.adsActive = false; S._boltRacking = true; }, 500);
-        setTimeout(() => { S._boltRacking = false; }, 1000);
+        // Brief 100ms delay so the player sees the shot land before
+        // the scope drops. Bolt rack lasts the full 2.5s cooldown period.
+        setTimeout(() => { forceUnADS(); S._boltRacking = true; }, 100);
+        setTimeout(() => { S._boltRacking = false; }, 2500);
       }
       else if (myWep === 'cowtank' || msg.cowtank) sfxRocket(0.12);
       else if (msg.shotgun === true) sfxShotgun(0.1);
@@ -539,6 +562,36 @@ export const handlers = {
         ],
         normal: [ // Spit: small kick
           { p: 0.008, y: (Math.random()-0.5)*0.004 },
+        ],
+        // AKM — heavy upward pull with wider lateral wander than M16.
+        // More pronounced = harder to control but rewards spray control.
+        akm: [
+          { p: 0.018, y: 0.004 }, { p: 0.020, y: 0.006 }, { p: 0.017, y: -0.003 },
+          { p: 0.021, y: -0.007 }, { p: 0.019, y: 0.005 }, { p: 0.022, y: 0.008 },
+          { p: 0.018, y: -0.006 }, { p: 0.020, y: -0.009 }, { p: 0.017, y: 0.004 },
+          { p: 0.021, y: 0.007 }, { p: 0.023, y: -0.005 }, { p: 0.019, y: -0.008 },
+          { p: 0.018, y: 0.006 }, { p: 0.020, y: 0.009 }, { p: 0.017, y: -0.004 },
+          { p: 0.022, y: -0.007 }, { p: 0.019, y: 0.005 }, { p: 0.021, y: 0.008 },
+          { p: 0.018, y: -0.006 }, { p: 0.020, y: -0.009 }, { p: 0.017, y: 0.003 },
+          { p: 0.023, y: 0.007 }, { p: 0.019, y: -0.005 }, { p: 0.021, y: -0.008 },
+          { p: 0.018, y: 0.004 }, { p: 0.020, y: 0.006 }, { p: 0.017, y: -0.003 },
+          { p: 0.022, y: -0.007 }, { p: 0.019, y: 0.005 }, { p: 0.021, y: 0.008 },
+        ],
+        // SKS — random per-shot recoil, no repeating pattern. Each shot
+        // kicks a random amount up + random yaw. Marksman feel.
+        sks: [
+          { p: () => 0.015 + Math.random() * 0.012, y: () => (Math.random() - 0.5) * 0.012 },
+        ],
+        // Thompson — steady upward climb with slight rightward drift,
+        // 1.1x MP5K magnitude. Heavier gun = more predictable but stronger pull.
+        thompson: [
+          { p: 0.016, y: 0.002 }, { p: 0.017, y: 0.003 }, { p: 0.015, y: 0.004 },
+          { p: 0.018, y: 0.005 }, { p: 0.016, y: 0.003 }, { p: 0.017, y: 0.004 },
+          { p: 0.015, y: 0.002 }, { p: 0.018, y: 0.005 }, { p: 0.016, y: 0.003 },
+          { p: 0.017, y: -0.002 }, { p: 0.019, y: -0.003 }, { p: 0.016, y: -0.001 },
+          { p: 0.018, y: 0.004 }, { p: 0.017, y: 0.003 }, { p: 0.015, y: 0.002 },
+          { p: 0.016, y: 0.005 }, { p: 0.018, y: 0.004 }, { p: 0.017, y: 0.003 },
+          { p: 0.015, y: -0.002 }, { p: 0.019, y: -0.003 },
         ],
         // MP5K — fast erratic jitter, 1.2x LR magnitude, bias upward-left
         // then correcting right. Stockless = less predictable.
@@ -582,8 +635,10 @@ export const handlers = {
         // AUG hipfire penalty: 2.25x recoil when not scoped, 1x when ADS.
         const augHipMod = (wep === 'aug' && !S.adsActive) ? 2.25 : 1;
         const recoilMult = burstMod * tacticowMod * walkingMod * dualMod * augHipMod;
-        S.pitch += r.p * recoilMult;
-        S.yaw += r.y * recoilMult;
+        const rp = typeof r.p === 'function' ? r.p() : r.p;
+        const ry = typeof r.y === 'function' ? r.y() : r.y;
+        S.pitch += rp * recoilMult;
+        S.yaw += ry * recoilMult;
         S.pitch = Math.max(-1.2, Math.min(1.2, S.pitch));
         S.recoilIndex++;
       }
@@ -1173,7 +1228,7 @@ export const handlers = {
 
   weaponPickup(msg) {
     S.clientWeapons = S.clientWeapons.filter(w => w.id !== msg.pickupId);
-    const _wn = { shotgun: 'Benelli', burst: 'M16A2', bolty: 'L96', cowtank: 'M72 LAW', aug: 'AUG', mp5k: 'MP5K' };
+    const _wn = { shotgun: 'XM1014', burst: 'M16A2', bolty: 'L96', cowtank: 'M72 LAW', aug: 'AUG', mp5k: 'MP5K', thompson: 'Thompson', sks: 'SKS', akm: 'AK' };
     const wpName = _wn[msg.weapon] || msg.weapon || 'weapon';
     if (msg.playerId === S.myId) {
       addKillFeed('Picked up ' + wpName + '!', 3);
@@ -1210,7 +1265,7 @@ export const handlers = {
 
   emptyMag(msg) {
     sfxEmptyMag();
-    S.adsActive = false;
+    forceUnADS();
   },
 
   armorPickup(msg) {

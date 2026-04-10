@@ -28,27 +28,22 @@ const { BURST_FAMILY, MAG_SIZES } = require('../shared/constants');
 const PLAYER_STATS_BASE = {
   normal: {
     hungerGate: [1, 3], hungerCost: [1, 2],
-    cooldown: 0.15, dmg: 8, speed: 1400, spreadBase: 0.0286, pellets: 1, spawnOffset: 40,
+    cooldown: 0.15, dmg: 8, speed: 1294, spreadBase: 0.0286, pellets: 1, spawnOffset: 40,
   },
   burst: {
     hungerGate: [2, 6], hungerCost: [2, 5],
     // Burst-cycle cooldown (time between 3-round bursts, not between rounds
     // inside a burst — that's the 92 ms delay hardcoded in the burst loop).
     // 92 ms intra-burst = ~650 RPM, which is +30% over the auto rate by design.
-    cooldown: 0.8, dmg: 6, speed: 1760, spreadBase: 0, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
-    burstStepMs: 92, // intra-burst delay — 650 RPM
-    // Auto variant — used when fireMode === 'auto'. 0.12 s cooldown = ~500 RPM.
-    auto: { hungerCost: [1, 2], cooldown: 0.12, dmg: 3, speed: 1600, spreadBase: 0.022, pellets: 1, dualPelletMult: 2 },
-    // Semi-auto variant — 1 shot per trigger pull, half the cooldown of
-    // full-auto so the sustained fire ceiling is ~250 RPM. Same per-shot
-    // damage and milk drain as auto so the mode is purely a "controlled
-    // pacing" choice, not a damage trade. Zero spread, deliberate shots.
-    semi: { hungerCost: [1, 2], cooldown: 0.24, dmg: 3, speed: 1760, spreadBase: 0, pellets: 1, dualPelletMult: 2 },
+    cooldown: 0.8, dmg: 6, speed: 3643, spreadBase: 0, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
+    burstStepMs: 92,
+    auto: { hungerCost: [1, 2], cooldown: 0.12, dmg: 3, speed: 3312, spreadBase: 0.022, pellets: 1, dualPelletMult: 2 },
+    semi: { hungerCost: [1, 2], cooldown: 0.24, dmg: 3, speed: 3643, spreadBase: 0, pellets: 1, dualPelletMult: 2 },
   },
   shotgun: {
     hungerGate: [3, 10], hungerCost: [3, 9],
     cooldown: 0.9, cooldownDualMult: 0.55 / 0.9, // dual benelli halves cooldown; matches original 0.55
-    dmg: 5, speed: 1200, spreadBase: 0.157, pellets: 5, spawnOffset: 40,
+    dmg: 5, speed: 1380, spreadBase: 0.157, pellets: 5, spawnOffset: 40,
     volleyed: true, broadcastTag: 'shotgun', vzSpreadBase: 0.2,
   },
   bolty: {
@@ -58,7 +53,7 @@ const PLAYER_STATS_BASE = {
   },
   cowtank: {
     hungerGate: [2, 6], hungerCost: [2, 5],
-    cooldown: 1.0, dmg: 38, speed: 2000, spreadBase: 0, pellets: 1, spawnOffset: 40,
+    cooldown: 1.0, dmg: 38, speed: 2070, spreadBase: 0, pellets: 1, spawnOffset: 40,
     explosive: true, blastRadius: 180, broadcastTag: 'cowtank',
   },
   // MP5K — stockless SMG. 2/3 LR damage, 2x LR spread, 600 RPM auto.
@@ -66,9 +61,32 @@ const PLAYER_STATS_BASE = {
   // 3-round burst with 92ms step). Faster cycle than LR in all modes.
   mp5k: {
     hungerGate: [2, 5], hungerCost: [1, 3],
-    cooldown: 0.6, dmg: 4, speed: 1400, spreadBase: 0.022, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
+    cooldown: 0.6, dmg: 4, speed: 1424, spreadBase: 0.022, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
     burstStepMs: 92, defaultMode: 'auto',
-    auto: { hungerCost: [1, 2], cooldown: 0.1, dmg: 2, speed: 1300, spreadBase: 0.044, pellets: 1, dualPelletMult: 2 },
+    auto: { hungerCost: [1, 2], cooldown: 0.1, dmg: 2, speed: 1294, spreadBase: 0.044, pellets: 1, dualPelletMult: 2 },
+  },
+  // Thompson — classic SMG. Full auto only, no burst/semi. Higher damage
+  // and spread than MP5K but slower fire rate (462 RPM). Cannot dual-wield.
+  thompson: {
+    hungerGate: [2, 5], hungerCost: [1, 3],
+    cooldown: 0.13, dmg: 2.2, speed: 1311, spreadBase: 0.0506, pellets: 1, spawnOffset: 40,
+    autoOnly: true,
+  },
+  // AKM — assault rifle. Semi + full auto, no burst. Higher damage than
+  // M16 family, more spread and recoil. 450 RPM. 30 round mag.
+  akm: {
+    hungerGate: [2, 6], hungerCost: [2, 5],
+    cooldown: 0.3, dmg: 3.9, speed: 2467, spreadBase: 0, pellets: 1, spawnOffset: 40,
+    auto: { hungerCost: [1, 3], cooldown: 0.133, dmg: 3.9, speed: 2467, spreadBase: 0.03, pellets: 1, dualPelletMult: 1 },
+    semi: { hungerCost: [1, 3], cooldown: 0.22, dmg: 3.9, speed: 2467, spreadBase: 0.008, pellets: 1, dualPelletMult: 1 },
+    defaultMode: 'auto',
+  },
+  // SKS — semi-auto marksman rifle. Higher damage + velocity than AUG,
+  // lower spread. 340 RPM. Random per-shot recoil (no pattern).
+  sks: {
+    hungerGate: [2, 6], hungerCost: [1, 4],
+    cooldown: 0.176, dmg: 3.9, speed: 3381, spreadBase: 0.015, pellets: 1, spawnOffset: 40,
+    semiOnly: true,
   },
   // AUG — bullpup rifle with integrated 2x optic. Solo only (the
   // weapons.js dual-wield gate doesn't include 'aug'). Auto = 450 RPM
@@ -78,10 +96,10 @@ const PLAYER_STATS_BASE = {
   // not scoped.
   aug: {
     hungerGate: [2, 6], hungerCost: [2, 5],
-    cooldown: 0.615, dmg: 6, speed: 2328, spreadBase: 0, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
+    cooldown: 0.615, dmg: 6, speed: 4908, spreadBase: 0, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
     burstStepMs: 92,
-    auto: { hungerCost: [1, 2], cooldown: 0.133, dmg: 3, speed: 2116, spreadBase: 0.022, pellets: 1, dualPelletMult: 1 },
-    semi: { hungerCost: [1, 2], cooldown: 0.266, dmg: 3, speed: 2328, spreadBase: 0, pellets: 1, dualPelletMult: 1 },
+    auto: { hungerCost: [1, 2], cooldown: 0.133, dmg: 3, speed: 4462, spreadBase: 0.022, pellets: 1, dualPelletMult: 1 },
+    semi: { hungerCost: [1, 2], cooldown: 0.266, dmg: 3, speed: 4908, spreadBase: 0, pellets: 1, dualPelletMult: 1 },
   },
 };
 
@@ -89,14 +107,20 @@ const PLAYER_STATS_BASE = {
 // Final values (no hungerDiscount). Kept separate so bot nerfs can diverge
 // from player numbers at will.
 const BOT_STATS = {
-  normal:  { hungerGate: 10, hungerCost: 3, cooldown: 0.3, dmg: 8,  speed: 1400, spreadBase: 0, pellets: 1, spawnOffset: 40 },
+  normal:  { hungerGate: 10, hungerCost: 3, cooldown: 0.3, dmg: 8,  speed: 1294, spreadBase: 0, pellets: 1, spawnOffset: 40 },
   burst:   {
-    hungerGate: 4, hungerCost: 5, cooldown: 0.8, dmg: 6, speed: 1600, spreadBase: 0, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
-    auto: { hungerCost: 1, cooldown: 0.1, dmg: 3, speed: 1600, spreadBase: 0.035, pellets: 1 },
+    hungerGate: 4, hungerCost: 5, cooldown: 0.8, dmg: 6, speed: 3643, spreadBase: 0, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
+    auto: { hungerCost: 1, cooldown: 0.1, dmg: 3, speed: 3312, spreadBase: 0.035, pellets: 1 },
   },
-  shotgun: { hungerGate: 7, hungerCost: 7, cooldown: 1.0, dmg: 5, speed: 1200, spreadBase: 0.2, pellets: 5, spawnOffset: 40, volleyed: true, broadcastTag: 'shotgun', vzSpreadBase: 0.2 },
+  shotgun: { hungerGate: 7, hungerCost: 7, cooldown: 1.0, dmg: 5, speed: 1380, spreadBase: 0.2, pellets: 5, spawnOffset: 40, volleyed: true, broadcastTag: 'shotgun', vzSpreadBase: 0.2 },
   bolty:   { hungerGate: 12, hungerCost: 8, cooldown: 2.5, dmg: 28, speed: 16800, spreadBase: 0, pellets: 1, spawnOffset: 40, wallPiercing: true, broadcastTag: 'bolty' },
-  cowtank: { hungerGate: 6, hungerCost: 5, cooldown: 1.0, dmg: 38, speed: 2000, spreadBase: 0, pellets: 1, spawnOffset: 40, explosive: true, blastRadius: 180, broadcastTag: 'cowtank' },
+  cowtank: { hungerGate: 6, hungerCost: 5, cooldown: 1.0, dmg: 38, speed: 2070, spreadBase: 0, pellets: 1, spawnOffset: 40, explosive: true, blastRadius: 180, broadcastTag: 'cowtank' },
+  thompson: { hungerGate: 4, hungerCost: 3, cooldown: 0.13, dmg: 2.2, speed: 1311, spreadBase: 0.0506, pellets: 1, spawnOffset: 40 },
+  akm: {
+    hungerGate: 5, hungerCost: 4, cooldown: 0.3, dmg: 3.9, speed: 2467, spreadBase: 0, pellets: 1, spawnOffset: 40,
+    auto: { hungerCost: 2, cooldown: 0.133, dmg: 3.9, speed: 2467, spreadBase: 0.04, pellets: 1 },
+  },
+  sks: { hungerGate: 5, hungerCost: 4, cooldown: 0.176, dmg: 3.9, speed: 2450, spreadBase: 0.015, pellets: 1, spawnOffset: 40 },
   mp5k: {
     hungerGate: 4, hungerCost: 3, cooldown: 0.6, dmg: 4, speed: 1300, spreadBase: 0.022, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
     auto: { hungerCost: 1, cooldown: 0.1, dmg: 2, speed: 1300, spreadBase: 0.055, pellets: 1 },
@@ -240,9 +264,12 @@ function fireWeapon(shooter, weapon, aim, stats, opts = {}) {
   // --- Burst-family weapons (M16A2, AUG): same fire pipeline, per-weapon
   // stats picked up via PLAYER_STATS_BASE/BOT_STATS. ---
   if (BURST_FAMILY.has(weapon)) {
-    // Full-auto: continuous fire, 500 RPM (0.12s cooldown). Dual wield
-    // doubles the projectiles per trigger tick via dualPelletMult.
-    if (fireMode === 'auto' && stats.auto) {
+    // Guard: if the weapon doesn't support the requested fireMode, fall
+    // back to auto (prevents AKM/Thompson from entering burst path).
+    let effectiveMode = fireMode;
+    if (effectiveMode === 'burst' && !stats.burstStepMs) effectiveMode = 'auto';
+    if (effectiveMode === 'semi' && !stats.semi) effectiveMode = 'auto';
+    if (effectiveMode === 'auto' && stats.auto) {
       const a = stats.auto;
       const autoCount = dualWield ? (a.dualPelletMult || 1) : 1;
       const spread = a.spreadBase * walkSpreadMult * (dualWield ? 1.5 : 1);
@@ -272,7 +299,7 @@ function fireWeapon(shooter, weapon, aim, stats, opts = {}) {
     // dualPelletMult), zero spread, same cooldown ceiling as auto so trigger
     // mashing can't exceed the sustained rate. Higher per-shot damage to
     // reward deliberate pacing.
-    if (fireMode === 'semi' && stats.semi) {
+    if (effectiveMode === 'semi' && stats.semi) {
       const s = stats.semi;
       const semiCount = dualWield ? (s.dualPelletMult || 1) : 1;
       for (let sc = 0; sc < semiCount; sc++) {

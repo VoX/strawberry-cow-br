@@ -189,7 +189,7 @@ function buildServerStatus() {
   for (const [, p] of gameState.getPlayers()) {
     if (!p.inLobby) { total++; if (p.alive) alive++; }
   }
-  return { type: 'serverStatus', gameState: lobbyState.getPhase(), alive, total };
+  return { type: 'serverStatus', gameState: lobbyState.getPhase(), alive, total, debugScene: gameState.isDebugScene() };
 }
 
 module.exports = { assignColor, getPlayerStates, getPlayerSnapshot, getPlayerTick, getPlayerTicks, broadcastPlayerSnapshot, applyHungerDelta, applyArmorDelta, resolveDeaths, clearPendingDeaths, eliminatePlayer, serializeFood, buildServerStatus };

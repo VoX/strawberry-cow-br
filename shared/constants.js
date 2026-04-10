@@ -38,7 +38,7 @@ const KNIFE_MELEE_CD_MS = 500;
 // recoil ramp shape, fire-mode selector, and reload sound. Used in
 // hud.js, input.js, message-handlers.js, and weapon-fire.js to avoid
 // scattered string OR-checks.
-const BURST_FAMILY = new Set(['burst', 'aug', 'mp5k']);
+const BURST_FAMILY = new Set(['burst', 'aug', 'mp5k', 'akm']);
 
 // Weapons that benefit from the dual-wield perk (two pistols / two Benellis /
 // dual M16A2). Used by hud.js mag display, combat.js ammo calc, and the
@@ -50,10 +50,10 @@ const DUAL_WIELD_FAMILY = new Set(['normal', 'mp5k']);
 
 // Base magazine capacity by weapon. Single source of truth for hud.js,
 // server/weapon-fire.js, and server/combat.js reload/extMag math.
-const MAG_SIZES = { normal: 10, burst: 20, shotgun: 6, bolty: 5, aug: 30, mp5k: 30 };
+const MAG_SIZES = { normal: 10, burst: 20, shotgun: 6, bolty: 5, aug: 30, mp5k: 30, thompson: 20, sks: 10, akm: 30 };
 // Extended-mag perk grants these capacities instead; dual-wield multiplies
 // by 2 further.
-const EXT_MAG_SIZES = { normal: 13, burst: 25, shotgun: 8, bolty: 7, aug: 38, mp5k: 38 };
+const EXT_MAG_SIZES = { normal: 13, burst: 25, shotgun: 8, bolty: 7, aug: 38, mp5k: 38, thompson: 25, sks: 13, akm: 38 };
 
 // Client input types that carry a monotonic seq number for CSP reconciliation.
 // The client stamps seq on every stateful send; the server tracks the highest
@@ -69,6 +69,22 @@ const STATEFUL_INPUT_TYPES = new Set([
   'move',
 ]);
 
+// Caliber + barrel length per weapon — not gameplay-active yet. Future
+// use for damage-by-caliber, barrel-length dropoff, and shared ammo pools.
+// Barrel lengths are real-world values in mm for the actual firearms.
+const WEAPON_CALIBER = {
+  normal:   { caliber: '9x19mm',     barrelMm: 108 },  // SIG P250 Compact
+  mp5k:     { caliber: '9x19mm',     barrelMm: 115 },  // HK MP5K
+  thompson: { caliber: '.45 ACP',    barrelMm: 267 },  // M1A1 Thompson
+  burst:    { caliber: '5.56x45mm',  barrelMm: 508 },  // M16A2
+  aug:      { caliber: '5.56x45mm',  barrelMm: 508 },  // Steyr AUG A1
+  sks:      { caliber: '7.62x39mm',  barrelMm: 520 },  // SKS
+  akm:      { caliber: '7.62x39mm',  barrelMm: 415 },  // AKM
+  bolty:    { caliber: '7.62x51mm',  barrelMm: 660 },  // AI Arctic Warfare (L96)
+  shotgun:  { caliber: '12ga',       barrelMm: 660 },  // XM1014 (Benelli M4)
+  cowtank:  { caliber: '66mm HEAT',  barrelMm: 670 },  // M72 LAW
+};
+
 const COLORS = ['pink','blue','green','gold','purple','red','orange','cyan'];
 const FOOD_TYPES = [
   {name:'strawberry',hunger:15,pts:10},
@@ -79,7 +95,7 @@ const FOOD_TYPES = [
   {name:'cupcake',hunger:22,pts:18},
   {name:'cookie',hunger:12,pts:8},
 ];
-const WEAPON_TYPES = ['shotgun','burst','bolty','shotgun','burst','bolty','cowtank','aug','mp5k'];
+const WEAPON_TYPES = ['shotgun','burst','bolty','shotgun','burst','bolty','cowtank','aug','mp5k','thompson','sks','akm'];
 
 module.exports = {
   MAP_W, MAP_H, TICK_RATE,
@@ -89,5 +105,6 @@ module.exports = {
   SPEED_MULT_MIN, SPEED_MULT_MAX,
   KNIFE_MELEE_RANGE, KNIFE_MELEE_CONE_COS, KNIFE_MELEE_DAMAGE, KNIFE_MELEE_CD_MS,
   STATEFUL_INPUT_TYPES, BURST_FAMILY, DUAL_WIELD_FAMILY, MAG_SIZES, EXT_MAG_SIZES,
+  WEAPON_CALIBER,
   COLORS, FOOD_TYPES, WEAPON_TYPES,
 };

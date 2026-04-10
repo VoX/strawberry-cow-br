@@ -101,6 +101,16 @@ document.getElementById('joinBtn').addEventListener('click', () => {
   // text/color.
   send({ type: 'ready' });
 });
+// Debug scene button — joins with debug mode (no bots, infinite milk)
+const debugBtn = document.getElementById('debugBtn');
+if (debugBtn) debugBtn.addEventListener('click', () => {
+  if (S.myId) return;
+  const n = document.getElementById('nameIn').value.trim() || COW_NAMES[Math.floor(Math.random() * COW_NAMES.length)];
+  document.getElementById('nameIn').value = n;
+  try { localStorage.setItem('cowName3d', n); } catch (e) {}
+  send({ type: 'debugJoin', name: n });
+});
+
 // In-lobby name updates — blur or enter commits the new name
 function commitLobbyName() {
   if (!S.myId || S.state !== 'lobby') return;

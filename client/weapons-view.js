@@ -218,6 +218,121 @@ export function buildViewmodel(type, dual) {
     hoof.userData.reloadStyle = 'magswap';
     vmGroup.add(hoof);
     vmGroup.userData.hoof = hoof;
+  } else if (type === 'akm') {
+    // AKM viewmodel — iconic curved magazine, wooden furniture, milled receiver.
+    const woodMat = new THREE.MeshBasicMaterial({ color: 0x6B3A1F });
+    const steelMat = new THREE.MeshBasicMaterial({ color: 0x2a2a2a });
+    // Receiver — milled steel
+    const recv = new THREE.Mesh(new THREE.BoxGeometry(2.0, 2.2, 10), steelMat);
+    recv.position.set(0, 0, -3); vmGroup.add(recv);
+    // Gas tube above barrel
+    const gas = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 5, 6), steelMat);
+    gas.rotation.x = Math.PI / 2; gas.position.set(0, 1.0, -8); vmGroup.add(gas);
+    // Barrel
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 6, 6), steelMat);
+    barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.3, -11); vmGroup.add(barrel);
+    // Muzzle brake
+    const muzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.35, 1.5, 6), steelMat);
+    muzzle.rotation.x = Math.PI / 2; muzzle.position.set(0, 0.3, -14.5); vmGroup.add(muzzle);
+    // Wooden stock
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.6, 7), woodMat);
+    stock.position.set(0, -0.4, 4); stock.rotation.x = 0.06; vmGroup.add(stock);
+    // Wooden handguard
+    const handguard = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.4, 4.5), woodMat);
+    handguard.position.set(0, -0.3, -6.5); vmGroup.add(handguard);
+    // Pistol grip
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(1.0, 2.5, 1.2), woodMat);
+    grip.position.set(0, -2.2, -1); vmGroup.add(grip);
+    // Curved magazine — the AK signature
+    const mag = new THREE.Mesh(new THREE.BoxGeometry(1.0, 4.0, 1.6), new THREE.MeshBasicMaterial({ color: 0x1a1a1a }));
+    mag.position.set(0, -3.2, -2.5); mag.rotation.x = 0.2; vmGroup.add(mag);
+    // Front sight
+    const fSight = new THREE.Mesh(new THREE.BoxGeometry(0.25, 1.2, 0.25), metal);
+    fSight.position.set(0, 1.8, -10); vmGroup.add(fSight);
+    // Rear sight
+    const rSight = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.6, 0.4), metal);
+    rSight.position.set(0, 1.5, -0.5); vmGroup.add(rSight);
+    const hoof = buildHoof();
+    hoof.position.set(-0.3, -0.5, -9);
+    hoof.rotation.set(-0.2, 0.1, 0.5);
+    hoof.userData.restPos = hoof.position.clone();
+    hoof.userData.restRot = hoof.rotation.clone();
+    hoof.userData.reloadStyle = 'magswap';
+    vmGroup.add(hoof);
+    vmGroup.userData.hoof = hoof;
+  } else if (type === 'sks') {
+    // SKS viewmodel — long wooden-stocked semi-auto rifle with
+    // fixed 10-round internal magazine and blade bayonet.
+    const woodMat = new THREE.MeshBasicMaterial({ color: 0x7a4a28 });
+    const steelMat = new THREE.MeshBasicMaterial({ color: 0x333333 });
+    // Receiver
+    const recv = new THREE.Mesh(new THREE.BoxGeometry(1.8, 2.0, 10), steelMat);
+    recv.position.set(0, 0, -3); vmGroup.add(recv);
+    // Long barrel
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 8, 6), steelMat);
+    barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.3, -12); vmGroup.add(barrel);
+    // Wooden stock — long
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.8, 8), woodMat);
+    stock.position.set(0, -0.3, 4); stock.rotation.x = 0.08; vmGroup.add(stock);
+    // Wooden handguard
+    const handguard = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.2, 5), woodMat);
+    handguard.position.set(0, -0.5, -7); vmGroup.add(handguard);
+    // Magazine
+    const mag = new THREE.Mesh(new THREE.BoxGeometry(0.8, 2.5, 1.4), steelMat);
+    mag.position.set(0, -2.2, -2); mag.rotation.x = 0.1; vmGroup.add(mag);
+    // Front sight
+    const fSight = new THREE.Mesh(new THREE.BoxGeometry(0.25, 1.0, 0.25), metal);
+    fSight.position.set(0, 1.5, -10); vmGroup.add(fSight);
+    // Rear sight
+    const rSight = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.7, 0.4), metal);
+    rSight.position.set(0, 1.5, -0.5); vmGroup.add(rSight);
+    const hoof = buildHoof();
+    hoof.position.set(-0.3, -0.5, -9);
+    hoof.rotation.set(-0.2, 0.1, 0.5);
+    hoof.userData.restPos = hoof.position.clone();
+    hoof.userData.restRot = hoof.rotation.clone();
+    hoof.userData.reloadStyle = 'magswap';
+    vmGroup.add(hoof);
+    vmGroup.userData.hoof = hoof;
+  } else if (type === 'thompson') {
+    // Thompson SMG — boxy receiver, wooden furniture, vertical foregrip,
+    // distinctive compensator cuts on the barrel.
+    const woodMat = new THREE.MeshBasicMaterial({ color: 0x8B5A2B });
+    const steelMat = new THREE.MeshBasicMaterial({ color: 0x2a2a2a });
+    // Receiver
+    const recv = new THREE.Mesh(new THREE.BoxGeometry(2.2, 2.4, 9), steelMat);
+    recv.position.set(0, 0, -3); vmGroup.add(recv);
+    // Barrel with compensator slots
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 5, 6), steelMat);
+    barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.3, -10); vmGroup.add(barrel);
+    const comp = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 2, 8), steelMat);
+    comp.rotation.x = Math.PI / 2; comp.position.set(0, 0.3, -8.5); vmGroup.add(comp);
+    // Wooden stock
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.6, 6), woodMat);
+    stock.position.set(0, -0.5, 3.5); stock.rotation.x = 0.1; vmGroup.add(stock);
+    // Pistol grip
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.5, 1.2), woodMat);
+    grip.position.set(0, -2.2, -1); vmGroup.add(grip);
+    // Vertical foregrip
+    const fgrip = new THREE.Mesh(new THREE.BoxGeometry(0.8, 2.0, 0.8), woodMat);
+    fgrip.position.set(0, -2.0, -5.5); vmGroup.add(fgrip);
+    // Magazine — straight box mag
+    const mag = new THREE.Mesh(new THREE.BoxGeometry(1.0, 4.0, 1.6), steelMat);
+    mag.position.set(0, -3.0, -2.5); vmGroup.add(mag);
+    // Rear sight
+    const rSight = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.6, 0.4), metal);
+    rSight.position.set(0, 1.6, -0.5); vmGroup.add(rSight);
+    // Front sight
+    const fSight = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.8, 0.3), metal);
+    fSight.position.set(0, 1.6, -7); vmGroup.add(fSight);
+    const hoof = buildHoof();
+    hoof.position.set(-0.3, -0.5, -7);
+    hoof.rotation.set(-0.2, 0.1, 0.5);
+    hoof.userData.restPos = hoof.position.clone();
+    hoof.userData.restRot = hoof.rotation.clone();
+    hoof.userData.reloadStyle = 'magswap';
+    vmGroup.add(hoof);
+    vmGroup.userData.hoof = hoof;
   } else if (type === 'mp5k') {
     // MP5K viewmodel — compact stockless SMG. Parts in a sub-group so
     // dual-wield can clone the whole gun to the left side.

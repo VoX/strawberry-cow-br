@@ -112,11 +112,57 @@ function _buildWeaponPickupModel(type) {
     // Trigger guard — small underslung loop just behind the forward grip
     const trig = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.0, 0.6), augMet);
     trig.position.set(0.6, -1.5, 0); g.add(trig);
+  } else if (type === 'mp5k') {
+    // MP5K pickup — compact stockless SMG
+    const recv = new THREE.Mesh(new THREE.BoxGeometry(5, 1.8, 1.6), black);
+    g.add(recv);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 3, 6), dark);
+    barrel.rotation.z = Math.PI / 2; barrel.position.set(4, 0.2, 0); g.add(barrel);
+    const mag = new THREE.Mesh(new THREE.BoxGeometry(1.0, 3, 1.2), black);
+    mag.position.set(-0.5, -2, 0); mag.rotation.z = 0.1; g.add(mag);
+    const fgrip = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.4, 0.7), dark);
+    fgrip.position.set(1.5, -1.3, 0); g.add(fgrip);
+  } else if (type === 'akm') {
+    // AKM pickup — distinctive curved mag, wooden stock
+    const recv = new THREE.Mesh(new THREE.BoxGeometry(7, 1.8, 1.4), dark);
+    g.add(recv);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 5, 6), dark);
+    barrel.rotation.z = Math.PI / 2; barrel.position.set(6, 0.2, 0); g.add(barrel);
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(4, 1.3, 1.0), wood);
+    stock.position.set(-5.5, -0.2, 0); stock.rotation.z = 0.06; g.add(stock);
+    const mag = new THREE.Mesh(new THREE.BoxGeometry(0.9, 3.5, 1.3), dark);
+    mag.position.set(-1, -2.5, 0); mag.rotation.z = 0.15; g.add(mag);
+    const gasT = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 4, 6), metal);
+    gasT.rotation.z = Math.PI / 2; gasT.position.set(3, 1.0, 0); g.add(gasT);
+  } else if (type === 'sks') {
+    // SKS pickup — long wooden rifle
+    const recv = new THREE.Mesh(new THREE.BoxGeometry(7, 1.8, 1.4), dark);
+    g.add(recv);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 6, 6), dark);
+    barrel.rotation.z = Math.PI / 2; barrel.position.set(6, 0.2, 0); g.add(barrel);
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(5, 1.4, 1.0), wood);
+    stock.position.set(-6, -0.2, 0); stock.rotation.z = 0.08; g.add(stock);
+    const mag = new THREE.Mesh(new THREE.BoxGeometry(0.7, 2, 1.2), dark);
+    mag.position.set(-1, -1.8, 0); g.add(mag);
+  } else if (type === 'thompson') {
+    // Thompson pickup — classic SMG with wooden stock
+    const recv = new THREE.Mesh(new THREE.BoxGeometry(6, 2, 1.6), dark);
+    g.add(recv);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 4, 6), dark);
+    barrel.rotation.z = Math.PI / 2; barrel.position.set(5, 0.2, 0); g.add(barrel);
+    const comp = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 1.5, 8), metal);
+    comp.rotation.z = Math.PI / 2; comp.position.set(4, 0.2, 0); g.add(comp);
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(4, 1.4, 1.0), wood);
+    stock.position.set(-5, -0.3, 0); stock.rotation.z = 0.1; g.add(stock);
+    const mag = new THREE.Mesh(new THREE.BoxGeometry(0.9, 3.5, 1.3), dark);
+    mag.position.set(-1, -2.5, 0); g.add(mag);
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(1.0, 2, 1.0), wood);
+    grip.position.set(0.5, -1.8, 0); g.add(grip);
   }
   return g;
 }
 
-const _WP_LABELS = { shotgun: 'BENELLI', burst: 'M16A2', bolty: 'L96', cowtank: 'M72 LAW', aug: 'AUG' };
+const _WP_LABELS = { shotgun: 'XM1014', burst: 'M16A2', bolty: 'L96', cowtank: 'M72 LAW', aug: 'AUG', mp5k: 'MP5K', thompson: 'THOMPSON', sks: 'SKS', akm: 'AK' };
 
 function _buildWeaponPickupGroup(w) {
   const g = new THREE.Group();

@@ -77,7 +77,7 @@ function autoFireLoop() {
   if (!autoFireActive) return;
   if (!mouseDown || S.state !== 'playing' || !S.locked) { stopAutoFire(); return; }
   const me = S.me;
-  if (!me || !me.alive || !BURST_FAMILY.has(me.weapon)) { stopAutoFire(); return; }
+  if (!me || !me.alive || (!BURST_FAMILY.has(me.weapon) && me.weapon !== 'thompson')) { stopAutoFire(); return; }
   const now = performance.now();
   if (now >= nextFireTime) {
     doAttack();
@@ -118,7 +118,7 @@ ren.domElement.addEventListener('mousedown', e => {
   }
   if (!S.locked) { ren.domElement.requestPointerLock(); return; }
   mouseDown = true;
-  if (BURST_FAMILY.has(me.weapon) && S.fireMode === 'auto') {
+  if ((BURST_FAMILY.has(me.weapon) && S.fireMode === 'auto') || me.weapon === 'thompson') {
     startAutoFire();
   } else {
     doAttack();
@@ -241,7 +241,19 @@ if (isMobile) {
   shootBtn.addEventListener('touchcancel', e => { _touchFiring = false; }, { passive: true });
   document.getElementById('touchDash').addEventListener('touchstart', e => { e.preventDefault(); doDash(); }, { passive: false });
   const touchReload = document.getElementById('touchReload');
-  if (touchReload) touchReload.addEventListener('touchstart', e => { e.preventDefault(); send({ type: 'reload' }); }, { passive: false });
+  if (touchReload) touchReload.addEventListener('touchstart', e => {
+    e.preventDefault();
+    send({ type: 'reload' });
+    if (S.adsActive) {
+      S.adsActive = false;
+      cam.fov = 75; cam.updateProjectionMatrix();
+      document.getElementById('scopeOverlay').style.display = 'none';
+      document.getElementById('augScopeOverlay').style.display = 'none';
+      document.getElementById('crosshair').style.display = 'block';
+      const vg = vmGroupRef && vmGroupRef();
+      if (vg) vg.visible = true;
+    }
+  }, { passive: false });
   const touchFireMode = document.getElementById('touchFireMode');
   if (touchFireMode) touchFireMode.addEventListener('touchstart', e => {
     e.preventDefault();
@@ -344,19 +356,33 @@ addEventListener('keydown', e => {
   }
   if (e.code === 'KeyP') { S.debugMode = !S.debugMode; }
   if (e.code === 'KeyO') { toggleFullscreen(); }
-  if (e.code === 'KeyR' && S.state === 'playing') { send({ type: 'reload' }); S.adsActive = false; }
+  if (e.code === 'KeyR' && S.state === 'playing') {
+    send({ type: 'reload' });
+    // Full un-ADS on reload — restore FOV, overlays, viewmodel
+    if (S.adsActive) {
+      S.adsActive = false;
+      cam.fov = 75; cam.updateProjectionMatrix();
+      document.getElementById('scopeOverlay').style.display = 'none';
+      document.getElementById('augScopeOverlay').style.display = 'none';
+      document.getElementById('crosshair').style.display = 'block';
+      const vg = vmGroupRef && vmGroupRef();
+      if (vg) vg.visible = true;
+    }
+  }
   if (e.code === 'KeyX' && S.state === 'playing') {
     const myWep = S.me ? S.me.weapon : '';
     if (myWep === 'mp5k') {
-      // MP5K: toggle auto ↔ burst only (no semi)
       S.fireMode = S.fireMode === 'auto' ? 'burst' : 'auto';
+    } else if (myWep === 'akm') {
+      // AKM: toggle auto ↔ semi only (no burst)
+      S.fireMode = S.fireMode === 'auto' ? 'semi' : 'auto';
     } else {
       // LR/AUG: cycle burst → auto → semi → burst
       S.fireMode = S.fireMode === 'burst' ? 'auto'
                  : S.fireMode === 'auto'  ? 'semi'
                  : 'burst';
     }
-    const wepLabel = myWep === 'mp5k' ? 'MP5K' : myWep === 'aug' ? 'AUG' : 'M16A2';
+    const wepLabel = { mp5k: 'MP5K', aug: 'AUG', akm: 'AK' }[myWep] || 'M16A2';
     S.chatLog.push({ name: '', color: '', text: wepLabel + ': ' + S.fireMode.toUpperCase() + ' mode', t: 2, system: true });
     if (S.chatLog.length > 10) S.chatLog.shift();
   }

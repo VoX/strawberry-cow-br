@@ -64,8 +64,6 @@ function startGame() {
         ammo: 10, reloading: 0,
         spawnProtection: 1,
       });
-      // Debug: give specific players a test weapon at spawn
-      if (p.name === 'cowtools') { p.weapon = 'bolty'; p.ammo = 5; }
       i++;
     }
   }
@@ -208,6 +206,9 @@ function gameTick() {
     // Skip the remaining per-player work (hunger, food, cooldowns) for
     // spawn-protected players just like the old inline code did.
     if (wasSpawnProtected) continue;
+
+    // Debug scene: infinite milk for all players
+    if (gameState.isDebugScene() && p.hunger < 50) p.hunger = 100;
 
     // Heal ponds — hunger regen, stays here because stepPlayerMovement is
     // movement-only.

@@ -46,6 +46,7 @@ class GameState {
 
     // settings tied to round
     this._botsEnabled = true;
+    this._debugScene = false;
     this._botsFreeWill = true;
     this._nightMode = false;
 
@@ -204,6 +205,8 @@ class GameState {
   setCowstrikeActive(v) { this._cowstrikeActive = v; }
 
   // --- round settings ------------------------------------------------------
+  isDebugScene() { return this._debugScene; }
+  setDebugScene(v) { this._debugScene = v; }
   isBotsEnabled() { return this._botsEnabled; }
   setBotsEnabled(v) { this._botsEnabled = v; }
   toggleBotsEnabled() { this._botsEnabled = !this._botsEnabled; return this._botsEnabled; }

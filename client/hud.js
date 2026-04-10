@@ -101,7 +101,7 @@ export function updateHud(me, time, dt) {
   H.hungerFill.style.background = hPct > 0.5 ? '#ffffff' : hPct > 0.25 ? '#dddddd' : '#ff4444';
   H.hungerTxt.textContent = 'MILK ' + Math.ceil(me.hunger) + '%';
   const wep = me.weapon || 'normal';
-  const wepNames = { shotgun: 'Benelli', burst: 'M16A2', bolty: 'L96', cowtank: 'M72 LAW', normal: 'P250', aug: 'AUG', mp5k: 'MP5K', knife: 'Knife' };
+  const wepNames = { shotgun: 'XM1014', burst: 'M16A2', bolty: 'L96', cowtank: 'M72 LAW', normal: 'P250', aug: 'AUG', mp5k: 'MP5K', thompson: 'Thompson', sks: 'SKS', akm: 'AK', knife: 'Knife' };
   let ammoTxt = '';
   let reloadBlock = '';
   if (wep === 'cowtank') {
@@ -117,7 +117,7 @@ export function updateHud(me, time, dt) {
     if (me.reloading) {
       if (!S._reloadStart) {
         S._reloadStart = performance.now();
-        const RELOAD_MS = { burst: 3000, mp5k: 3000, aug: 3500, bolty: 2500, normal: 2000 };
+        const RELOAD_MS = { burst: 3000, mp5k: 3000, thompson: 3000, sks: 2500, akm: 3000, aug: 3500, bolty: 2500, normal: 2000 };
         const reloadMult = me.dualWield ? 2 : 1;
         if (wep === 'shotgun') S._reloadDuration = Math.max(750, (maxMag - me.ammo) * 750);
         else S._reloadDuration = (RELOAD_MS[wep] || 2000) * reloadMult;
@@ -134,11 +134,17 @@ export function updateHud(me, time, dt) {
       S._reloadDuration = null;
     }
   }
-  // Fire mode indicator — shown for weapons with selector switches
+  // Fire mode indicator — shown for weapons with selector switches.
+  // Clamp displayed mode to what the weapon actually supports.
   let fireModeBlock = '';
   if (BURST_FAMILY.has(wep)) {
-    const modeLabel = S.fireMode === 'auto' ? 'AUTO' : S.fireMode === 'semi' ? 'SEMI' : 'BURST';
-    fireModeBlock = '<div>' + modeLabel + '</div>';
+    let mode = S.fireMode;
+    // AK: auto + semi only. MP5K: auto + burst only. Thompson: auto only.
+    if (wep === 'akm' && mode === 'burst') mode = 'auto';
+    if (wep === 'mp5k' && mode === 'semi') mode = 'auto';
+    if (wep === 'thompson') mode = 'auto';
+    const modeLabel = mode === 'auto' ? 'AUTO' : mode === 'semi' ? 'SEMI' : 'BURST';
+    fireModeBlock = wep === 'thompson' ? '' : '<div>' + modeLabel + '</div>';
   }
   const dualTag = me.dualWield ? ' ×2' : '';
   const weaponSig = wep + '|' + ammoTxt + '|' + dualTag + '|' + fireModeBlock + '|' + reloadBlock;
@@ -186,11 +192,13 @@ export function updateHud(me, time, dt) {
     const augBase = (S.fireMode === 'auto' ? 18 : 8) * 2.25;
     // MP5K hipfire spread is 2x LR (already baked into the stats), crosshair follows
     const mp5kBase = S.fireMode === 'auto' ? 36 : 16;
-    const baseSpread = { normal: 8, shotgun: 42, bolty: 5, cowtank: 10, burst: S.fireMode === 'auto' ? 18 : 8, aug: augBase, mp5k: mp5kBase }[wep] || 8;
+    const baseSpread = { normal: 28, shotgun: 42, bolty: 5, cowtank: 10, burst: S.fireMode === 'auto' ? 18 : 8, aug: augBase, mp5k: mp5kBase, thompson: 40, sks: 12, akm: S.fireMode === 'auto' ? 24 : 10 }[wep] || 8;
     const crouchMult = S.crouching ? 0.35 : 1;
     const movingMult = (S.keys['KeyW'] || S.keys['KeyS'] || S.keys['KeyA'] || S.keys['KeyD']) ? 2.2 : 1;
     const reloadMult = me.reloading ? 2.6 : 1;
-    const spread = Math.round(baseSpread * crouchMult * movingMult * reloadMult);
+    // Fire bloom — crosshair widens briefly during attack cooldown
+    const fireMult = me.attackCooldown > 0 ? 1.6 : 1;
+    const spread = Math.round(baseSpread * crouchMult * movingMult * reloadMult * fireMult);
     H.chN.style.marginTop = (-spread - 8) + 'px';
     H.chS.style.marginTop = spread + 'px';
     H.chE.style.marginLeft = spread + 'px';

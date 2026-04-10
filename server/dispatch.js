@@ -58,7 +58,7 @@ function dispatchMessage(player, msg) {
   // so we have to enforce the wall explicitly. Without this gate any
   // future handler that drops its internal `player.alive` check would
   // silently let an un-joined peer mutate game state.
-  if (!player._joined && msg.type !== 'join') return;
+  if (!player._joined && msg.type !== 'join' && msg.type !== 'debugJoin') return;
 
   // Stale stateful inputs (seq <= last seen) are dropped — geckos UDP
   // can reorder. Note: lastInputSeq is now advanced by the per-tick
@@ -77,6 +77,49 @@ function dispatchMessage(player, msg) {
     }
   }
 
+  // Debug scene — skip lobby, force-start game, spawn player directly
+  if (msg.type === 'debugJoin' && !player._joined) {
+    gameState.setDebugScene(true);
+    gameState.setBotsEnabled(false);
+    player.name = String(msg.name || 'Cow').slice(0, 12);
+    player.color = assignColor();
+    player._joined = true;
+    gameState.addPlayer(player.id, player);
+    if (lobbyState.getHostId() === null) lobbyState.setHost(player.id);
+    // Force-start the game if still in lobby
+    if (lobbyState.isInLobby()) {
+      player.inLobby = true;
+      player.ready = true;
+      const gameFsm = require('./game-fsm');
+      gameFsm.startGameFromLobby();
+    }
+    sendTo(player.ws, {
+      type: 'joined', id: player.id, color: player.color,
+      botsEnabled: false, botsFreeWill: gameState.isBotsFreeWill(),
+      nightMode: gameState.isNightMode(), hostId: lobbyState.getHostId(),
+    });
+    // Send full world state so client loads terrain + entities
+    if (lobbyState.isPlaying()) {
+      const { getSeed } = require('./terrain');
+      sendTo(player.ws, {
+        type: 'spectate',
+        terrainSeed: getSeed(),
+        players: getPlayerStates(),
+        foods: gameState.getFoods().map(serializeFood),
+        zone: gameState.getZone(),
+        map: {
+          walls: gameState.getWalls(), mud: gameState.getMudPatches(),
+          ponds: gameState.getHealPonds(), portals: gameState.getPortals(),
+          shelters: gameState.getShelters(), houses: gameState.getHouses(),
+        },
+        barricades: gameState.getBarricades(),
+        weapons: gameState.getWeaponPickups().map(w => ({ id: w.id, x: w.x, y: w.y, weapon: w.weapon, spawnTime: w.spawnTime })),
+        armorPickups: gameState.getArmorPickups().map(a => ({ id: a.id, x: a.x, y: a.y })),
+      });
+    }
+    broadcast(require('./player').buildServerStatus());
+    return;
+  }
   if (msg.type === 'join' && !player._joined) {
     player.name = String(msg.name || 'Cow').slice(0, 12);
     player.color = assignColor();

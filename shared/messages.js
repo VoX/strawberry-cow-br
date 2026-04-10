@@ -84,6 +84,7 @@ const C2S = Object.freeze({
   setUpdateRate: 'setUpdateRate',
   moo: 'moo',
   meleeAttack: 'meleeAttack',
+  debugJoin: 'debugJoin',
 });
 
 const MSG = Object.freeze({ ...S2C, ...C2S });

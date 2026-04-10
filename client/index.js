@@ -157,6 +157,8 @@ function loop(ts) {
   buildTowerIfNeeded();
   updateZone();
   updateViewmodel();
+
+  // (L96 laser dot is handled below near the end of the render loop)
   sky.position.copy(cam.position);
   cloudPlanes.forEach(c => { c.position.x = c.userData.origX + Math.sin(time * 0.05 * c.userData.speed) * 200; });
 
@@ -211,22 +213,116 @@ function loop(ts) {
   updateParticles(dt);
   updateBulletHoles(dt);
 
-  // Laser dot for L96 ADS — projects a fixed distance along aim direction
+  // L96 laser dot — sphere at the terrain hit point, uses the same
+  // ray march as the laser line above. Replaces the old fixed-distance dot.
   if (!S._laserDot) {
-    S._laserDot = new THREE.Mesh(new THREE.SphereGeometry(1, 6, 6), new THREE.MeshBasicMaterial({ color: 0xff0000 }));
+    S._laserDot = new THREE.Mesh(
+      new THREE.SphereGeometry(1.5, 8, 8),
+      new THREE.MeshBasicMaterial({ color: 0xff0000 })
+    );
     S._laserDot.visible = false;
     scene.add(S._laserDot);
   }
-  if (S.adsActive && me && me.alive && me.weapon === 'bolty') {
-    _tmpDir.set(0, 0, -1).applyQuaternion(cam.quaternion);
-    const dotDist = 500;
-    S._laserDot.position.set(cam.position.x + _tmpDir.x * dotDist, cam.position.y + _tmpDir.y * dotDist, cam.position.z + _tmpDir.z * dotDist);
-    S._laserDot.visible = true;
-    // Scale dot based on distance so it looks consistent
-    const s = dotDist / 200;
+  if (me && me.alive && (me.weapon === 'bolty' || me.weapon === 'aug')) {
+    const fwd2 = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
+    let dotX = cam.position.x + fwd2.x * 2000;
+    let dotY = cam.position.y + fwd2.y * 2000;
+    let dotZ = cam.position.z + fwd2.z * 2000;
+    let hitDist = 2000;
+    // Ray march: check terrain, walls, barricades, and cows (5-unit steps)
+    for (let d = 5; d < 2000; d += 5) {
+      const rx = cam.position.x + fwd2.x * d;
+      const ry = cam.position.y + fwd2.y * d;
+      const rz = cam.position.z + fwd2.z * d;
+      // Terrain
+      const th = getTerrainHeight(rx, rz);
+      if (ry < th) { dotX = rx; dotY = th; dotZ = rz; hitDist = d; break; }
+      // Walls (AABB test, server x/y → world x/z)
+      let wallHit = false;
+      if (S.mapFeatures && S.mapFeatures.walls) {
+        for (const w of S.mapFeatures.walls) {
+          if (rx > w.x && rx < w.x + w.w && rz > w.y && rz < w.y + w.h && ry < th + 70) {
+            dotX = rx; dotY = ry; dotZ = rz; hitDist = d; wallHit = true; break;
+          }
+        }
+      }
+      if (wallHit) break;
+      // Barricades (rough AABB, close enough for a laser dot)
+      let bHit = false;
+      for (const b of S.barricades) {
+        const dx = rx - b.cx, dz = rz - b.cy;
+        if (Math.abs(dx) < b.w / 2 + 5 && Math.abs(dz) < b.h / 2 + 5 && ry < th + 56) {
+          dotX = rx; dotY = ry; dotZ = rz; hitDist = d; bHit = true; break;
+        }
+      }
+      if (bHit) break;
+      // Players (cylinder test, radius ~16)
+      let cowHit = false;
+      for (const p of S.serverPlayers) {
+        if (p.id === S.myId || !p.alive) continue;
+        const pth = getTerrainHeight(p.x, p.y);
+        if (ry > pth && ry < pth + 50 && Math.hypot(rx - p.x, rz - p.y) < 16) {
+          dotX = rx; dotY = ry; dotZ = rz; hitDist = d; cowHit = true; break;
+        }
+      }
+      if (cowHit) break;
+    }
+    S._laserDot.position.set(dotX, dotY + 0.5, dotZ);
+    // Further = smaller so it looks like a consistent dot on the surface
+    const s = Math.max(0.4, 1.45 - hitDist / 1500);
     S._laserDot.scale.set(s, s, s);
+    S._laserDot.visible = true;
   } else if (S._laserDot) {
     S._laserDot.visible = false;
+  }
+
+  // Remote player laser dots — 10 Hz throttled, skip if > 500 units away.
+  if (!S._remoteLaserDots) S._remoteLaserDots = {};
+  if (!S._remoteLaserT) S._remoteLaserT = 0;
+  S._remoteLaserT += dt;
+  if (S._remoteLaserT >= 0.1) {
+    S._remoteLaserT = 0;
+    const laserWeapons = new Set(['bolty', 'aug']);
+    const seenDots = new Set();
+    for (const p of S.serverPlayers) {
+      if (p.id === S.myId || !p.alive || !laserWeapons.has(p.weapon)) continue;
+      const distToCam = Math.hypot(p.x - cam.position.x, p.y - cam.position.z);
+      if (distToCam > 500) continue;
+      seenDots.add(p.id);
+      if (!S._remoteLaserDots[p.id]) {
+        const dot = new THREE.Mesh(
+          new THREE.SphereGeometry(1.5, 6, 6),
+          new THREE.MeshBasicMaterial({ color: 0xff0000 })
+        );
+        dot.visible = false;
+        scene.add(dot);
+        S._remoteLaserDots[p.id] = dot;
+      }
+      const dot = S._remoteLaserDots[p.id];
+      const ax = Math.sin(p.aimAngle || 0);
+      const az = Math.cos(p.aimAngle || 0);
+      const pth = getTerrainHeight(p.x, p.y);
+      const py = pth + 35;
+      let dHit = 2000, hx = p.x + ax * 2000, hy = py, hz = p.y + az * 2000;
+      for (let d = 10; d < 2000; d += 10) {
+        const rx = p.x + ax * d, rz = p.y + az * d;
+        const th = getTerrainHeight(rx, rz);
+        if (py < th) { hx = rx; hy = th; hz = rz; dHit = d; break; }
+      }
+      dot.position.set(hx, hy + 0.5, hz);
+      const ds = Math.max(0.4, 1.45 - dHit / 1500);
+      dot.scale.set(ds, ds, ds);
+      dot.visible = true;
+    }
+    for (const id of Object.keys(S._remoteLaserDots)) {
+      if (!seenDots.has(Number(id))) {
+        S._remoteLaserDots[id].visible = false;
+        scene.remove(S._remoteLaserDots[id]);
+        S._remoteLaserDots[id].geometry.dispose();
+        S._remoteLaserDots[id].material.dispose();
+        delete S._remoteLaserDots[id];
+      }
+    }
   }
 
   ren.render(scene, cam);
