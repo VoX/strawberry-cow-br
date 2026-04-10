@@ -677,14 +677,15 @@ export const handlers = {
   projectileHit(msg) {
     S.projData = S.projData.filter(p => p.id !== msg.projectileId);
     if (S.projMeshes[msg.projectileId]) { disposeMeshTree(S.projMeshes[msg.projectileId]); delete S.projMeshes[msg.projectileId]; }
+    // Hoist target lookup — used by debug cube, blood particles, and damage numbers
+    const _hitTarget = msg.targetId ? S.serverPlayers.find(p => p.id === msg.targetId) : null;
     // Debug: red cube at server-authoritative hit location
     if (S.debugMode && msg.ownerId === S.myId) {
       let hx, hy, hz;
       if (msg.wall && typeof msg.x === 'number') {
         hx = msg.x; hz = msg.y; hy = typeof msg.z === 'number' ? msg.z : getTerrainHeight(msg.x, msg.y);
-      } else if (msg.targetId) {
-        const t = S.serverPlayers.find(p => p.id === msg.targetId);
-        if (t) { hx = t.x; hz = t.y; hy = (t.z || 0) + getTerrainHeight(t.x, t.y) + 20; }
+      } else if (_hitTarget) {
+        hx = _hitTarget.x; hz = _hitTarget.y; hy = (_hitTarget.z || 0) + getTerrainHeight(_hitTarget.x, _hitTarget.y) + 20;
       }
       if (hx != null) {
         const dbgGeo = new THREE.BoxGeometry(3, 3, 3);
@@ -764,7 +765,7 @@ export const handlers = {
     // render position (not the raw tick position) so blood appears on the
     // visible cow instead of 100 ms ahead of it.
     if (msg.targetId && !msg.wall) {
-      const target = S.serverPlayers.find(p => p.id === msg.targetId);
+      const target = _hitTarget;
       if (target) {
         const smooth = target.id === S.myId
           ? { x: target.x, y: target.y, z: target.z }
@@ -791,7 +792,7 @@ export const handlers = {
     }
     // Floating damage number
     if (msg.targetId && msg.dmg) {
-      const target = S.serverPlayers.find(p => p.id === msg.targetId);
+      const target = _hitTarget;
       if (target) {
         const dmg = msg.dmg;
         const hasShield = target.armor > 0;

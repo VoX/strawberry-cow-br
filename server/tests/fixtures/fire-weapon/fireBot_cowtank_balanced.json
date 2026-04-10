@@ -61,7 +61,7 @@
     "aimAngle": -1.570796,
     "ammo": 15,
     "attackCooldown": 1,
-    "botActionTimer": 0.980883,
+    "botActionTimer": 0.300276,
     "hunger": 95,
     "weapon": "normal"
   },

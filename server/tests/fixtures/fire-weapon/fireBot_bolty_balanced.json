@@ -19,7 +19,7 @@
     "aimAngle": -1.570796,
     "ammo": 49,
     "attackCooldown": 2.5,
-    "botActionTimer": 0.980883,
+    "botActionTimer": 0.300276,
     "hunger": 92
   },
   "projectiles": [
@@ -30,7 +30,6 @@
       "vx": 16800,
       "vy": 0,
       "vz": -294,
-      "wallPiercing": true,
       "x": 1040,
       "y": 1000,
       "z": 35

@@ -78,14 +78,20 @@ export function updateHud(me, time, dt) {
     }
     const chatEl = H.chatLog;
     if (chatEl) {
-      chatEl.innerHTML = S.chatLog.map(c => {
-        const opacity = Math.min(1, c.t / 3);
-        if (c.system) {
-          return '<div style="margin-bottom:2px;opacity:' + opacity + ';color:#ddd">' + c.text + '</div>';
-        }
-        const col = COL_HEX[c.color] || '#ff88aa';
-        return '<div style="margin-bottom:2px;opacity:' + opacity + '"><span style="color:' + col + ';font-weight:bold">' + _escapeHtml(c.name) + ':</span> ' + _escapeHtml(c.text) + '</div>';
-      }).join('');
+      // Build a signature from message count + first/last text to skip
+      // innerHTML rebuild when content hasn't changed (opacity drift only)
+      const chatSig = S.chatLog.length + '|' + (S.chatLog[0] ? S.chatLog[0].text : '') + '|' + (S.chatLog.length > 1 ? S.chatLog[S.chatLog.length-1].text : '');
+      if (chatSig !== S._chatSig) {
+        S._chatSig = chatSig;
+        chatEl.innerHTML = S.chatLog.map(c => {
+          const opacity = Math.min(1, c.t / 3);
+          if (c.system) {
+            return '<div style="margin-bottom:2px;opacity:' + opacity + ';color:#ddd">' + c.text + '</div>';
+          }
+          const col = COL_HEX[c.color] || '#ff88aa';
+          return '<div style="margin-bottom:2px;opacity:' + opacity + '"><span style="color:' + col + ';font-weight:bold">' + _escapeHtml(c.name) + ':</span> ' + _escapeHtml(c.text) + '</div>';
+        }).join('');
+      }
     }
   } else if (S._hudTick >= 0.1) {
     // Empty chat — still flip the throttle counter so the minimap

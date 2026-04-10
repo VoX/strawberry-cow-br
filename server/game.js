@@ -7,7 +7,7 @@ const lobbyState = require('./lobby-state');
 const gameState = require('./game-state');
 const { generateMap } = require('./map');
 const { getGroundHeight, WALL_HEIGHT, generateTerrain, getSeed } = require('./terrain');
-const { spawnInitialFood, spawnFood, spawnGoldenFood, spawnWeaponPickup } = require('./spawning');
+const { spawnInitialFood, spawnFood, spawnGoldenFood, spawnWeaponPickup, safeRandPos } = require('./spawning');
 const { spawnBots, updateBots } = require('./bots');
 const { getPlayerStates, getPlayerTicks, broadcastPlayerSnapshot, applyHungerDelta, resolveDeaths, clearPendingDeaths, eliminatePlayer, serializeFood, buildServerStatus } = require('./player');
 const { handleWeaponPickups, handleArmorPickups } = require('./weapons');
@@ -47,7 +47,10 @@ function startGame() {
   const count = gameState.countInLobby();
   for (let j = 0; j < count; j++) {
     const angle = (j / count) * Math.PI * 2;
-    spawnPoints.push({ x: cx + Math.cos(angle) * radius, y: cy + Math.sin(angle) * radius });
+    const rawX = cx + Math.cos(angle) * radius, rawY = cy + Math.sin(angle) * radius;
+    // Push spawn point out of wall deadzones
+    const safe = safeRandPos(rawX - 30, rawX + 30, rawY - 30, rawY + 30);
+    spawnPoints.push(safe);
   }
 
   for (const [, p] of gameState.getPlayers()) {

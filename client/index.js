@@ -57,12 +57,14 @@ function loop(ts) {
   // Killcam / spectator: follow a tracked target. Defaults to killer on death; cyclable via click/arrows.
   let spectatingTarget = false;
   if ((!me || !me.alive) && S.state === 'playing') {
-    const aliveOthers = S.serverPlayers.filter(p => p.alive && p.id !== S.myId);
-    let target = aliveOthers.find(p => p.id === S.spectateTargetId);
-    if (!target && aliveOthers.length > 0) {
-      target = aliveOthers[0];
-      S.spectateTargetId = target.id;
+    // Find spectate target without allocating a filtered array per frame
+    let target = null, firstAlive = null;
+    for (const p of S.serverPlayers) {
+      if (!p.alive || p.id === S.myId) continue;
+      if (!firstAlive) firstAlive = p;
+      if (p.id === S.spectateTargetId) { target = p; break; }
     }
+    if (!target && firstAlive) { target = firstAlive; S.spectateTargetId = target.id; }
     if (target) {
       spectatingTarget = true;
       // Sample the interpolation ring so the killcam frames the cow where it
