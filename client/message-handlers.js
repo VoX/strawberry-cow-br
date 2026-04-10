@@ -228,6 +228,10 @@ export const handlers = {
     clearRocketSounds();
     clearParticles();
     clearBulletHoles();
+    // Survival welcome tips
+    addKillFeed('Welcome to Strawberry Cow Survival!', 10);
+    setTimeout(() => addKillFeed('Knife trees/rocks to gather resources', 8), 2000);
+    setTimeout(() => addKillFeed('Tab = crafting | B = build | E = upgrade', 8), 4000);
     // Spawn resource nodes + sleeping bags from world snapshot
     clearNodes();
     S._resourceNodePositions = [];
