@@ -6245,6 +6245,63 @@ var init_hud = __esm({
   }
 });
 
+// client/bullet-holes.js
+import * as THREE12 from "three";
+function spawnBulletHole(gameX, gameY, gameZ) {
+  if (typeof gameX !== "number" || typeof gameY !== "number" || typeof gameZ !== "number") return;
+  if (_holes.length >= MAX_HOLES) {
+    const old = _holes.shift();
+    scene.remove(old.mesh);
+    old.mat.dispose();
+  }
+  const mat = new THREE12.MeshBasicMaterial({
+    color: 1118481,
+    transparent: true,
+    opacity: HOLE_PEAK_OPACITY,
+    depthWrite: false
+  });
+  const mesh = new THREE12.Mesh(_geo, mat);
+  mesh.position.set(gameX, gameZ, gameY);
+  scene.add(mesh);
+  _holes.push({ mesh, mat, life: HOLE_LIFE });
+}
+function updateBulletHoles(dt) {
+  for (let i = _holes.length - 1; i >= 0; i--) {
+    const h = _holes[i];
+    h.life -= dt;
+    if (h.life <= 0) {
+      scene.remove(h.mesh);
+      h.mat.dispose();
+      _holes.splice(i, 1);
+      continue;
+    }
+    if (h.life < HOLE_FADE) {
+      h.mat.opacity = h.life / HOLE_FADE * HOLE_PEAK_OPACITY;
+    }
+  }
+}
+function clearBulletHoles() {
+  for (const h of _holes) {
+    scene.remove(h.mesh);
+    h.mat.dispose();
+  }
+  _holes.length = 0;
+}
+var HOLE_LIFE, HOLE_FADE, MAX_HOLES, HOLE_RADIUS, HOLE_PEAK_OPACITY, _geo, _holes;
+var init_bullet_holes = __esm({
+  "client/bullet-holes.js"() {
+    init_renderer();
+    init_three_utils();
+    HOLE_LIFE = 30;
+    HOLE_FADE = 4;
+    MAX_HOLES = 200;
+    HOLE_RADIUS = 1.6;
+    HOLE_PEAK_OPACITY = 0.85;
+    _geo = markSharedGeometry(new THREE12.SphereGeometry(HOLE_RADIUS, 6, 4));
+    _holes = [];
+  }
+});
+
 // shared/messages.js
 var require_messages = __commonJS({
   "shared/messages.js"(exports, module) {
@@ -6670,7 +6727,7 @@ var init_prediction = __esm({
 });
 
 // client/message-handlers.js
-import * as THREE12 from "three";
+import * as THREE13 from "three";
 function getHitFlash() {
   return _hitFlash || (_hitFlash = document.getElementById("hitFlash"));
 }
@@ -6712,7 +6769,8 @@ var init_message_handlers = __esm({
     import_messages = __toESM(require_messages());
     init_interp();
     init_prediction();
-    _tmpDir = new THREE12.Vector3();
+    init_bullet_holes();
+    _tmpDir = new THREE13.Vector3();
     _hitFlash = null;
     handlers = {
       serverStatus(msg) {
@@ -6868,6 +6926,7 @@ var init_message_handlers = __esm({
         state_default.projData = [];
         clearRocketSounds();
         clearParticles();
+        clearBulletHoles();
       },
       // 30 Hz broadcast of mutable player fields only. Sticky fields
       // (name/color/weapon/perks/xpToNext/sizeMult/recoilMult/extMagMult) arrive
@@ -7121,12 +7180,13 @@ var init_message_handlers = __esm({
       },
       wallImpact(msg) {
         const th = getTerrainHeight(msg.x, msg.y);
+        const impactZ = msg.z != null ? msg.z : th + 30;
         for (let i = 0; i < 5; i++) {
           spawnParticle({
             geo: PGEO_SPHERE_LO,
             color: 16768324,
             x: msg.x + (Math.random() - 0.5) * 8,
-            y: (msg.z || th + 30) + (Math.random() - 0.5) * 8,
+            y: impactZ + (Math.random() - 0.5) * 8,
             z: msg.y + (Math.random() - 0.5) * 8,
             sx: 0.8,
             life: 0.4,
@@ -7136,6 +7196,7 @@ var init_message_handlers = __esm({
             vz: (Math.random() - 0.5) * 40
           });
         }
+        spawnBulletHole(msg.x, msg.y, impactZ);
       },
       projectileHit(msg) {
         state_default.projData = state_default.projData.filter((p) => p.id !== msg.projectileId);
@@ -7146,6 +7207,10 @@ var init_message_handlers = __esm({
         if (msg.targetId === state_default.myId) {
           sfxHit();
           flashHit(0.5, 150);
+        }
+        if (msg.wall && typeof msg.x === "number" && typeof msg.y === "number") {
+          const z = typeof msg.z === "number" ? msg.z : getTerrainHeight(msg.x, msg.y) + 5;
+          spawnBulletHole(msg.x, msg.y, z);
         }
         if (msg.targetId && msg.ownerId === state_default.myId && msg.targetId !== state_default.myId) {
           sfx(600, 0.06, "square", 0.07);
@@ -7209,10 +7274,10 @@ var init_message_handlers = __esm({
             ctx.fillText(label, 81, 35);
             ctx.fillStyle = color;
             ctx.fillText(label, 80, 34);
-            const tex = new THREE12.CanvasTexture(nc);
-            tex.minFilter = THREE12.LinearFilter;
-            const mat = new THREE12.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
-            const sprite = new THREE12.Sprite(mat);
+            const tex = new THREE13.CanvasTexture(nc);
+            tex.minFilter = THREE13.LinearFilter;
+            const mat = new THREE13.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+            const sprite = new THREE13.Sprite(mat);
             const tz = target.z !== void 0 ? target.z : getTerrainHeight(target.x, target.y);
             sprite.position.set(target.x + (Math.random() - 0.5) * 20, tz + 40 + Math.random() * 10, target.y + (Math.random() - 0.5) * 20);
             sprite.scale.set(96, 28, 1);
@@ -7288,7 +7353,7 @@ var init_message_handlers = __esm({
           life: 0.4,
           peakOpacity: 0.4,
           growth: 5,
-          side: THREE12.DoubleSide
+          side: THREE13.DoubleSide
         });
         for (let i = 0; i < 20; i++) {
           spawnParticle({
@@ -7353,10 +7418,10 @@ var init_message_handlers = __esm({
         ctx.fillText(label, 81, 35);
         ctx.fillStyle = "#8b5a2b";
         ctx.fillText(label, 80, 34);
-        const tex = new THREE12.CanvasTexture(nc);
-        tex.minFilter = THREE12.LinearFilter;
-        const mat = new THREE12.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
-        const sprite = new THREE12.Sprite(mat);
+        const tex = new THREE13.CanvasTexture(nc);
+        tex.minFilter = THREE13.LinearFilter;
+        const mat = new THREE13.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+        const sprite = new THREE13.Sprite(mat);
         const th = getTerrainHeight(msg.x, msg.y);
         sprite.position.set(msg.x + (Math.random() - 0.5) * 12, th + 40 + Math.random() * 8, msg.y + (Math.random() - 0.5) * 12);
         sprite.scale.set(96, 28, 1);
@@ -7624,7 +7689,7 @@ var init_message_handlers = __esm({
               life: 0.6,
               peakOpacity: 1,
               growth: 6,
-              side: THREE12.DoubleSide
+              side: THREE13.DoubleSide
             });
             for (let j = 0; j < 12; j++) {
               const col = Math.random() > 0.3 ? 16729088 : Math.random() > 0.5 ? 16768256 : 16746496;
@@ -7759,7 +7824,7 @@ var init_message_handlers = __esm({
           life: 0.4,
           peakOpacity: 0.5,
           growth: 7,
-          side: THREE12.DoubleSide
+          side: THREE13.DoubleSide
         });
         for (let i = 0; i < 15; i++) {
           spawnParticle({
@@ -7798,7 +7863,7 @@ var init_message_handlers = __esm({
 });
 
 // client/index.js
-import * as THREE13 from "three";
+import * as THREE14 from "three";
 var require_index = __commonJS({
   "client/index.js"() {
     init_config();
@@ -7817,14 +7882,15 @@ var require_index = __commonJS({
     init_zone();
     init_hud();
     init_particles();
+    init_bullet_holes();
     init_message_handlers();
     init_interp();
     init_prediction();
     setVmGroupRef(getVmGroup);
-    var _tmpFwd = new THREE13.Vector3();
-    var _tmpRight = new THREE13.Vector3();
-    var _tmpDir2 = new THREE13.Vector3();
-    var _tmpEuler = new THREE13.Euler(0, 0, 0, "YXZ");
+    var _tmpFwd = new THREE14.Vector3();
+    var _tmpRight = new THREE14.Vector3();
+    var _tmpDir2 = new THREE14.Vector3();
+    var _tmpEuler = new THREE14.Euler(0, 0, 0, "YXZ");
     var last = performance.now();
     function loop(ts) {
       requestAnimationFrame(loop);
@@ -7970,7 +8036,7 @@ var require_index = __commonJS({
             spawnParticle({
               geo: PGEO_TORUS,
               color: 16777215,
-              side: THREE13.DoubleSide,
+              side: THREE14.DoubleSide,
               x: me.x + (Math.random() - 0.5) * 6,
               y: WATER_LEVEL + 0.5,
               z: me.y + (Math.random() - 0.5) * 6,
@@ -7989,8 +8055,9 @@ var require_index = __commonJS({
       updateCows(time, dt);
       updateProjectiles(dt);
       updateParticles(dt);
+      updateBulletHoles(dt);
       if (!state_default._laserDot) {
-        state_default._laserDot = new THREE13.Mesh(new THREE13.SphereGeometry(1, 6, 6), new THREE13.MeshBasicMaterial({ color: 16711680 }));
+        state_default._laserDot = new THREE14.Mesh(new THREE14.SphereGeometry(1, 6, 6), new THREE14.MeshBasicMaterial({ color: 16711680 }));
         state_default._laserDot.visible = false;
         scene.add(state_default._laserDot);
       }

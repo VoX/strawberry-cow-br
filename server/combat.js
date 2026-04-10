@@ -244,28 +244,30 @@ function updateProjectiles(dt) {
     // Terrain collision
     if (pr.z < getTerrainHeight(pr.x, pr.y)) {
       if (pr.explosive) applyExplosion(pr, null);
-      broadcast({ type: 'projectileHit', projectileId: pr.id, targetId: null, ownerId: pr.ownerId, wall: true, x: pr.x, y: pr.y });
+      broadcast({ type: 'projectileHit', projectileId: pr.id, targetId: null, ownerId: pr.ownerId, wall: true, x: pr.x, y: pr.y, z: pr.z });
       gameState.removeProjectileAt(i); continue;
     }
     // Bounds / lifetime
     if (pr.life <= 0 || pr.x < 0 || pr.x > MAP_W || pr.y < 0 || pr.y > MAP_H) {
       if (pr.explosive) applyExplosion(pr, null);
-      broadcast({ type: 'projectileHit', projectileId: pr.id, targetId: null, ownerId: pr.ownerId, wall: true, x: pr.x, y: pr.y });
+      broadcast({ type: 'projectileHit', projectileId: pr.id, targetId: null, ownerId: pr.ownerId, wall: true, x: pr.x, y: pr.y, z: pr.z });
       gameState.removeProjectileAt(i); continue;
     }
     // Use the analytical pre-scan result — no second stepped scan needed
     if (hitWallObj && pr.wallPiercing) {
       const impactX = prevX + segDx * blockT;
       const impactY = prevY + segDy * blockT;
-      broadcast({ type: 'wallImpact', x: impactX, y: impactY, z: pr.z });
+      const impactZ = prevZ + (pr.z - prevZ) * blockT;
+      broadcast({ type: 'wallImpact', x: impactX, y: impactY, z: impactZ });
       pr._wallHits = (pr._wallHits || 0) + 1;
       if (pr._wallHits >= 2) {
-        broadcast({ type: 'projectileHit', projectileId: pr.id, targetId: null, ownerId: pr.ownerId, wall: true, x: impactX, y: impactY });
+        broadcast({ type: 'projectileHit', projectileId: pr.id, targetId: null, ownerId: pr.ownerId, wall: true, x: impactX, y: impactY, z: impactZ });
         gameState.removeProjectileAt(i); continue;
       }
     } else if (hitWallObj || hitBarricade) {
       const impactX = prevX + segDx * blockT;
       const impactY = prevY + segDy * blockT;
+      const impactZ = prevZ + (pr.z - prevZ) * blockT;
       if (hitBarricade) {
         const dmgDealt = Math.round(pr.dmg);
         hitBarricade.hp -= dmgDealt;
@@ -276,7 +278,7 @@ function updateProjectiles(dt) {
         }
       }
       if (pr.explosive) applyExplosion(pr, null);
-      broadcast({ type: 'projectileHit', projectileId: pr.id, targetId: null, ownerId: pr.ownerId, wall: true, x: impactX, y: impactY });
+      broadcast({ type: 'projectileHit', projectileId: pr.id, targetId: null, ownerId: pr.ownerId, wall: true, x: impactX, y: impactY, z: impactZ });
       gameState.removeProjectileAt(i); continue;
     }
   }

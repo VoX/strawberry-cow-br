@@ -41,11 +41,11 @@ const PLAYER_STATS_BASE = {
     burstStepMs: 92, // intra-burst delay — 650 RPM
     // Auto variant — used when fireMode === 'auto'. 0.12 s cooldown = ~500 RPM.
     auto: { hungerCost: [1, 2], cooldown: 0.12, dmg: 3, speed: 1600, spreadBase: 0.022, pellets: 1, dualPelletMult: 2 },
-    // Semi-auto variant — 1 shot per trigger pull, same cooldown ceiling as
-    // full-auto so trigger spamming can't exceed 500 RPM. Zero spread like
-    // the burst path (semi rewards deliberate shots), 2x dmg over auto to
-    // make it competitive when the player is pacing themselves.
-    semi: { hungerCost: [1, 3], cooldown: 0.12, dmg: 6, speed: 1760, spreadBase: 0, pellets: 1, dualPelletMult: 2 },
+    // Semi-auto variant — 1 shot per trigger pull, half the cooldown of
+    // full-auto so the sustained fire ceiling is ~250 RPM. Same per-shot
+    // damage and milk drain as auto so the mode is purely a "controlled
+    // pacing" choice, not a damage trade. Zero spread, deliberate shots.
+    semi: { hungerCost: [1, 2], cooldown: 0.24, dmg: 3, speed: 1760, spreadBase: 0, pellets: 1, dualPelletMult: 2 },
   },
   shotgun: {
     hungerGate: [3, 10], hungerCost: [3, 9],
@@ -92,7 +92,11 @@ function extractShooterModifiers(shooter) {
 }
 
 // Produce a per-shot stats object for a player by applying hungerDiscount to
-// every [min,base] cost pair. Caller does this once per fire.
+// every [min,base] cost pair. Caller does this once per fire. Every fire-mode
+// variant (auto/semi) MUST be flattened the same way — leaving a [min,base]
+// tuple in `s.hungerCost` would let the fire path do `-array` which JS
+// coerces to NaN, hunger goes NaN, and the player becomes unkillable. (This
+// is exactly the M16-semi infinite-health bug we shipped once already.)
 function resolvePlayerStats(weapon, hungerDiscount = 0) {
   const base = PLAYER_STATS_BASE[weapon] || PLAYER_STATS_BASE.normal;
   const resolved = { ...base };
@@ -102,6 +106,12 @@ function resolvePlayerStats(weapon, hungerDiscount = 0) {
     resolved.auto = {
       ...base.auto,
       hungerCost: Math.max(base.auto.hungerCost[0], base.auto.hungerCost[1] - hungerDiscount),
+    };
+  }
+  if (base.semi) {
+    resolved.semi = {
+      ...base.semi,
+      hungerCost: Math.max(base.semi.hungerCost[0], base.semi.hungerCost[1] - hungerDiscount),
     };
   }
   return resolved;

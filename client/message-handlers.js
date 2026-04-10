@@ -24,6 +24,7 @@ import { disposeMeshTree } from './three-utils.js';
 import { S2C } from '../shared/messages.js';
 import { INTERP_HIST_CAP, interpSamplePlayer } from './interp.js';
 import { reconcilePrediction } from './prediction.js';
+import { spawnBulletHole, clearBulletHoles } from './bullet-holes.js';
 
 // Reusable temp vector for the projectile muzzle-offset transform. Was shared
 // with the render loop in index.js via `_tmpDir`; we get our own private one so
@@ -198,6 +199,7 @@ export const handlers = {
     for (const id in S.projMeshes) { disposeMeshTree(S.projMeshes[id]); } S.projMeshes = {}; S.projData = [];
     clearRocketSounds();
     clearParticles();
+    clearBulletHoles();
   },
 
   // 30 Hz broadcast of mutable player fields only. Sticky fields
@@ -457,11 +459,12 @@ export const handlers = {
   wallImpact(msg) {
     // L96 wall penetration spark — pooled
     const th = getTerrainHeight(msg.x, msg.y);
+    const impactZ = msg.z != null ? msg.z : th + 30;
     for (let i = 0; i < 5; i++) {
       spawnParticle({
         geo: PGEO_SPHERE_LO, color: 0xffdd44,
         x: msg.x + (Math.random()-0.5)*8,
-        y: (msg.z || th + 30) + (Math.random()-0.5)*8,
+        y: impactZ + (Math.random()-0.5)*8,
         z: msg.y + (Math.random()-0.5)*8,
         sx: 0.8,
         life: 0.4, peakOpacity: 1,
@@ -470,12 +473,24 @@ export const handlers = {
         vz: (Math.random()-0.5)*40,
       });
     }
+    // Persistent bullet hole at the entry point. The L96 wallpierce path
+    // also fires a projectileHit on the SECOND wall hit which spawns the
+    // exit hole through the projectileHit handler — so a single bolty
+    // wallbang leaves two visible holes (entry + exit/behind).
+    spawnBulletHole(msg.x, msg.y, impactZ);
   },
 
   projectileHit(msg) {
     S.projData = S.projData.filter(p => p.id !== msg.projectileId);
     if (S.projMeshes[msg.projectileId]) { disposeMeshTree(S.projMeshes[msg.projectileId]); delete S.projMeshes[msg.projectileId]; }
     if (msg.targetId === S.myId) { sfxHit(); flashHit(0.5, 150); }
+    // Persistent bullet hole on world geometry hits — wall, barricade, or
+    // terrain. Player hits don't get holes (the blood particles below cover
+    // them); the wall:true flag from the server marks the world-geometry path.
+    if (msg.wall && typeof msg.x === 'number' && typeof msg.y === 'number') {
+      const z = typeof msg.z === 'number' ? msg.z : (getTerrainHeight(msg.x, msg.y) + 5);
+      spawnBulletHole(msg.x, msg.y, z);
+    }
     // Hitmarker for attacker — overlays the crosshair without disturbing its layout
     if (msg.targetId && msg.ownerId === S.myId && msg.targetId !== S.myId) {
       sfx(600, 0.06, 'square', 0.07);

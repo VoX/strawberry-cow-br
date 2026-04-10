@@ -15,6 +15,7 @@ import { updateProjectiles } from './projectiles.js';
 import { updateZone } from './zone.js';
 import { updateHud } from './hud.js';
 import { updateParticles, spawnParticle, PGEO_SPHERE_LO, PGEO_TORUS } from './particles.js';
+import { updateBulletHoles } from './bullet-holes.js';
 import { handlers } from './message-handlers.js';
 import { interpSamplePlayer } from './interp.js';
 import { predictStep, initPrediction, setCurrentInput, getRenderedPredicted, getRenderOffset } from './prediction.js';
@@ -198,6 +199,7 @@ function loop(ts) {
   updateCows(time, dt);
   updateProjectiles(dt);
   updateParticles(dt);
+  updateBulletHoles(dt);
 
   // Laser dot for L96 ADS — projects a fixed distance along aim direction
   if (!S._laserDot) {
