@@ -1,7 +1,7 @@
 const { MAP_W, MAP_H, COLORS, FOOD_TYPES, WEAPON_TYPES } = require('../shared/constants');
 
 const PORT = parseInt(process.env.PORT || '20021', 10);
-const TICK_RATE = 30;
+const TICK_RATE = 40;
 
 // Bot roster. Each name maps to a permanent personality + a per-cow
 // chat pool that fits the name's vibe. Bots whose name isn't in the

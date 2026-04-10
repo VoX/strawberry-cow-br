@@ -29,7 +29,7 @@ import { send } from './network.js';
 import { KNIFE_SPEED_MULT, HIT_SLOW_MULT } from '../shared/constants.js';
 
 // Fixed timestep — must match server/config.js::TICK_RATE.
-const TICK_HZ = 30;
+const TICK_HZ = 40;
 const TICK_DT = 1 / TICK_HZ;
 // Divergence threshold before we snap. 1 world unit is ~1cm of visible
 // drift; tighter and floating-point noise triggers spurious snaps.
