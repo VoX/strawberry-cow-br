@@ -177,9 +177,9 @@ async function runTests() {
 
   // Test 11: Weapon pickups exist
   console.log('\nTest 11: Weapon pickups');
-  const weaponMsgs = p1.msgs.filter(m => m.type === 'weaponSpawn');
   const startWeapons = startMsg?.weapons;
-  assert((startWeapons && startWeapons.length > 0) || weaponMsgs.length > 0, 'Weapon pickups exist in game');
+  const tickWeapons = p1.msgs.filter(m => m.type === 'tick' && m.weaponPickups && m.weaponPickups.length > 0);
+  assert((startWeapons && startWeapons.length > 0) || tickWeapons.length > 0, 'Weapon pickups exist in game');
 
   // Test 12: Disconnect handling
   console.log('\nTest 12: Disconnect');

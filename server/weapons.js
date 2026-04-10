@@ -1,4 +1,3 @@
-const { broadcast } = require('./network');
 const gameState = require('./game-state');
 const combat = require('./combat');
 const { MAG_SIZES, DUAL_WIELD_FAMILY } = require('../shared/constants');

@@ -20,7 +20,7 @@ import { spawnParts, showChatBubble } from './entities.js';
 import { addBarricade, removeBarricade, clearBarricades, destroyWall, onHouseWallDestroyed } from './map-objects.js';
 import { clearRocketSounds } from './projectiles.js';
 import { spawnParticle, clearParticles, PGEO_SPHERE_LO, PGEO_SPHERE_MED, PGEO_BOX, PGEO_TORUS } from './particles.js';
-import { setArmorSpawns, onArmorSpawn, onArmorPickup, clearPickups } from './pickups.js';
+import { setArmorSpawns, clearPickups } from './pickups.js';
 import { disposeMeshTree } from './three-utils.js';
 import { S2C } from '../shared/messages.js';
 import { BURST_FAMILY, HIT_SLOW_DURATION_MS } from '../shared/constants.js';
@@ -455,12 +455,9 @@ export const handlers = {
     }
 
     // Diff armor pickups — detect new spawns and picked-up removals.
+    // setArmorSpawns replaces the full list; pickups.js reconciles meshes each frame.
     if (msg.armorPickups) {
-      const apById = new Map();
-      for (const a of msg.armorPickups) apById.set(a.id, a);
-      // Remove picked-up armor.
-      // (armor pickup meshes are managed by pickups.js — we just track IDs)
-      // Add new armor spawns.
+      setArmorSpawns(msg.armorPickups);
     }
 
     S.me = S.serverPlayers.find(p => p.id === S.myId) || null;
@@ -496,17 +493,7 @@ export const handlers = {
 
   // playerSnapshot removed — sticky fields now included in every tick.
 
-  food(msg) {
-    const f = msg.food || msg;
-    S.serverFoods.push({ id: f.id, x: f.x, y: f.y, type: f.type || f.typeName });
-  },
-
-  eat(msg) {
-    const fi = S.serverFoods.findIndex(f => f.id === msg.foodId);
-    if (fi >= 0) S.serverFoods.splice(fi, 1);
-    spawnParts(msg.playerId);
-    if (msg.playerId === S.myId) sfxEat();
-  },
+  // food, eat — removed, state rides tick payload (foodIds array).
 
   projectile(msg) {
     let vy3d = msg.vz || 0, spawnH = msg.z || (15 + getTerrainHeight(msg.x, msg.y));
@@ -1214,30 +1201,8 @@ export const handlers = {
 
   // dash — now handled via justDashed event flag in tick handler.
 
-  weaponPickup(msg) {
-    S.clientWeapons = S.clientWeapons.filter(w => w.id !== msg.pickupId);
-    const _wn = { shotgun: 'XM1014', burst: 'M16A2', bolty: 'L96', cowtank: 'M72 LAW', aug: 'AUG', mp5k: 'MP5K', thompson: 'Thompson', sks: 'SKS', akm: 'AK' };
-    const wpName = _wn[msg.weapon] || msg.weapon || 'weapon';
-    if (msg.playerId === S.myId) {
-      addKillFeed('Picked up ' + wpName + '!', 3);
-      // Default to full-auto when picking up a weapon with a fire selector
-      if (BURST_FAMILY.has(msg.weapon)) S.fireMode = 'auto';
-    }
-    else addKillFeed((msg.name || '?') + ' picked up ' + wpName, 3);
-  },
-
-  weaponSpawn(msg) {
-    S.clientWeapons.push({ id: msg.id, x: msg.x, y: msg.y, weapon: msg.weapon, spawnTime: msg.spawnTime || Date.now() });
-  },
-
-  weaponDespawn(msg) {
-    S.clientWeapons = S.clientWeapons.filter(w => w.id !== msg.id);
-  },
-
-  weaponDrop(msg) {
-    if (msg.playerId === S.myId) addKillFeed('Dropped weapon', 3);
-    else addKillFeed((msg.name || '?') + ' dropped their weapon', 3);
-  },
+  // weaponPickup, weaponSpawn, weaponDespawn, weaponDrop
+  // — removed, state rides tick payload (weaponPickups array).
 
   reloaded(msg) {
     if (msg.playerId !== S.myId) return;
@@ -1256,14 +1221,7 @@ export const handlers = {
     forceUnADS();
   },
 
-  armorPickup(msg) {
-    onArmorPickup(msg.pickupId);
-    if (msg.playerId === S.myId) addKillFeed('Picked up shield (+25)', 3);
-  },
-
-  armorSpawn(msg) {
-    onArmorSpawn({ id: msg.id, x: msg.x, y: msg.y });
-  },
+  // armorPickup, armorSpawn — removed, state rides tick payload (armorPickups array).
 
   shieldHit(msg) {
     const th = getTerrainHeight(msg.x, msg.y);
