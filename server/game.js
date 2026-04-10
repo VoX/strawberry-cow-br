@@ -30,12 +30,13 @@ function startGame() {
   // Drop any hunger-death ids that late-firing cowstrike callbacks (or any
   // end-of-round death path) may have left in the set while the round was ending.
   clearPendingDeaths();
-  // Reset per-player move queue state across round boundaries.
+  // Reset per-player move queue + ack state across round boundaries.
   for (const [, p] of gameState.getPlayers()) {
     p.lastInputSeq = 0;
     p._lastRecvMoveSeq = 0;
     p._moveQueue = null;
     p._lastMoveSpeedMult = 1;
+    p._ackSnapshot = null;
   }
   // Clear the SI vault — stale snapshots from the previous round would
   // pollute lag-compensation lookups in the new round.
@@ -195,6 +196,18 @@ function gameTick() {
 
     stepPlayerMovement(p, dt, moveWorld, { dx: p.dx, dy: p.dy, walking: p.walking, speedMult: moveSpeedMult }, moveTerrain);
 
+    // Capture ack snapshot on first tick that integrates a new seq.
+    if (!p.isBot && (p._ackSnapshot == null || p.lastInputSeq > p._ackSnapshot.seq)) {
+      if (!p._ackSnapshot) p._ackSnapshot = { seq: 0, x: 0, y: 0, z: 0, vz: 0, onGround: false, stunTimer: 0, spawnProt: false };
+      const snap = p._ackSnapshot;
+      snap.seq = p.lastInputSeq || 0;
+      snap.x = p.x; snap.y = p.y; snap.z = p.z;
+      snap.vz = p.vz || 0;
+      snap.onGround = !!p.onGround;
+      snap.stunTimer = p.stunTimer || 0;
+      snap.spawnProt = p.spawnProtection > 0;
+    }
+
     // Skip the remaining per-player work (hunger, food, cooldowns) for
     // spawn-protected players just like the old inline code did.
     if (wasSpawnProtected) continue;
@@ -318,6 +331,25 @@ function gameTick() {
     const stride = Math.max(1, Math.round(TICK_RATE / (p.updateRate || TICK_RATE)));
     if (currentTick % stride !== 0) continue;
     transport.sendUnreliable(p.ws, tickPayload);
+  }
+
+  // inputAck at 15 Hz (every 2nd tick) — seq-based reconciliation for the
+  // local player. SI handles remote player interpolation; this handles
+  // local player prediction correction.
+  if (gameState.getTickNum() % 2 === 0) {
+    for (const [, p] of gameState.getPlayers()) {
+      if (p.isBot || !p.ws || !p._ackSnapshot) continue;
+      const snap = p._ackSnapshot;
+      sendTo(p.ws, {
+        type: 'inputAck',
+        seq: snap.seq,
+        x: snap.x, y: snap.y, z: snap.z,
+        vz: snap.vz,
+        onGround: snap.onGround,
+        stunTimer: snap.stunTimer,
+        spawnProt: snap.spawnProt,
+      });
+    }
   }
 }
 

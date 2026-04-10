@@ -26,7 +26,7 @@ import { S2C } from '../shared/messages.js';
 import { BURST_FAMILY, HIT_SLOW_DURATION_MS } from '../shared/constants.js';
 import { COL_HEX } from './config.js';
 import { addSnapshot, getInterpolatedEntity } from './snapshot.js';
-import { onServerPositionUpdate } from './prediction.js';
+import { reconcilePrediction } from './prediction.js';
 import { spawnBulletHole, clearBulletHoles, removeBulletHolesBySurfaceKey } from './bullet-holes.js';
 
 // Reusable temp vector for the projectile muzzle-offset transform.
@@ -203,7 +203,7 @@ export const handlers = {
     // `start` handler — without this, a reconnect-without-reload would
     // carry stale seqs into the new round and the first reconcile would
     // walk an invalid ring.
-    S.inputSeq = 0;
+    S.inputSeq = 0; S.lastAckedInput = 0;
     S.localHitSlowEndsAt = 0;
     document.getElementById('joinScreen').style.display = 'none';
     document.getElementById('hud').style.display = 'block';
@@ -226,7 +226,7 @@ export const handlers = {
     updateHostControls();
     // Reset input seq counters — mirrors server/game.js::startGame. Carrying
     // seqs across rounds would reference sim state that no longer exists.
-    S.inputSeq = 0;
+    S.inputSeq = 0; S.lastAckedInput = 0;
     S.localHitSlowEndsAt = 0;
     document.getElementById('joinScreen').style.display = 'none';
     document.getElementById('hud').style.display = 'block';
@@ -331,8 +331,6 @@ export const handlers = {
       if (existing.id === S.myId) {
         const { aimAngle, dir, ...rest } = t;
         Object.assign(existing, rest);
-        // Feed server position to the reconciler.
-        onServerPositionUpdate(t.x, t.y, t.z || 0);
         // Sync server-only movement gates onto predicted player.
         if (S.mePredicted) {
           S.mePredicted.stunTimer = existing.stunTimer || 0;
@@ -358,6 +356,24 @@ export const handlers = {
     }
     if (msg.zone) S.serverZone = msg.zone;
     if (S.pingLast > 0) { const pd = performance.now() - S.pingLast; if (pd < 2000) S.pingVal = S.pingVal * 0.7 + pd * 0.3; S.pingLast = 0; }
+  },
+
+  // Seq-based input ack — server echoes the highest applied input seq plus
+  // the authoritative position at that tick. Local player reconciliation
+  // compares predicted-at-seq against this to detect and correct drift.
+  inputAck(msg) {
+    if (typeof msg.seq !== 'number' || msg.seq <= S.lastAckedInput) return;
+    if (typeof msg.x !== 'number' || typeof msg.y !== 'number' || typeof msg.z !== 'number') return;
+    S.lastAckedInput = msg.seq;
+    if (S.mePredicted) {
+      if (typeof msg.stunTimer === 'number') S.mePredicted.stunTimer = msg.stunTimer;
+      if (typeof msg.spawnProt === 'boolean') S.mePredicted.spawnProtection = msg.spawnProt ? 1 : 0;
+    }
+    reconcilePrediction({
+      x: msg.x, y: msg.y, z: msg.z,
+      vz: msg.vz || 0,
+      onGround: !!msg.onGround,
+    });
   },
 
   // Upsert a single player's full sticky+mutable shape. Emitted by the server
