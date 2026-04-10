@@ -132,7 +132,8 @@ function dispatchMessage(player, msg) {
         ? [give.ammoFor, ...give.also]
         : [give.ammoFor];
       if (matching.includes(player.weapon)) {
-        player.ammo = (player.ammo || 0) + give.amount;
+        const max = (MAG_SIZES[player.weapon] || 15) * 2; // allow stockpiling up to 2x mag
+        player.ammo = Math.min(max, (player.ammo || 0) + give.amount);
       }
       // If not holding the matching weapon, ammo is still consumed (no refund)
     } else if (give.heal) {

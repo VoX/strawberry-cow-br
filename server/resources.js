@@ -5,7 +5,8 @@
 
 const gameState = require('./game-state');
 const { broadcast } = require('./network');
-const { MAP_W, MAP_H, RESOURCE_TYPES, RESOURCE_SPAWN_COUNTS } = require('../shared/constants');
+const { RESOURCE_TYPES, RESOURCE_SPAWN_COUNTS } = require('../shared/constants');
+const { MAP_W, MAP_H } = require('./config');
 const { rand } = require('./utils');
 
 const MARGIN = 100;

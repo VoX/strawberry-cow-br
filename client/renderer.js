@@ -82,17 +82,16 @@ export function setDayNightFactor(f) {
   ambient.intensity = 0.6 - n * 0.42;
   sun.intensity = 0.8 - n * 0.58;
   hemi.intensity = 0.3 - n * 0.15;
-  if (n > 0.5) {
-    ambient.color.setHex(0x2233aa);
-    sun.color.setHex(0x99aadd);
-    hemi.color.setHex(0x0a0a30);
-    hemi.groundColor.setHex(0x050510);
-  } else {
-    ambient.color.setHex(0xffffff);
-    sun.color.setHex(0xffffff);
-    hemi.color.setHex(0x87CEEB);
-    hemi.groundColor.setHex(0x44aa44);
-  }
+  // Lerp colors between day and night to avoid abrupt snap at the transition
+  const lerpC = (a, b, t) => {
+    const ar = (a >> 16) & 0xff, ag = (a >> 8) & 0xff, ab = a & 0xff;
+    const br = (b >> 16) & 0xff, bg = (b >> 8) & 0xff, bb = b & 0xff;
+    return ((ar + (br - ar) * t) << 16) | ((ag + (bg - ag) * t) << 8) | (ab + (bb - ab) * t);
+  };
+  ambient.color.setHex(lerpC(0xffffff, 0x2233aa, n));
+  sun.color.setHex(lerpC(0xffffff, 0x99aadd, n));
+  hemi.color.setHex(lerpC(0x87CEEB, 0x0a0a30, n));
+  hemi.groundColor.setHex(lerpC(0x44aa44, 0x050510, n));
   cloudPlanes.forEach(c => { c.material.opacity = 0.7 - n * 0.55; });
 }
 
