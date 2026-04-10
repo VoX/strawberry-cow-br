@@ -80,6 +80,7 @@ function buildWorldSnapshot() {
     weapons: gameState.getWeaponPickups().map(w => ({ id: w.id, x: w.x, y: w.y, weapon: w.weapon, spawnTime: w.spawnTime })),
     resourceNodes: serializeActiveNodes(),
     sleepingBags: [...gameState.getSleepingBags().values()],
+    lootBags: gameState.getLootBags().map(b => ({ id: b.id, x: b.x, y: b.y })),
   };
 }
 
@@ -282,6 +283,35 @@ function gameTick() {
 
   // Resource node respawn tick
   tickResourceNodes();
+
+  // Loot bag pickup (walk over, 35-unit radius) + despawn after 300s
+  const lootBags = gameState.getLootBags();
+  for (let i = lootBags.length - 1; i >= 0; i--) {
+    const bag = lootBags[i];
+    if (nowMs - bag.spawnTime > 300000) {
+      broadcast({ type: 'lootBagDespawn', id: bag.id });
+      gameState.removeLootBagAt(i);
+      continue;
+    }
+    for (const [, p] of gameState.getPlayers()) {
+      if (!p.alive || !p.resources) continue;
+      if (Math.hypot(p.x - bag.x, p.y - bag.y) < 35) {
+        // Transfer resources
+        for (const [res, amt] of Object.entries(bag.resources)) {
+          p.resources[res] = Math.min(500, (p.resources[res] || 0) + amt);
+        }
+        // Transfer weapon if player only has knife/pistol
+        if (bag.weapon && (p.weapon === 'knife' || p.weapon === 'normal')) {
+          p.weapon = bag.weapon;
+          p.ammo = bag.ammo || 0;
+          broadcastPlayerSnapshot(p);
+        }
+        broadcast({ type: 'lootBagPickup', id: bag.id, playerId: p.id });
+        gameState.removeLootBagAt(i);
+        break;
+      }
+    }
+  }
 
   // Projectile updates
   updateProjectiles(dt);

@@ -34,6 +34,7 @@ class GameState {
     this._barricades = [];
     this._resourceNodes = [];
     this._sleepingBags = new Map(); // playerId → { id, x, y, ownerId }
+    this._lootBags = [];            // [{ id, x, y, resources, weapon, ammo, spawnTime }]
 
     // static round features (rebuilt each round in generateMap)
     this._walls = [];
@@ -188,6 +189,9 @@ class GameState {
   setSleepingBag(playerId, bag) { this._sleepingBags.set(playerId, bag); }
   getSleepingBag(playerId) { return this._sleepingBags.get(playerId) || null; }
   removeSleepingBag(playerId) { this._sleepingBags.delete(playerId); }
+  getLootBags() { return this._lootBags; }
+  addLootBag(bag) { this._lootBags.push(bag); }
+  removeLootBagAt(idx) { this._lootBags.splice(idx, 1); }
   removeBarricade(id) {
     const idx = this._barricades.findIndex(b => b.id === id);
     if (idx >= 0) this._barricades.splice(idx, 1);

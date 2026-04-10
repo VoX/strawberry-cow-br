@@ -27,7 +27,7 @@ import { COL_HEX } from './config.js';
 import { INTERP_HIST_CAP, interpSamplePlayer } from './interp.js';
 import { reconcilePrediction } from './prediction.js';
 import { spawnBulletHole, clearBulletHoles, removeBulletHolesBySurfaceKey } from './bullet-holes.js';
-import { spawnNode, removeNode, clearNodes, spawnSleepingBag, removeSleepingBag, clearSleepingBags } from './resources.js';
+import { spawnNode, removeNode, clearNodes, spawnSleepingBag, removeSleepingBag, clearSleepingBags, spawnLootBag, removeLootBag, clearLootBags } from './resources.js';
 
 // Reusable temp vector for the projectile muzzle-offset transform. Was shared
 // with the render loop in index.js via `_tmpDir`; we get our own private one so
@@ -233,6 +233,8 @@ export const handlers = {
     if (msg.resourceNodes) msg.resourceNodes.forEach(n => spawnNode(n));
     clearSleepingBags();
     if (msg.sleepingBags) msg.sleepingBags.forEach(b => spawnSleepingBag(b));
+    clearLootBags();
+    if (msg.lootBags) msg.lootBags.forEach(b => spawnLootBag(b));
   },
 
   // 30 Hz broadcast of mutable player fields only. Sticky fields
@@ -859,6 +861,23 @@ export const handlers = {
 
   sleepingBagRemoved(msg) {
     removeSleepingBag(msg.id);
+  },
+
+  lootBagSpawn(msg) {
+    if (msg.bag) spawnLootBag(msg.bag);
+  },
+
+  lootBagPickup(msg) {
+    removeLootBag(msg.id);
+    if (msg.playerId === S.myId) {
+      S.chatLog.push({ name: '', color: '', text: 'Picked up loot bag', t: 3, system: true });
+      if (S.chatLog.length > 10) S.chatLog.shift();
+      sfx(600, 0.1, 'sine', 0.08);
+    }
+  },
+
+  lootBagDespawn(msg) {
+    removeLootBag(msg.id);
   },
 
   crafted(msg) {

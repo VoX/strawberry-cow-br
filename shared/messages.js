@@ -65,6 +65,9 @@ const S2C = Object.freeze({
   crafted: 'crafted',
   sleepingBagPlaced: 'sleepingBagPlaced',
   sleepingBagRemoved: 'sleepingBagRemoved',
+  lootBagSpawn: 'lootBagSpawn',
+  lootBagPickup: 'lootBagPickup',
+  lootBagDespawn: 'lootBagDespawn',
 });
 
 // --- client -> server ------------------------------------------------------

@@ -144,6 +144,22 @@ function eliminatePlayer(p, reason) {
   if (!p.alive) return;
   p.alive = false;
   p.deathTime = Date.now();
+  // Drop loot bag with the player's resources + weapon at death position
+  if (p.resources && !p.isBot) {
+    const hasLoot = Object.values(p.resources).some(v => v > 0) || (p.weapon && p.weapon !== 'knife');
+    if (hasLoot) {
+      const bag = {
+        id: gameState.nextEntityId(),
+        x: p.x, y: p.y,
+        resources: { ...p.resources },
+        weapon: p.weapon !== 'knife' ? p.weapon : null,
+        ammo: p.weapon !== 'knife' ? p.ammo : 0,
+        spawnTime: Date.now(),
+      };
+      gameState.addLootBag(bag);
+      broadcast({ type: 'lootBagSpawn', bag });
+    }
+  }
   // countAlive iterates live players — p is already alive=false so we don't
   // subtract. rank = remaining_live + 1 == eliminated player's finishing rank.
   const remaining = gameState.countAlive(false);

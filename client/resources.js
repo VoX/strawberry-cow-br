@@ -98,3 +98,28 @@ export function removeSleepingBag(id) {
 export function clearSleepingBags() {
   for (const id of Object.keys(_bagMeshes)) removeSleepingBag(id);
 }
+
+// --- Loot bags ---
+const _lootMeshes = {};
+const _lootGeo = new THREE.SphereGeometry(6, 6, 4);
+const _lootMat = new THREE.MeshLambertMaterial({ color: 0xaa8844 });
+
+export function spawnLootBag(bag) {
+  if (_lootMeshes[bag.id]) return;
+  const m = new THREE.Mesh(_lootGeo, _lootMat);
+  const th = getTerrainHeight(bag.x, bag.y);
+  m.position.set(bag.x, th + 6, bag.y);
+  scene.add(m);
+  _lootMeshes[bag.id] = m;
+}
+
+export function removeLootBag(id) {
+  const m = _lootMeshes[id];
+  if (!m) return;
+  scene.remove(m);
+  delete _lootMeshes[id];
+}
+
+export function clearLootBags() {
+  for (const id of Object.keys(_lootMeshes)) removeLootBag(id);
+}
