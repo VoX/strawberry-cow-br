@@ -40,21 +40,32 @@ function toggleCraftMenu() {
   el.style.display = _craftMenuOpen ? 'block' : 'none';
   if (_craftMenuOpen) rebuildCraftMenu();
 }
+const RES_COLORS = { grass: '#44aa22', wood: '#c87c33', stone: '#999', metal: '#cc7722' };
 function rebuildCraftMenu() {
   const list = document.getElementById('craftList');
   if (!list) return;
   const me = S.me;
   const res = me && me.resources ? me.resources : { grass: 0, wood: 0, stone: 0, metal: 0 };
-  let html = '';
+  // Inventory summary at top
+  let html = '<div style="display:flex;gap:12px;margin-bottom:10px;padding:4px 8px;font-size:12px">';
+  for (const [r, amt] of Object.entries(res)) {
+    html += `<span style="color:${RES_COLORS[r] || '#aaa'}">${r}: ${amt}</span>`;
+  }
+  html += '</div>';
+  // Recipe list
   for (const [id, recipe] of Object.entries(CRAFTING_RECIPES)) {
     const canAfford = Object.entries(recipe.cost).every(([r, amt]) => (res[r] || 0) >= amt);
-    const costStr = Object.entries(recipe.cost).map(([r, amt]) => `${r}: ${amt}`).join(', ');
-    const opacity = canAfford ? '1' : '0.4';
+    const costParts = Object.entries(recipe.cost).map(([r, amt]) => {
+      const have = res[r] || 0;
+      const col = have >= amt ? (RES_COLORS[r] || '#aaa') : '#ff4444';
+      return `<span style="color:${col}">${amt} ${r}</span>`;
+    });
+    const opacity = canAfford ? '1' : '0.45';
     const cursor = canAfford ? 'pointer' : 'default';
-    html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;margin-bottom:4px;background:rgba(255,255,255,0.05);border-radius:6px;opacity:${opacity};cursor:${cursor}" `
+    html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;margin-bottom:3px;background:rgba(255,255,255,0.05);border-radius:6px;opacity:${opacity};cursor:${cursor}" `
       + (canAfford ? `onclick="window._doCraft('${id}')"` : '')
       + `><span style="color:#eee;font-size:14px">${recipe.label}</span>`
-      + `<span style="color:#aaa;font-size:12px">${costStr}</span></div>`;
+      + `<span style="font-size:12px">${costParts.join(' ')}</span></div>`;
   }
   list.innerHTML = html;
 }
