@@ -113,7 +113,8 @@ ren.domElement.addEventListener('mousedown', e => {
   }
   if (!S.locked) { ren.domElement.requestPointerLock(); return; }
   mouseDown = true;
-  if ((BURST_FAMILY.has(me.weapon) && S.fireMode === 'auto') || me.weapon === 'thompson') {
+  const AUTO_WEAPONS = new Set(['thompson', 'm249', 'minigun']);
+  if ((BURST_FAMILY.has(me.weapon) && S.fireMode === 'auto') || AUTO_WEAPONS.has(me.weapon)) {
     startAutoFire();
   } else {
     doAttack();

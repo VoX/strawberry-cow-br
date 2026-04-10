@@ -389,14 +389,55 @@ export function buildViewmodel(type, dual) {
     hoof.userData.reloadStyle = 'none'; // M72 LAW is single-use, no reload
     vmGroup.add(hoof);
     vmGroup.userData.hoof = hoof;
-  } else if (type === 'python' || type === 'm249' || type === 'minigun') {
-    // Simplified viewmodel — the detailed models cause performance issues.
-    // Use a basic box placeholder for now.
-    const bodyMat = new THREE.MeshBasicMaterial({ color: type === 'python' ? 0x444444 : type === 'm249' ? 0x556B2F : 0x333333 });
-    const body = new THREE.Mesh(new THREE.BoxGeometry(2, 2, type === 'minigun' ? 14 : type === 'm249' ? 12 : 6), bodyMat);
-    body.position.set(0, 0, type === 'minigun' ? -7 : -3); vmGroup.add(body);
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(type === 'minigun' ? 0.8 : 0.3, type === 'minigun' ? 0.8 : 0.3, type === 'minigun' ? 10 : 6, 6), new THREE.MeshBasicMaterial({ color: 0x222222 }));
-    barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.3, type === 'minigun' ? -15 : -8); vmGroup.add(barrel);
+  } else if (type === 'python') {
+    // Python revolver — dual-wieldable, uses sub-group for clone
+    const gunGroup = new THREE.Group();
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.6, 5), dark);
+    frame.position.set(0, -0.3, -1); gunGroup.add(frame);
+    const cyl = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 1.0, 2, 8), metal);
+    cyl.rotation.x = Math.PI / 2; cyl.position.set(0, -0.2, -2); gunGroup.add(cyl);
+    const brl = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 6, 6), dark);
+    brl.rotation.x = Math.PI / 2; brl.position.set(0, 0.2, -6.5); gunGroup.add(brl);
+    const rib = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 5), metal);
+    rib.position.set(0, 0.7, -5.5); gunGroup.add(rib);
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(1.5, 3.5, 2), new THREE.MeshBasicMaterial({ color: 0x6B3A1F }));
+    grip.position.set(0, -3, 1.5); grip.rotation.x = -0.2; gunGroup.add(grip);
+    const hmr = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.8, 0.5), metal);
+    hmr.position.set(0, 1, 1.5); gunGroup.add(hmr);
+    gunGroup.position.set(2, 0, 0);
+    vmGroup.add(gunGroup);
+    // Dual-wield: cloned Python offset left
+    const gunLeft = gunGroup.clone(true);
+    gunLeft.position.set(-6, 0, 0);
+    gunLeft.visible = vmDual;
+    vmGroup.add(gunLeft);
+    vmGroup.userData.mp5kSecond = gunLeft; // reuse the same dual-wield toggle
+  } else if (type === 'm249') {
+    const bodyMat = new THREE.MeshBasicMaterial({ color: 0x556B2F });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2, 12), bodyMat);
+    body.position.set(0, 0, -4); vmGroup.add(body);
+    const brl = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 8, 6), dark);
+    brl.rotation.x = Math.PI / 2; brl.position.set(0, 0.3, -12); vmGroup.add(brl);
+    const ammoBox = new THREE.Mesh(new THREE.BoxGeometry(2, 3, 3), bodyMat);
+    ammoBox.position.set(0, -3, -3); vmGroup.add(ammoBox);
+    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.8, 3), dark);
+    handle.position.set(0, 1.8, -4); vmGroup.add(handle);
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(2, 1.5, 4), bodyMat);
+    stock.position.set(0, -0.5, 4); vmGroup.add(stock);
+  } else if (type === 'minigun') {
+    const housing = new THREE.Mesh(new THREE.CylinderGeometry(2, 2.2, 5, 8), dark);
+    housing.rotation.x = Math.PI / 2; housing.position.set(0, -0.5, 0); vmGroup.add(housing);
+    for (let i = 0; i < 6; i++) {
+      const angle = (i / 6) * Math.PI * 2;
+      const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 14, 4), dark);
+      tube.rotation.x = Math.PI / 2;
+      tube.position.set(Math.cos(angle) * 1.1, -0.5 + Math.sin(angle) * 1.1, -9);
+      vmGroup.add(tube);
+    }
+    const clamp = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 1.8, 0.6, 8), metal);
+    clamp.rotation.x = Math.PI / 2; clamp.position.set(0, -0.5, -12); vmGroup.add(clamp);
+    const core = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 16, 6), metal);
+    core.rotation.x = Math.PI / 2; core.position.set(0, -0.5, -8); vmGroup.add(core);
     const hoof = buildHoof();
     hoof.position.set(-0.3, -0.5, -5);
     hoof.rotation.set(-0.2, 0.1, 0.5);
