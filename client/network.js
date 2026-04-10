@@ -25,6 +25,7 @@ let _reconnectTimer = null;
 
 let msgHandler = null;
 export function setMessageHandler(fn) { msgHandler = fn; }
+export function getTransportKind() { return _activeKind; }
 
 function _showStatus(text, color) {
   const ss = document.getElementById('serverStatus');

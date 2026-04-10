@@ -1,6 +1,7 @@
 import { MW, MH, COL_HEX } from './config.js';
 import S from './state.js';
 import { BURST_FAMILY, DUAL_WIELD_FAMILY, MAG_SIZES, EXT_MAG_SIZES } from '../shared/constants.js';
+import { getTransportKind } from './network.js';
 
 const _escapeHtml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -310,7 +311,7 @@ export function updateHud(me, time, dt) {
         'POS: ' + me.x.toFixed(0) + ', ' + me.y.toFixed(0) + ', ' + (me.z || 0).toFixed(1) +
         '\nAIM: yaw=' + yawDeg + ' pitch=' + pitchDeg +
         '\nWEP: ' + (me.weapon || 'normal') + ' ammo=' + (me.ammo >= 0 ? me.ammo : '\u221E') + (S.fireMode ? ' [' + S.fireMode + ']' : '') +
-        '\nFPS: ' + S.fpsDisplay + ' PING: ' + Math.round(S.pingVal) + 'ms' +
+        '\nFPS: ' + S.fpsDisplay + ' PING: ' + Math.round(S.pingVal) + 'ms' + ' TRANSPORT: ' + (getTransportKind() === 'geckos' ? 'WebRTC' : 'WebSocket') +
         '\nPLAYERS: ' + _aliveCount + '/' + S.serverPlayers.length +
         '\nPROJ: ' + S.projData.length +
         netLine +
