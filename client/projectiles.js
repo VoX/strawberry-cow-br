@@ -161,8 +161,15 @@ export function updateProjectiles(dt) {
     mesh.lookAt(aheadX, aheadY, aheadZ);
   }
   // In-place removal — avoids allocating a new filtered array every frame
+  const now = performance.now();
   for (let i = S.projData.length - 1; i >= 0; i--) {
     const p = S.projData[i];
+    // Expire predicted tracers that never got a server match
+    if (p._localPredicted && p._spawnedAt && now - p._spawnedAt > 2000) {
+      if (S.projMeshes[p.id]) { disposeMeshTree(S.projMeshes[p.id]); delete S.projMeshes[p.id]; }
+      S.projData.splice(i, 1);
+      continue;
+    }
     if (p.y3d === -999 || p.x < -100 || p.x > MW + 100 || p.y < -100 || p.y > MH + 100) {
       if (S.projMeshes[p.id]) { disposeMeshTree(S.projMeshes[p.id]); delete S.projMeshes[p.id]; }
       disposeRocketSound(p.id);
