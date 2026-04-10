@@ -112,7 +112,7 @@ const PLAYER_STATS_BASE = {
   // Double MP5K spread, MP5K damage. Extreme suppression weapon.
   minigun: {
     hungerGate: [2, 6], hungerCost: [2, 5],
-    cooldown: 0.1, dmg: 9, speed: 3312, spreadBase: 0.088, pellets: 1, spawnOffset: 40,
+    cooldown: 0.05, dmg: 9, speed: 3312, spreadBase: 0.088, pellets: 1, spawnOffset: 40,
     autoOnly: true,
   },
   aug: {
@@ -148,7 +148,7 @@ const BOT_STATS = {
   },
   python: { hungerGate: 5, hungerCost: 4, cooldown: 0.15, dmg: 25, speed: 5520, spreadBase: 0.015, pellets: 1, spawnOffset: 40 },
   m249: { hungerGate: 5, hungerCost: 5, cooldown: 0.1, dmg: 12, speed: 3312, spreadBase: 0.044, pellets: 1, spawnOffset: 40 },
-  minigun: { hungerGate: 5, hungerCost: 5, cooldown: 0.1, dmg: 7, speed: 3312, spreadBase: 0.088, pellets: 1, spawnOffset: 40 },
+  minigun: { hungerGate: 5, hungerCost: 5, cooldown: 0.05, dmg: 7, speed: 3312, spreadBase: 0.088, pellets: 1, spawnOffset: 40 },
 };
 
 // Extract cooldown / damage / hungerDiscount multipliers from a shooter's
