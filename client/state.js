@@ -46,6 +46,7 @@ const S = {
   inputSeq: 0,    // client-side monotonic counter for STATEFUL_INPUT_TYPES. Incremented in network.js::send.
   lastAckedInput: 0, // highest seq the server has confirmed applying — echoed via inputAck broadcast. Phase 4 reconcile baseline.
   mePredicted: null, // Phase 4 predicted local player state (x/y/z/vz/dir/...). Camera reads from here; reconciled against S.me on every inputAck.
+  pendingLocalStun: null, // { tick, duration } scheduled by projectileHit, committed when S.lastTickNum catches up
 };
 
 export default S;

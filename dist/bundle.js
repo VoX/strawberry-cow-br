@@ -157,8 +157,10 @@ var init_state = __esm({
       // client-side monotonic counter for STATEFUL_INPUT_TYPES. Incremented in network.js::send.
       lastAckedInput: 0,
       // highest seq the server has confirmed applying — echoed via inputAck broadcast. Phase 4 reconcile baseline.
-      mePredicted: null
+      mePredicted: null,
       // Phase 4 predicted local player state (x/y/z/vz/dir/...). Camera reads from here; reconciled against S.me on every inputAck.
+      pendingLocalStun: null
+      // { tick, duration } scheduled by projectileHit, committed when S.lastTickNum catches up
     };
     state_default = S;
   }
@@ -7161,6 +7163,7 @@ var init_message_handlers = __esm({
         updateHostControls();
         state_default.inputSeq = 0;
         state_default.lastAckedInput = 0;
+        state_default.pendingLocalStun = null;
         document.getElementById("joinScreen").style.display = "none";
         document.getElementById("hud").style.display = "block";
         state_default.serverPlayers = msg.players;
@@ -7183,6 +7186,7 @@ var init_message_handlers = __esm({
         updateHostControls();
         state_default.inputSeq = 0;
         state_default.lastAckedInput = 0;
+        state_default.pendingLocalStun = null;
         document.getElementById("joinScreen").style.display = "none";
         document.getElementById("hud").style.display = "block";
         state_default.serverPlayers = msg.players;
@@ -7232,6 +7236,10 @@ var init_message_handlers = __esm({
       // will fill it in.
       tick(msg) {
         if (typeof msg.tickNum === "number") state_default.lastTickNum = msg.tickNum;
+        if (state_default.pendingLocalStun && state_default.lastTickNum >= state_default.pendingLocalStun.tick) {
+          if (state_default.mePredicted) state_default.mePredicted.stunTimer = state_default.pendingLocalStun.duration;
+          state_default.pendingLocalStun = null;
+        }
         if (state_default._iwStats === void 0) {
           state_default._iwStats = {
             lastStateTs: 0,
@@ -7524,7 +7532,13 @@ var init_message_handlers = __esm({
           sfxHit();
           flashHit(0.5, 150);
           flashEdge("damageEdgeFlash");
-          if (state_default.mePredicted) state_default.mePredicted.stunTimer = 0.5;
+          if (typeof msg.stunStartTick === "number") {
+            if (state_default.lastTickNum >= msg.stunStartTick) {
+              if (state_default.mePredicted) state_default.mePredicted.stunTimer = 0.5;
+            } else if (!state_default.pendingLocalStun || msg.stunStartTick < state_default.pendingLocalStun.tick) {
+              state_default.pendingLocalStun = { tick: msg.stunStartTick, duration: 0.5 };
+            }
+          }
         }
         if (msg.wall && typeof msg.x === "number" && typeof msg.y === "number") {
           const terrainH = getTerrainHeight(msg.x, msg.y);

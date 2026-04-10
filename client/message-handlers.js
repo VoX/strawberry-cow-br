@@ -185,6 +185,7 @@ export const handlers = {
     // carry stale seqs into the new round and the first reconcile would
     // walk an invalid ring.
     S.inputSeq = 0; S.lastAckedInput = 0;
+    S.pendingLocalStun = null;
     document.getElementById('joinScreen').style.display = 'none';
     document.getElementById('hud').style.display = 'block';
     S.serverPlayers = msg.players;
@@ -207,6 +208,7 @@ export const handlers = {
     // Reset input seq counters — mirrors server/game.js::startGame. Carrying
     // seqs across rounds would reference sim state that no longer exists.
     S.inputSeq = 0; S.lastAckedInput = 0;
+    S.pendingLocalStun = null;
     document.getElementById('joinScreen').style.display = 'none';
     document.getElementById('hud').style.display = 'block';
     S.serverPlayers = msg.players;
@@ -242,6 +244,14 @@ export const handlers = {
   // will fill it in.
   tick(msg) {
     if (typeof msg.tickNum === 'number') S.lastTickNum = msg.tickNum;
+    // Commit any pending local hit-stun whose target tick has arrived.
+    // Server schedules the stun ~3 ticks ahead via projectileHit; the
+    // local apply needs to fire at the same simulation tick so the
+    // predict step skips the integrator at the same moment.
+    if (S.pendingLocalStun && S.lastTickNum >= S.pendingLocalStun.tick) {
+      if (S.mePredicted) S.mePredicted.stunTimer = S.pendingLocalStun.duration;
+      S.pendingLocalStun = null;
+    }
     if (S._iwStats === undefined) {
       S._iwStats = {
         lastStateTs: 0, lastMeX: 0, lastMeY: 0,
@@ -532,14 +542,19 @@ export const handlers = {
     if (S.projMeshes[msg.projectileId]) { disposeMeshTree(S.projMeshes[msg.projectileId]); delete S.projMeshes[msg.projectileId]; }
     if (msg.targetId === S.myId) {
       sfxHit(); flashHit(0.5, 150); flashEdge('damageEdgeFlash');
-      // Apply stun locally the moment we know we got hit, instead of
-      // waiting for the next tick to sync stunTimer. The server gates
-      // movement on stunTimer > 0 (skips the integrator), so without
-      // this the client charges forward for ~RTT/2 + tick latency
-      // before reconcile pulls them back. Mirroring the server's stun
-      // duration here shrinks the visible rubberband to whatever the
-      // smoother can absorb.
-      if (S.mePredicted) S.mePredicted.stunTimer = 0.5;
+      // Schedule the local stun for the same simulation tick the
+      // server will engage it on (delayed-slowdown scheme). Both sides
+      // start the stun at the same moment so reconcile has nothing to
+      // pull back. Earliest pending wins. If the start tick has
+      // already passed (network delay), commit immediately instead of
+      // waiting for the next tick handler call.
+      if (typeof msg.stunStartTick === 'number') {
+        if (S.lastTickNum >= msg.stunStartTick) {
+          if (S.mePredicted) S.mePredicted.stunTimer = 0.5;
+        } else if (!S.pendingLocalStun || msg.stunStartTick < S.pendingLocalStun.tick) {
+          S.pendingLocalStun = { tick: msg.stunStartTick, duration: 0.5 };
+        }
+      }
     }
     // Persistent bullet hole on world geometry hits — wall, barricade, or
     // terrain. Player hits don't get holes (the blood particles below cover

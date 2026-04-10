@@ -29,6 +29,7 @@ function startGame() {
   for (const [, p] of gameState.getPlayers()) {
     p.lastInputSeq = 0;
     p._ackSnapshot = null;
+    p._pendingStun = null;
   }
   gameState.setGameTime(0);
   gameState.setZone({ x: 0, y: 0, w: MAP_W, h: MAP_H });
@@ -148,6 +149,19 @@ function gameTick() {
   // shared/movement.js::stepPlayerMovement.
   const moveWorld = { walls, barricades, mudPatches, portals, zone };
   const moveTerrain = { getGroundHeight, WALL_HEIGHT };
+
+  // Commit pending hit-stuns whose target tick has arrived. The
+  // delayed-slowdown scheme schedules these in combat.js so the client
+  // can engage the same stun at the same simulation tick (no reconcile
+  // snap on hit). Walk before the movement loop so the integrator sees
+  // the new stunTimer this tick.
+  const tickNow = gameState.getTickNum();
+  for (const [, p] of gameState.getPlayers()) {
+    if (p._pendingStun && tickNow >= p._pendingStun.tick) {
+      p.stunTimer = p._pendingStun.duration;
+      p._pendingStun = null;
+    }
+  }
 
   for (const [, p] of gameState.getPlayers()) {
     if (!p.alive) continue;
