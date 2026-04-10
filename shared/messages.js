@@ -63,6 +63,8 @@ const S2C = Object.freeze({
   resourceNodeDepleted: 'resourceNodeDepleted',
   resourceHit: 'resourceHit',
   crafted: 'crafted',
+  sleepingBagPlaced: 'sleepingBagPlaced',
+  sleepingBagRemoved: 'sleepingBagRemoved',
 });
 
 // --- client -> server ------------------------------------------------------

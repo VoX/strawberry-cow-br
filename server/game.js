@@ -37,8 +37,10 @@ function randomSpawnPos() {
 }
 
 // Spawn a player into the live world (first join or respawn).
+// If the player has a sleeping bag, spawn there instead of random.
 function spawnPlayerIntoWorld(p) {
-  const sp = randomSpawnPos();
+  const bag = gameState.getSleepingBag(p.id);
+  const sp = bag ? { x: bag.x, y: bag.y } : randomSpawnPos();
   Object.assign(p, JSON.parse(JSON.stringify(FRESH_PLAYER_STATS)));
   p.x = sp.x; p.y = sp.y;
   p.lastInputSeq = 0;
@@ -77,6 +79,7 @@ function buildWorldSnapshot() {
     armorPickups: gameState.getArmorPickups().map(a => ({ id: a.id, x: a.x, y: a.y })),
     weapons: gameState.getWeaponPickups().map(w => ({ id: w.id, x: w.x, y: w.y, weapon: w.weapon, spawnTime: w.spawnTime })),
     resourceNodes: serializeActiveNodes(),
+    sleepingBags: [...gameState.getSleepingBags().values()],
   };
 }
 

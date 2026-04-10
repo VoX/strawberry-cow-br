@@ -73,3 +73,28 @@ export function removeNode(id) {
 export function clearNodes() {
   for (const id of Object.keys(_meshes)) removeNode(id);
 }
+
+// --- Sleeping bags ---
+const _bagMeshes = {}; // bagId → THREE.Mesh
+const _bagGeo = new THREE.BoxGeometry(18, 3, 30);
+const _bagMat = new THREE.MeshLambertMaterial({ color: 0x8B6914 });
+
+export function spawnSleepingBag(bag) {
+  if (_bagMeshes[bag.id]) return;
+  const m = new THREE.Mesh(_bagGeo, _bagMat);
+  const th = getTerrainHeight(bag.x, bag.y);
+  m.position.set(bag.x, th + 1.5, bag.y);
+  scene.add(m);
+  _bagMeshes[bag.id] = m;
+}
+
+export function removeSleepingBag(id) {
+  const m = _bagMeshes[id];
+  if (!m) return;
+  scene.remove(m);
+  delete _bagMeshes[id];
+}
+
+export function clearSleepingBags() {
+  for (const id of Object.keys(_bagMeshes)) removeSleepingBag(id);
+}

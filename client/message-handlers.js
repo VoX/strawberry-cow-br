@@ -27,7 +27,7 @@ import { COL_HEX } from './config.js';
 import { INTERP_HIST_CAP, interpSamplePlayer } from './interp.js';
 import { reconcilePrediction } from './prediction.js';
 import { spawnBulletHole, clearBulletHoles, removeBulletHolesBySurfaceKey } from './bullet-holes.js';
-import { spawnNode, removeNode, clearNodes } from './resources.js';
+import { spawnNode, removeNode, clearNodes, spawnSleepingBag, removeSleepingBag, clearSleepingBags } from './resources.js';
 
 // Reusable temp vector for the projectile muzzle-offset transform. Was shared
 // with the render loop in index.js via `_tmpDir`; we get our own private one so
@@ -228,9 +228,11 @@ export const handlers = {
     clearRocketSounds();
     clearParticles();
     clearBulletHoles();
-    // Spawn resource nodes from world snapshot
+    // Spawn resource nodes + sleeping bags from world snapshot
     clearNodes();
     if (msg.resourceNodes) msg.resourceNodes.forEach(n => spawnNode(n));
+    clearSleepingBags();
+    if (msg.sleepingBags) msg.sleepingBags.forEach(b => spawnSleepingBag(b));
   },
 
   // 30 Hz broadcast of mutable player fields only. Sticky fields
@@ -849,6 +851,14 @@ export const handlers = {
     if (msg.playerId === S.myId) {
       sfx(600, 0.06, 'square', 0.05);
     }
+  },
+
+  sleepingBagPlaced(msg) {
+    if (msg.bag) spawnSleepingBag(msg.bag);
+  },
+
+  sleepingBagRemoved(msg) {
+    removeSleepingBag(msg.id);
   },
 
   crafted(msg) {

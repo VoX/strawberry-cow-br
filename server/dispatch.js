@@ -139,6 +139,13 @@ function dispatchMessage(player, msg) {
     } else if (give.heal) {
       const { applyHungerDelta } = require('./player');
       applyHungerDelta(player, give.heal);
+    } else if (give.sleepingBag) {
+      // Remove old sleeping bag if any
+      const oldBag = gameState.getSleepingBag(player.id);
+      if (oldBag) broadcast({ type: 'sleepingBagRemoved', id: oldBag.id });
+      const bag = { id: gameState.nextEntityId(), x: player.x, y: player.y, ownerId: player.id };
+      gameState.setSleepingBag(player.id, bag);
+      broadcast({ type: 'sleepingBagPlaced', bag });
     }
     sendTo(player.ws, { type: 'crafted', recipeId: msg.recipeId });
   }

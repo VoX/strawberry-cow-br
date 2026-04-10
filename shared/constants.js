@@ -94,6 +94,7 @@ const CRAFTING_RECIPES = {
   ammo_rocket:  { label: 'Rocket',         cost: { metal: 30, stone: 10 }, give: { ammoFor: 'cowtank', amount: 1 } },
   hay_bale:     { label: 'Hay Bale',       cost: { grass: 20 }, give: { heal: 30 } },
   smoothie:     { label: 'Grass Smoothie', cost: { grass: 40, wood: 10 }, give: { heal: 60 } },
+  sleeping_bag: { label: 'Sleeping Bag',  cost: { grass: 30, wood: 20 }, give: { sleepingBag: true } },
 };
 
 const COLORS = ['pink','blue','green','gold','purple','red','orange','cyan'];
