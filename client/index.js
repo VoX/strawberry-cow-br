@@ -114,7 +114,7 @@ function loop(ts) {
     if (curLen > 0) { curMx /= curLen; curMz /= curLen; }
   }
 
-  // Phase 4: advance client-side prediction at a fixed 30 Hz timestep.
+  // Advance client-side prediction at a fixed 30 Hz timestep.
   // setCurrentInput publishes the current WASD vector to prediction.js
   // — predictStep reads it both for the move emit AND the local
   // integration so the server and client never see different inputs

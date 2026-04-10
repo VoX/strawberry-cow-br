@@ -95,7 +95,7 @@ function sendReliable(channel, msg) {
 }
 
 // Unreliable sends use channel.raw.emit() with msgpack binary encoding.
-// This bypasses geckos.io's JSON.stringify wrapper and sends raw binary
+// This bypasses geckos.io's default wrapper and sends raw binary
 // directly over the WebRTC data channel — ~35% smaller than JSON.
 function sendUnreliable(channel, msg) {
   if (!channel) return;

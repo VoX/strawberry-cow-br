@@ -470,7 +470,7 @@ export function addBarricade(b) {
   if (_barricadeMeshes[b.id]) return;
   const th = getTerrainHeight(b.cx, b.cy);
   // Precompute OBB rotation + terrain cache — shared/movement.js reads these
-  // directly when doing client-side prediction (Phase 4). Without them the
+  // directly when doing client-side prediction (CSP). Without them the
   // client walks through every barricade and rubber bands on every reconcile.
   // Matches server/combat.js::placeBarricadeForPlayer.
   S.barricades.push({

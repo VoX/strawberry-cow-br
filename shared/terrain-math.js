@@ -1,5 +1,5 @@
 // Deterministic terrain heightmap math — single source of truth for client and server.
-// Both sides import from this module so CSP (Phase 4) can trust that
+// Both sides import from this module so CSP can trust that
 // `getGroundHeight(x, y)` is bit-identical regardless of which side runs it.
 //
 // Any edit to generateHeightMap or sampleHeight here ships to both sides in

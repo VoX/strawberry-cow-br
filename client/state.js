@@ -43,7 +43,7 @@ const S = {
   chatLog: [], // { name, color, text, t (lifetime remaining in seconds) }
   chatOpen: false,
   barricades: [], // { id, cx, cy, w, h, angle } — mirrored from server for client-side projectile prediction
-  lastTickNum: 0, // monotonic server tick counter — updated from every `tick` broadcast. Consumers: phases 1/4/5/6 of the netcode plan.
+  lastTickNum: 0, // monotonic server tick counter — updated from every `tick` broadcast.
   inputSeq: 0,    // client-side monotonic counter for STATEFUL_INPUT_TYPES. Incremented in network.js::send.
   lastAckedInput: 0, // highest seq the server has confirmed applying — echoed via inputAck broadcast.
   lastRecvSnapSeq: -1, // last snapshot seq received — piggybacked on moves for delta ack

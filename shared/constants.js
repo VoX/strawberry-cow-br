@@ -3,13 +3,13 @@ const MAP_H = 1500;
 // Server simulation tick rate. Shared with the client so the CSP fixed
 // timestep (client/prediction.js) and the lag-comp interp-delay-ticks
 // math (client/input.js) don't duplicate a 30 literal that would drift
-// if Phase 7 decouples tick/broadcast rates.
+// if tick/broadcast rates are ever decoupled.
 const TICK_RATE = 30;
 
 // --- Movement / physics constants ------------------------------------------
 // Lifted out of server/game.js + server/ballistics.js so shared/movement.js
-// (Phase 3 of the netcode prediction plan) and the client-side prediction
-// loop (Phase 4) can call the same integrator with identical numbers.
+// and the client-side prediction loop (CSP) can call the same integrator
+// with identical numbers.
 const PLAYER_BASE_SPEED = 108;          // server/game.js movement formula base
 const PLAYER_WALK_MULT = 0.5;           // walking/crouching speed multiplier
 const MUD_SPEED_MULT = 0.5;             // mud patch slowdown
