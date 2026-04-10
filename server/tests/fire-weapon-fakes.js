@@ -54,8 +54,6 @@ function install() {
     // Phase 5/6: tickNum + history ring. Tests don't exercise lag comp
     // (no projectile stepping into the future), so a fixed 0 is fine.
     getTickNum() { return 0; },
-    HISTORY_TICKS: 20,
-    getHistorySnapshot() { return null; },
     BARRICADE_COOLDOWN_MS: 5000,
     BOT_BARRICADE_COOLDOWN_MS: 10000,
   };

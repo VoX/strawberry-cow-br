@@ -59,21 +59,10 @@ class GameState {
     // broadcasts, shell-by-shell reload chains) don't fire into the next round.
     this._roundTimers = new Set();
 
-    // Phase 5: historical position ring. Per-tick snapshot of alive player
-    // positions, keyed by tickNum, bounded to HISTORY_TICKS entries. The
-    // lag-compensation path (Phase 6) reads from here when processing an
-    // attack — it looks up the tick the client was seeing, runs the hit
-    // check against those positions, then rolls forward. Storage-only in
-    // Phase 5 (no consumers yet); Phase 6 adds the rewind lookup.
-    //
-    // HISTORY_TICKS = 20 → 666ms at 30 Hz, enough to cover even 300ms ping
-    // players after the ~100ms interp delay. Beyond that we clamp to the
-    // oldest available snapshot.
-    this._positionHistory = [];
+    // Historical position ring removed — lag comp now uses the SI vault
+    // in server/game.js (populated by SI.snapshot.create + SI.vault.add
+    // every tick, 300 entries = 10 seconds).
   }
-
-  // History ring cap — bounds memory to ~16 players × ~50 bytes × 20 ticks ≈ 16 KB.
-  get HISTORY_TICKS() { return 20; }
 
   // --- shared constants ----------------------------------------------------
   get BARRICADE_COOLDOWN_MS() { return 5000; }
@@ -115,38 +104,6 @@ class GameState {
 
   getTickNum() { return this._tickNum; }
   incTickNum() { return ++this._tickNum; }
-
-  // Phase 5 history ring. pushHistorySnapshot captures positions at the
-  // START of the current tick (call BEFORE movement in gameTick so the
-  // snapshot reflects the "display state" the client was rendering, which
-  // is what lag comp should rewind to). getHistorySnapshot finds the
-  // entry closest to (but not after) a target tickNum — if the target
-  // falls off the ring, returns the oldest entry as a best-effort fallback.
-  pushHistorySnapshot() {
-    const snap = { tickNum: this._tickNum, time: Date.now(), positions: [] };
-    for (const [, p] of this._players) {
-      if (!p.alive) continue;
-      snap.positions.push({
-        id: p.id, x: p.x, y: p.y, z: p.z,
-        sizeMult: (p.perks && p.perks.sizeMult) || 1,
-        stunTimer: p.stunTimer || 0,
-        spawnProtection: p.spawnProtection || 0,
-        armor: p.armor || 0,
-      });
-    }
-    this._positionHistory.push(snap);
-    if (this._positionHistory.length > this.HISTORY_TICKS) this._positionHistory.shift();
-  }
-  getHistorySnapshot(tickNum) {
-    if (this._positionHistory.length === 0) return null;
-    // Walk newest → oldest and return the newest entry whose tickNum
-    // is <= the target (the "at or just before" rewind point).
-    for (let i = this._positionHistory.length - 1; i >= 0; i--) {
-      if (this._positionHistory[i].tickNum <= tickNum) return this._positionHistory[i];
-    }
-    // Target is older than our oldest — clamp to oldest.
-    return this._positionHistory[0];
-  }
 
   getZone() { return this._zone; }
   setZone(z) { this._zone = z; }

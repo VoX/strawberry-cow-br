@@ -98,11 +98,8 @@ function gameTick() {
   const dt = 1 / TICK_RATE;
   gameState.addGameTime(dt);
   gameState.incTickNum();
-  // Phase 5: capture the "display state" positions BEFORE movement runs,
-  // so lag compensation in Phase 6 can rewind to the frame the client was
-  // actually looking at when they pulled the trigger. Stored under the
-  // incremented tickNum — consumers look up by tickNum.
-  gameState.pushHistorySnapshot();
+  // Lag comp history now handled by SI vault (populated at end of tick
+  // via SI.snapshot.create + SI.vault.add).
 
   // Expire barricades older than 30 seconds
   const nowMs = Date.now();
