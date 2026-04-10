@@ -951,11 +951,15 @@ export const handlers = {
   },
 
   kill(msg) {
-    addKillFeed('\u{1F480} ' + (msg.killerName || '?') + ' \u2192 ' + (msg.victimName || '?'), 5);
+    const wepNames = { normal: 'Pistol', shotgun: 'Shotgun', burst: 'M16', bolty: 'L96', cowtank: 'M72 LAW', aug: 'AUG', knife: 'Knife' };
+    const wep = wepNames[msg.weapon] || msg.weapon || '?';
+    addKillFeed('\u{1F480} ' + (msg.killerName || '?') + ' [' + wep + '] ' + (msg.victimName || '?'), 6);
     if (msg.victimId === S.myId) {
       S.killerId = msg.killerId;
       S.killerName = msg.killerName;
       S.spectateTargetId = msg.killerId;
+      // Death notification with what killed you
+      addKillFeed('You were killed by ' + (msg.killerName || '?') + ' with ' + wep, 8);
     }
   },
 

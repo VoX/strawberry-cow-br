@@ -182,7 +182,7 @@ function eliminatePlayer(p, reason) {
       // Collapse multiple level-ups into a single sticky-field snapshot. Bot
       // level-ups snapshot via botPickRandomPerk → handlePerk → broadcast.
       if (humanLeveled) broadcastPlayerSnapshot(attacker);
-      broadcast({ type: 'kill', killerId: attacker.id, killerName: attacker.name, victimId: p.id, victimName: p.name });
+      broadcast({ type: 'kill', killerId: attacker.id, killerName: attacker.name, victimId: p.id, victimName: p.name, weapon: attacker.weapon || 'unknown' });
     }
   }
   if (p.isBot) { delete p._lastPos; delete p._wanderTarget; delete p._volleyHits; }
