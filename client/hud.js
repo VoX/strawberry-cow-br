@@ -100,7 +100,15 @@ export function updateHud(me, time, dt) {
   const hPct = Math.max(0, me.hunger / 100);
   H.hungerFill.style.width = (hPct * 100) + '%';
   H.hungerFill.style.background = hPct > 0.5 ? '#ffffff' : hPct > 0.25 ? '#dddddd' : '#ff4444';
-  H.hungerTxt.textContent = 'MILK ' + Math.ceil(me.hunger) + '%';
+  // Starvation warning — pulsing text when critically low
+  if (hPct < 0.15 && me.alive) {
+    const pulse = Math.sin(time * 6) > 0 ? ' STARVING!' : '';
+    H.hungerTxt.textContent = 'MILK ' + Math.ceil(me.hunger) + '%' + pulse;
+    H.hungerTxt.style.color = '#ff2222';
+  } else {
+    H.hungerTxt.textContent = 'MILK ' + Math.ceil(me.hunger) + '%';
+    H.hungerTxt.style.color = '';
+  }
   const wep = me.weapon || 'normal';
   const wepNames = { shotgun: 'Benelli', burst: 'M16A2', bolty: 'L96', cowtank: 'M72 LAW', normal: 'M92 Pistol', aug: 'AUG', knife: 'Knife' };
   let ammoTxt = '';

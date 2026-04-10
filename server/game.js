@@ -210,9 +210,10 @@ function gameTick() {
     }
 
     // Passive hunger drain — survival mechanic. 0.5/sec base (200s to
-    // starve from full). Skip bots when free will is off.
+    // starve from full). Accelerates below 15% hunger (starvation pressure).
     if (!(p.isBot && !gameState.isBotsFreeWill())) {
-      applyHungerDelta(p, -0.5 * dt);
+      const drain = p.hunger < 15 ? 2.0 : 0.5;
+      applyHungerDelta(p, -drain * dt);
     }
 
     // Cooldowns
