@@ -12,7 +12,7 @@ const { STATEFUL_INPUT_TYPES, JUMP_VZ, SPEED_MULT_MIN, SPEED_MULT_MAX } = requir
 const lobbyState = require('./lobby-state');
 const gameState = require('./game-state');
 const { broadcast, sendTo } = require('./network');
-const { assignColor, getPlayerStates, serializeFood, eliminatePlayer, broadcastPlayerSnapshot } = require('./player');
+const { assignColor, getPlayerStates, serializeFood, eliminatePlayer } = require('./player');
 const { handlePerk } = require('./perks');
 const { handleDropWeapon } = require('./weapons');
 const { handleAttack, handleMelee, handleDash, handleReload, cancelReload, placeBarricadeForPlayer } = require('./combat');
@@ -268,12 +268,12 @@ function dispatchMessage(player, msg) {
       player.dualWield = false;
       player.ammo = -1;
       cancelReload(player);
-      broadcastPlayerSnapshot(player);
+
     } else if (target === 'primary' && player.weapon === 'knife' && player._primaryWeapon) {
       player.weapon = player._primaryWeapon;
       player.ammo = player._primaryAmmo != null ? player._primaryAmmo : 15;
       player.dualWield = !!player._primaryDualWield;
-      broadcastPlayerSnapshot(player);
+
     }
   }
   if (msg.type === 'placeBarricade' && player._joined && player.alive) {

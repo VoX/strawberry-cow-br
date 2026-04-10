@@ -4,7 +4,7 @@ const gameState = require('./game-state');
 const { getTerrainHeight, getGroundHeight, WALL_HEIGHT } = require('./terrain');
 const ballistics = require('./ballistics');
 const weaponFire = require('./weapon-fire');
-const { applyHungerDelta, applyArmorDelta, broadcastPlayerSnapshot } = require('./player');
+const { applyHungerDelta, applyArmorDelta } = require('./player');
 const { MAG_SIZES, EXT_MAG_SIZES, DUAL_WIELD_FAMILY, KNIFE_MELEE_RANGE, KNIFE_MELEE_CONE_COS, KNIFE_MELEE_DAMAGE, KNIFE_MELEE_CD_MS } = require('../shared/constants');
 
 

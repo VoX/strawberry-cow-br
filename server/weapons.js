@@ -2,7 +2,7 @@ const { broadcast } = require('./network');
 const gameState = require('./game-state');
 const combat = require('./combat');
 const { MAG_SIZES, DUAL_WIELD_FAMILY } = require('../shared/constants');
-const { broadcastPlayerSnapshot, applyArmorDelta } = require('./player');
+const { applyArmorDelta } = require('./player');
 
 function handleWeaponPickups(dt) {
   const weaponPickups = gameState.getWeaponPickups();
@@ -43,7 +43,7 @@ function handleWeaponPickups(dt) {
         broadcast({ type: 'weaponPickup', playerId: p.id, name: p.name, weapon: p.weapon, dualWield: !!p.dualWield, pickupId: w.id });
         // Sticky fields changed — ship a snapshot so clients update
         // viewmodel + HUD next frame instead of waiting for a tick.
-        broadcastPlayerSnapshot(p);
+
         gameState.removeWeaponPickupAt(i);
       }
     }
@@ -81,7 +81,6 @@ function handleDropWeapon(player) {
     player._primaryDualWield = false;
     player.pickupCooldown = 2; player._ignorePickupId = dropId;
     broadcast({ type: 'weaponDrop', playerId: player.id, name: player.name });
-    broadcastPlayerSnapshot(player);
     return;
   }
   if (player.weapon === 'normal') return;
@@ -101,7 +100,6 @@ function handleDropWeapon(player) {
   }
   combat.cancelReload(player);
   broadcast({ type: 'weaponDrop', playerId: player.id, name: player.name });
-  broadcastPlayerSnapshot(player);
 }
 
 module.exports = { handleWeaponPickups, handleArmorPickups, handleDropWeapon };

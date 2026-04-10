@@ -14,47 +14,21 @@ function assignColor() {
 // Used by 'start' / 'spectate' / first-snapshot paths where the client needs
 // everything at once. The 30Hz broadcast is now split into getPlayerTick
 // (mutable only) + getPlayerSnapshot (full shape), emitted on events.
+// Full player state for start/spectate sync. Uses the same getPlayerTick()
+// that the 30Hz broadcast uses — no separate snapshot shape needed.
 function getPlayerStates() {
   const arr = [];
   for (const [, p] of gameState.getPlayers()) {
     if (p.corpseReaped) continue;
     if (p.alive || (!p.inLobby && lobbyState.isPlaying())) {
-      arr.push(getPlayerSnapshot(p));
+      arr.push(getPlayerTick(p));
     }
   }
   return arr;
 }
 
-// Full shape for a single player. Used by the 'playerSnapshot' broadcast when
-// a sticky field changes (weapon pickup, perk, level up, dual-wield toggle,
-// weapon drop). Also returns the initial shape for 'start'/'spectate' via
-// getPlayerStates(). Contains both sticky (name/color/weapon/perks/...) and
-// mutable (x/y/hunger/...) fields so a fresh client has everything it needs.
-function getPlayerSnapshot(p) {
-  const perks = p.perks || {};
-  return {
-    id: p.id, name: p.name, color: p.color, x: p.x, y: p.y, z: p.z, dir: p.dir,
-    hunger: p.hunger, score: p.score, alive: p.alive, eating: p.eating,
-    foodEaten: p.foodEaten, level: p.level || 0, xp: p.xp || 0,
-    xpToNext: p.xpToNext || 50, sizeMult: perks.sizeMult || 1, armor: p.armor || 0,
-    // Phase 4 CSP: speedMult must ship so the client's local stepPlayerMovement
-    // multiplies by the same factor the server does — otherwise speed-perk
-    // players predict at 1.0x and reconcile pumps a visible rubberband at ~6Hz.
-    speedMult: perks.speedMult || 1,
-    kills: p.kills || 0, stunTimer: p.stunTimer || 0, weapon: p.weapon || 'normal', aimAngle: p.aimAngle || 0, dualWield: !!p.dualWield,
-    dashCooldown: p.dashCooldown || 0, attackCooldown: p.attackCooldown || 0, spawnProt: p.spawnProtection > 0,
-    ammo: p.ammo !== undefined ? p.ammo : -1, reloading: p.reloading > 0, recoilMult: p.recoilMult || 1, extMagMult: p.extMagMult || 1,
-    personality: p.personality || null,
-    crouching: !!p.walking,
-  };
-}
-
-// Ship a player-snapshot broadcast. Called whenever a sticky field mutates
-// (weapon pickup/drop, perk, level up, dual-wield toggle). Collapses 4 duplicate
-// call sites into one and gives grep a single seam to audit every snapshot emit.
-function broadcastPlayerSnapshot(p) {
-  broadcast({ type: 'playerSnapshot', player: getPlayerSnapshot(p) });
-}
+// broadcastPlayerSnapshot is no longer needed — sticky fields are now
+// included in every tick via getPlayerTick(). All 7 call sites removed.
 
 // Unified death barrier — the one and only entry point for hunger mutation.
 // Previous design let combat.js, perks.js, weapon-fire.js and game.js all do
@@ -112,7 +86,12 @@ function applyArmorDelta(p, delta) {
 // Mutable-per-tick fields only. Everything a client needs to interpolate
 // position/aim/hunger/cooldowns between ticks, minus the sticky stuff that
 // only changes on events and ships in playerSnapshot.
+// Full player state per tick — mutable + sticky fields combined.
+// Previously sticky fields (name/color/weapon/perks) were sent via a
+// separate playerSnapshot message on event. Now everything rides the
+// 30Hz tick so dropped ticks are harmless and there's no stale-sticky bug.
 function getPlayerTick(p) {
+  const perks = p.perks || {};
   return {
     id: p.id, x: p.x, y: p.y, z: p.z, dir: p.dir,
     hunger: p.hunger, score: p.score, alive: p.alive, eating: p.eating,
@@ -123,6 +102,13 @@ function getPlayerTick(p) {
     spawnProt: p.spawnProtection > 0,
     ammo: p.ammo !== undefined ? p.ammo : -1, reloading: p.reloading > 0,
     crouching: !!p.walking,
+    // Sticky fields (previously on playerSnapshot):
+    name: p.name, color: p.color, weapon: p.weapon || 'normal',
+    dualWield: !!p.dualWield,
+    sizeMult: perks.sizeMult || 1, speedMult: perks.speedMult || 1,
+    recoilMult: p.recoilMult || 1, extMagMult: p.extMagMult || 1,
+    xpToNext: p.xpToNext || 50,
+    personality: p.personality || null,
   };
 }
 
@@ -179,4 +165,4 @@ function buildServerStatus() {
   return { type: 'serverStatus', gameState: lobbyState.getPhase(), alive, total, debugScene: gameState.isDebugScene() };
 }
 
-module.exports = { assignColor, getPlayerStates, getPlayerSnapshot, getPlayerTick, getPlayerTicks, broadcastPlayerSnapshot, applyHungerDelta, applyArmorDelta, resolveDeaths, clearPendingDeaths, eliminatePlayer, serializeFood, buildServerStatus };
+module.exports = { assignColor, getPlayerStates, getPlayerTick, getPlayerTicks, applyHungerDelta, applyArmorDelta, resolveDeaths, clearPendingDeaths, eliminatePlayer, serializeFood, buildServerStatus };

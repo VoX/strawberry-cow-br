@@ -376,19 +376,7 @@ export const handlers = {
     });
   },
 
-  // Upsert a single player's full sticky+mutable shape. Emitted by the server
-  // when a sticky field changes (weapon pickup, perk, level up, dual-wield
-  // toggle). If the player is already in serverPlayers, merge; otherwise
-  // append — covers the mid-round join path where a tick can arrive before
-  // the spectate sync lands.
-  playerSnapshot(msg) {
-    const snap = msg.player;
-    if (!snap || snap.id == null) return;
-    const existing = S.serverPlayers.find(sp => sp.id === snap.id);
-    if (existing) Object.assign(existing, snap);
-    else S.serverPlayers.push(snap);
-    if (snap.id === S.myId) S.me = S.serverPlayers.find(p => p.id === S.myId) || null;
-  },
+  // playerSnapshot removed — sticky fields now included in every tick.
 
   food(msg) {
     const f = msg.food || msg;

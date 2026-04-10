@@ -18,7 +18,7 @@
 
 const gameState = require('./game-state');
 const { broadcast } = require('./network');
-const { applyHungerDelta, broadcastPlayerSnapshot } = require('./player');
+const { applyHungerDelta } = require('./player');
 const { BURST_FAMILY, MAG_SIZES } = require('../shared/constants');
 
 // --- Player base stats ----------------------------------------------------
@@ -408,7 +408,6 @@ function resetAfterCowtank(shooter) {
   shooter.ammo = Math.ceil(15 * (shooter.extMagMult || 1));
   shooter.reloading = 0;
   broadcast({ type: 'weaponDrop', playerId: shooter.id, name: shooter.name });
-  broadcastPlayerSnapshot(shooter);
 }
 
 module.exports = { fireWeapon, resolvePlayerStats, extractShooterModifiers, BOT_STATS, resetAfterCowtank };

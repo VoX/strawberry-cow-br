@@ -19,7 +19,6 @@ const S2C = Object.freeze({
   start: 'start',
   tick: 'tick',
   inputAck: 'inputAck',
-  playerSnapshot: 'playerSnapshot',
   food: 'food',
   eat: 'eat',
   projectile: 'projectile',

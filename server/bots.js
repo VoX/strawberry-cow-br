@@ -15,7 +15,7 @@ const { handleDash, handleReload, placeBarricadeForPlayer, eyeHeight } = require
 const { handleDropWeapon } = require('./weapons');
 const { resetAfterCowtank } = require('./weapon-fire');
 const { decideBotTurn } = require('./bot-ai');
-const { assignColor, broadcastPlayerSnapshot } = require('./player');
+const { assignColor } = require('./player');
 const weaponFire = require('./weapon-fire');
 const { MAG_SIZES } = require('../shared/constants');
 
