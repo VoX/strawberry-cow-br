@@ -175,11 +175,45 @@ function _buildWeaponPickupModel(type) {
     mag.position.set(-1, -2.5, 0); g.add(mag);
     const grip = new THREE.Mesh(new THREE.BoxGeometry(1.0, 2, 1.0), wood);
     grip.position.set(0.5, -1.8, 0); g.add(grip);
+  } else if (type === 'python') {
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(3.5, 1.2, 1.0), dark);
+    g.add(frame);
+    const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 1.0, 8), metal);
+    cyl.rotation.z = Math.PI / 2; cyl.position.set(-0.5, 0, 0); g.add(cyl);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 3, 6), dark);
+    barrel.rotation.z = Math.PI / 2; barrel.position.set(3, 0.2, 0); g.add(barrel);
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.8, 2.0, 0.9), wood);
+    grip.position.set(-1.5, -1.2, 0); grip.rotation.z = 0.15; g.add(grip);
+  } else if (type === 'm249') {
+    const recv = new THREE.Mesh(new THREE.BoxGeometry(8, 2, 1.6), olive);
+    g.add(recv);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 6, 6), dark);
+    barrel.rotation.z = Math.PI / 2; barrel.position.set(7, 0.2, 0); g.add(barrel);
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(3, 1.2, 1.0), olive);
+    stock.position.set(-5.5, -0.3, 0); g.add(stock);
+    const ammoBox = new THREE.Mesh(new THREE.BoxGeometry(1.5, 2, 1.5), olive);
+    ammoBox.position.set(-0.5, -2, 0); g.add(ammoBox);
+    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.8, 2), dark);
+    handle.position.set(0, 1.5, 0); g.add(handle);
+  } else if (type === 'minigun') {
+    const housing = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.3, 3, 8), dark);
+    housing.rotation.z = Math.PI / 2; housing.position.set(-2, 0, 0); g.add(housing);
+    for (let i = 0; i < 6; i++) {
+      const angle = (i / 6) * Math.PI * 2;
+      const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 8, 4), dark);
+      tube.rotation.z = Math.PI / 2;
+      tube.position.set(2, Math.sin(angle) * 0.6, Math.cos(angle) * 0.6);
+      g.add(tube);
+    }
+    const clamp = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 0.4, 8), metal);
+    clamp.rotation.z = Math.PI / 2; clamp.position.set(4.5, 0, 0); g.add(clamp);
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.8, 0.8), black);
+    grip.position.set(-1, -1.8, 0); g.add(grip);
   }
   return g;
 }
 
-const _WP_LABELS = { shotgun: 'XM1014', burst: 'M16A2', bolty: 'L96', cowtank: 'M72 LAW', aug: 'AUG', mp5k: 'MP5K', thompson: 'THOMPSON', sks: 'SKS', akm: 'AK' };
+const _WP_LABELS = { shotgun: 'XM1014', burst: 'M16A2', bolty: 'L96', cowtank: 'M72 LAW', aug: 'AUG', mp5k: 'MP5K', thompson: 'THOMPSON', sks: 'SKS', akm: 'AK', python: 'PYTHON', m249: 'M249', minigun: 'MINIGUN' };
 
 function _buildWeaponPickupGroup(w) {
   const g = new THREE.Group();

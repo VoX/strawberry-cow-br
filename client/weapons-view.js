@@ -389,6 +389,36 @@ export function buildViewmodel(type, dual) {
     hoof.userData.reloadStyle = 'none'; // M72 LAW is single-use, no reload
     vmGroup.add(hoof);
     vmGroup.userData.hoof = hoof;
+  } else if (type === 'python') {
+    buildPythonViewModel(vmGroup);
+    const hoof = buildHoof();
+    hoof.position.set(-0.3, -0.5, -5);
+    hoof.rotation.set(-0.2, 0.1, 0.5);
+    hoof.userData.restPos = hoof.position.clone();
+    hoof.userData.restRot = hoof.rotation.clone();
+    hoof.userData.reloadStyle = 'cylinder';
+    vmGroup.add(hoof);
+    vmGroup.userData.hoof = hoof;
+  } else if (type === 'm249') {
+    buildM249ViewModel(vmGroup);
+    const hoof = buildHoof();
+    hoof.position.set(-0.8, -0.5, -10);
+    hoof.rotation.set(-0.2, 0.1, 0.5);
+    hoof.userData.restPos = hoof.position.clone();
+    hoof.userData.restRot = hoof.rotation.clone();
+    hoof.userData.reloadStyle = 'magswap';
+    vmGroup.add(hoof);
+    vmGroup.userData.hoof = hoof;
+  } else if (type === 'minigun') {
+    buildMinigunViewModel(vmGroup);
+    const hoof = buildHoof();
+    hoof.position.set(-0.8, -0.5, -8);
+    hoof.rotation.set(-0.2, 0.1, 0.5);
+    hoof.userData.restPos = hoof.position.clone();
+    hoof.userData.restRot = hoof.rotation.clone();
+    hoof.userData.reloadStyle = 'belt';
+    vmGroup.add(hoof);
+    vmGroup.userData.hoof = hoof;
   }
   vmGroup.position.set(2, -3, -5);
   vmGroup.rotation.set(0, 0.05, 0);

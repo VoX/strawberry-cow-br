@@ -687,6 +687,21 @@ export const handlers = {
           { p: 0.009, y: -0.002 }, { p: 0.008, y: -0.003 }, { p: 0.008, y: -0.004 },
           { p: 0.009, y: -0.001 }, { p: 0.010, y: 0.001 }, { p: 0.011, y: 0.003 },
         ],
+        // Python — heavy vertical kick, revolver feel
+        python: [
+          { p: 0.04, y: () => (Math.random() - 0.5) * 0.008 },
+        ],
+        // M249 — medium sustained recoil, slight wander
+        m249: [
+          { p: 0.015, y: 0.003 }, { p: 0.016, y: -0.002 }, { p: 0.014, y: 0.004 },
+          { p: 0.017, y: -0.003 }, { p: 0.015, y: 0.002 }, { p: 0.016, y: -0.004 },
+          { p: 0.014, y: 0.005 }, { p: 0.017, y: -0.002 }, { p: 0.015, y: 0.003 },
+          { p: 0.016, y: -0.005 }, { p: 0.014, y: 0.004 }, { p: 0.017, y: -0.003 },
+        ],
+        // Minigun — low per-shot recoil, constant vibration
+        minigun: [
+          { p: 0.005, y: () => (Math.random() - 0.5) * 0.006 },
+        ],
       };
       const pattern = recoilPatterns[wep];
       if (pattern && S.me) {

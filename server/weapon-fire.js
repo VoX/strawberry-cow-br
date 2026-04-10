@@ -94,6 +94,27 @@ const PLAYER_STATS_BASE = {
   // per-shot damage as the M16 family but tighter spread because of
   // the optic; client multiplies hipfire spread/recoil by 1.5x when
   // not scoped.
+  // Python — .357 Magnum revolver. 6 rounds, 400 RPM semi-auto.
+  // Damage between AK (13) and L96 (50). High vertical recoil. Dual-wieldable.
+  python: {
+    hungerGate: [2, 6], hungerCost: [1, 4],
+    cooldown: 0.15, dmg: 30, speed: 5520, spreadBase: 0.015, pellets: 1, spawnOffset: 40,
+    semiOnly: true,
+  },
+  // M249 SAW — belt-fed LMG. 100 rounds, 600 RPM full auto.
+  // 50% move speed penalty. 5.56 NATO damage. MP5K spread.
+  m249: {
+    hungerGate: [2, 6], hungerCost: [2, 5],
+    cooldown: 0.1, dmg: 14, speed: 3312, spreadBase: 0.044, pellets: 1, spawnOffset: 40,
+    autoOnly: true,
+  },
+  // Minigun — 300 rounds, 600 RPM full auto. 30% move speed.
+  // Double MP5K spread, MP5K damage. Extreme suppression weapon.
+  minigun: {
+    hungerGate: [2, 6], hungerCost: [2, 5],
+    cooldown: 0.1, dmg: 9, speed: 3312, spreadBase: 0.088, pellets: 1, spawnOffset: 40,
+    autoOnly: true,
+  },
   aug: {
     hungerGate: [2, 6], hungerCost: [2, 5],
     cooldown: 0.615, dmg: 14, speed: 4908, spreadBase: 0, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
@@ -125,6 +146,9 @@ const BOT_STATS = {
     hungerGate: 4, hungerCost: 3, cooldown: 0.6, dmg: 4, speed: 1300, spreadBase: 0.022, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
     auto: { hungerCost: 1, cooldown: 0.1, dmg: 2, speed: 1300, spreadBase: 0.055, pellets: 1 },
   },
+  python: { hungerGate: 5, hungerCost: 4, cooldown: 0.15, dmg: 25, speed: 5520, spreadBase: 0.015, pellets: 1, spawnOffset: 40 },
+  m249: { hungerGate: 5, hungerCost: 5, cooldown: 0.1, dmg: 12, speed: 3312, spreadBase: 0.044, pellets: 1, spawnOffset: 40 },
+  minigun: { hungerGate: 5, hungerCost: 5, cooldown: 0.1, dmg: 7, speed: 3312, spreadBase: 0.088, pellets: 1, spawnOffset: 40 },
 };
 
 // Extract cooldown / damage / hungerDiscount multipliers from a shooter's

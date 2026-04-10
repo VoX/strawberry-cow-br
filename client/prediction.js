@@ -26,7 +26,7 @@ import S from './state.js';
 import { stepPlayerMovement } from '../shared/movement.js';
 import { getTerrainHeight } from './terrain.js';
 import { send } from './network.js';
-import { KNIFE_SPEED_MULT, HIT_SLOW_MULT, TICK_RATE } from '../shared/constants.js';
+import { KNIFE_SPEED_MULT, HIT_SLOW_MULT, TICK_RATE, HEAVY_WEAPON_SPEED } from '../shared/constants.js';
 
 // Fixed timestep — imported from shared/constants so it stays in sync.
 const TICK_HZ = TICK_RATE;
@@ -202,6 +202,7 @@ function computeLocalSpeedMult() {
   const mp = S.mePredicted;
   let mult = 1;
   if (mp && mp.weapon === 'knife') mult *= KNIFE_SPEED_MULT;
+  if (mp && HEAVY_WEAPON_SPEED[mp.weapon]) mult *= HEAVY_WEAPON_SPEED[mp.weapon];
   if (S.localHitSlowEndsAt > performance.now()) mult *= HIT_SLOW_MULT;
   return mult;
 }

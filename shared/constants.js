@@ -46,14 +46,15 @@ const BURST_FAMILY = new Set(['burst', 'aug', 'mp5k', 'akm']);
 // Dual-wield: only lightweight weapons. M16 + Benelli disabled for now
 // (too heavy to dual-wield realistically). Re-enable by adding back
 // 'shotgun' and 'burst' to this set.
-const DUAL_WIELD_FAMILY = new Set(['normal', 'mp5k']);
+const DUAL_WIELD_FAMILY = new Set(['normal', 'mp5k', 'python']);
 
 // Base magazine capacity by weapon. Single source of truth for hud.js,
 // server/weapon-fire.js, and server/combat.js reload/extMag math.
-const MAG_SIZES = { normal: 10, burst: 20, shotgun: 6, bolty: 5, aug: 30, mp5k: 30, thompson: 20, sks: 10, akm: 30 };
-// Extended-mag perk grants these capacities instead; dual-wield multiplies
-// by 2 further.
-const EXT_MAG_SIZES = { normal: 13, burst: 25, shotgun: 8, bolty: 7, aug: 38, mp5k: 38, thompson: 25, sks: 13, akm: 38 };
+const MAG_SIZES = { normal: 10, burst: 20, shotgun: 6, bolty: 5, aug: 30, mp5k: 30, thompson: 20, sks: 10, akm: 30, python: 6, minigun: 300, m249: 100 };
+const EXT_MAG_SIZES = { normal: 13, burst: 25, shotgun: 8, bolty: 7, aug: 38, mp5k: 38, thompson: 25, sks: 13, akm: 38, python: 8, minigun: 400, m249: 150 };
+
+// Weapons with a speed penalty when held. Applied in shared/movement.js.
+const HEAVY_WEAPON_SPEED = { minigun: 0.3, m249: 0.5 };
 
 // Client input types that carry a monotonic seq number for CSP reconciliation.
 // The client stamps seq on every stateful send; the server tracks the highest
@@ -83,6 +84,9 @@ const WEAPON_CALIBER = {
   bolty:    { caliber: '7.62x51mm',  barrelMm: 660 },  // AI Arctic Warfare (L96)
   shotgun:  { caliber: '12ga',       barrelMm: 660 },  // XM1014 (Benelli M4)
   cowtank:  { caliber: '66mm HEAT',  barrelMm: 670 },  // M72 LAW
+  python:   { caliber: '.357 Mag',  barrelMm: 152 },  // Colt Python 6"
+  minigun:  { caliber: '5.56x45mm', barrelMm: 559 },  // M134 Minigun
+  m249:     { caliber: '5.56x45mm', barrelMm: 465 },  // FN M249 SAW
 };
 
 const COLORS = ['pink','blue','green','gold','purple','red','orange','cyan'];
@@ -95,7 +99,7 @@ const FOOD_TYPES = [
   {name:'cupcake',hunger:22,pts:18},
   {name:'cookie',hunger:12,pts:8},
 ];
-const WEAPON_TYPES = ['shotgun','burst','bolty','shotgun','burst','bolty','cowtank','aug','mp5k','thompson','sks','akm'];
+const WEAPON_TYPES = ['shotgun','burst','bolty','shotgun','burst','bolty','cowtank','aug','mp5k','thompson','sks','akm','python','m249','minigun'];
 
 module.exports = {
   MAP_W, MAP_H, TICK_RATE,
@@ -105,6 +109,6 @@ module.exports = {
   SPEED_MULT_MIN, SPEED_MULT_MAX,
   KNIFE_MELEE_RANGE, KNIFE_MELEE_CONE_COS, KNIFE_MELEE_DAMAGE, KNIFE_MELEE_CD_MS,
   STATEFUL_INPUT_TYPES, BURST_FAMILY, DUAL_WIELD_FAMILY, MAG_SIZES, EXT_MAG_SIZES,
-  WEAPON_CALIBER,
+  HEAVY_WEAPON_SPEED, WEAPON_CALIBER,
   COLORS, FOOD_TYPES, WEAPON_TYPES,
 };
