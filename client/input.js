@@ -141,9 +141,9 @@ document.addEventListener('mousedown', e => {
   if (e.button === 2 && S.locked && S.state === 'playing') {
     const me = S.me;
     // Block ADS during bolt rack and reload
-    // Minigun: right-click toggles barrel spin
+    // Minigun: hold right-click to spin barrel
     if (me && me.alive && me.weapon === 'minigun') {
-      send({ type: 'minigunSpin' });
+      send({ type: 'minigunSpin', spinning: true });
       return;
     }
     if (me && me.alive && (me.weapon === 'bolty' || me.weapon === 'aug') && !S._boltRacking && !me.reloading) {
@@ -160,6 +160,11 @@ document.addEventListener('mousedown', e => {
 });
 document.addEventListener('mouseup', e => {
   if (e.button === 2) {
+    // Stop minigun spin on right-click release
+    const me = S.me;
+    if (me && me.alive && me.weapon === 'minigun') {
+      send({ type: 'minigunSpin', spinning: false });
+    }
     S.adsActive = false;
     cam.fov = 75; cam.updateProjectionMatrix();
     document.getElementById('scopeOverlay').style.display = 'none';
