@@ -1,5 +1,18 @@
 {
-  "broadcasts": [],
+  "broadcasts": [
+    {
+      "color": 16777215,
+      "id": 1,
+      "ownerId": 200,
+      "type": "projectile",
+      "vx": 3300.011683,
+      "vy": 81.71567,
+      "vz": -18.60886,
+      "x": 1039.855214,
+      "y": 1000.986904,
+      "z": 35
+    }
+  ],
   "mutations": {
     "_lastChatT": 1,
     "aimAngle": -1.570796,
@@ -9,9 +22,6 @@
   },
   "projectiles": [
     {
-      "_color": 16777215,
-      "bolty": false,
-      "cowtank": false,
       "dmg": 14,
       "id": 1,
       "ownerId": 200,

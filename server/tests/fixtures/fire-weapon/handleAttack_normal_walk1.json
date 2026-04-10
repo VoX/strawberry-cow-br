@@ -1,14 +1,24 @@
 {
-  "broadcasts": [],
+  "broadcasts": [
+    {
+      "color": 16777215,
+      "id": 1,
+      "ownerId": 100,
+      "type": "projectile",
+      "vx": 1297.848391,
+      "vy": -2.793978,
+      "vz": 83.663801,
+      "x": 1040.118961,
+      "y": 999.913633,
+      "z": 15.75
+    }
+  ],
   "mutations": {
     "ammo": 49,
     "attackCooldown": 0.15
   },
   "projectiles": [
     {
-      "_color": 16777215,
-      "bolty": false,
-      "cowtank": false,
       "dmg": 9,
       "id": 1,
       "ownerId": 100,

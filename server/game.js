@@ -319,15 +319,6 @@ function gameTick() {
   const wpState = gameState.getWeaponPickups().map(w => ({ id: w.id, x: w.x, y: w.y, weapon: w.weapon }));
   // Armor pickups
   const apState = gameState.getArmorPickups().map(a => ({ id: a.id, x: a.x, y: a.y }));
-  // Active projectiles — position + visual metadata. Delta compression
-  // sends color/bolty/cowtank/shotgun only on spawn (first tick), then
-  // just x/y/z on subsequent ticks.
-  const projState = gameState.getProjectiles().map(p => ({
-    id: p.id, x: p.x, y: p.y, z: p.z,
-    vx: p.vx, vy: p.vy, vz: p.vz,
-    ownerId: p.ownerId,
-    color: p._color, bolty: !!p.bolty, cowtank: !!p.cowtank, shotgun: !!p.shotgun,
-  }));
 
   // Per-client delta-compressed tick broadcast. Each client gets a delta
   // against the last snapshot they acked, or a full keyframe if no ack.
@@ -359,7 +350,7 @@ function gameTick() {
         snapshot: { id: snapshot.id, time: snapshot.time, state: players },
         zone: tickZone, gameTime, keyframe: true,
         walls: wallState, barricades: barricadeState,
-        foodIds, weaponPickups: wpState, armorPickups: apState, projectiles: projState,
+        foodIds, weaponPickups: wpState, armorPickups: apState,
       };
     } else {
       // Compute delta against baseline.
@@ -392,7 +383,7 @@ function gameTick() {
         snapshot: { id: snapshot.id, time: snapshot.time, state: delta },
         zone: tickZone, gameTime,
         walls: wallState, barricades: barricadeState,
-        foodIds, weaponPickups: wpState, armorPickups: apState, projectiles: projState,
+        foodIds, weaponPickups: wpState, armorPickups: apState,
       };
       if (removedIds.length) tickPayload.removedIds = removedIds;
     }

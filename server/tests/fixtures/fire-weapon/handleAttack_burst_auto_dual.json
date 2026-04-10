@@ -1,14 +1,38 @@
 {
-  "broadcasts": [],
+  "broadcasts": [
+    {
+      "color": 16777215,
+      "id": 1,
+      "muzzle": 0,
+      "ownerId": 100,
+      "type": "projectile",
+      "vx": 3329.968218,
+      "vy": -11.30327,
+      "vz": 242.43959,
+      "x": 1040.217007,
+      "y": 999.863487,
+      "z": 35
+    },
+    {
+      "color": 16777215,
+      "id": 2,
+      "muzzle": 1,
+      "ownerId": 100,
+      "type": "projectile",
+      "vx": 3344.97025,
+      "vy": -71.08308,
+      "vz": 171.206304,
+      "x": 1040.398191,
+      "y": 999.141509,
+      "z": 35
+    }
+  ],
   "mutations": {
     "ammo": 48,
     "attackCooldown": 0.12
   },
   "projectiles": [
     {
-      "_color": 16777215,
-      "bolty": false,
-      "cowtank": false,
       "dmg": 14,
       "id": 1,
       "ownerId": 100,
@@ -20,9 +44,6 @@
       "z": 35
     },
     {
-      "_color": 16777215,
-      "bolty": false,
-      "cowtank": false,
       "dmg": 14,
       "id": 2,
       "ownerId": 100,

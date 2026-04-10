@@ -26,7 +26,6 @@ import { S2C } from '../shared/messages.js';
 import { BURST_FAMILY, HIT_SLOW_DURATION_MS } from '../shared/constants.js';
 import { COL_HEX } from './config.js';
 import { addSnapshot, getInterpolatedEntity } from './snapshot.js';
-import { tickLocalCooldown } from './input.js';
 import { reconcilePrediction } from './prediction.js';
 import { spawnBulletHole, clearBulletHoles, removeBulletHolesBySurfaceKey } from './bullet-holes.js';
 
@@ -380,8 +379,6 @@ export const handlers = {
       S.mePredicted.stunTimer = me.stunTimer || 0;
       S.mePredicted.spawnProtection = me.spawnProt ? 1 : 0;
     }
-    // Sync local fire cooldown from server tick
-    if (me) tickLocalCooldown(me.attackCooldown || 0);
 
     // Feed reconstructed full state to SI for remote player interpolation.
     if (msg.snapshot) {
@@ -461,73 +458,6 @@ export const handlers = {
     // setArmorSpawns replaces the full list; pickups.js reconciles meshes each frame.
     if (msg.armorPickups) {
       setArmorSpawns(msg.armorPickups);
-    }
-
-    // Diff active projectiles — new IDs spawn tracers, removed IDs dispose them.
-    if (msg.projectiles) {
-      const serverProjIds = new Set();
-      for (const sp of msg.projectiles) {
-        serverProjIds.add(sp.id);
-        const existing = S.projData.find(p => p.id === sp.id);
-        if (existing) {
-          // Snap to server position + update velocity for local stepping
-          existing.x = sp.x; existing.y = sp.y; existing.y3d = sp.z || 0;
-          existing.vx = sp.vx || 0; existing.vy = sp.vy || 0; existing.vy3d = sp.vz || 0;
-        } else if (sp.ownerId === S.myId) {
-          // Own shot — find the predicted tracer and remap its ID to the server's.
-          // The predicted tracer was spawned instantly by doAttack().
-          const pred = S.projData.find(p => p._localPredicted);
-          if (pred) {
-            // Remap mesh to the server's ID
-            const oldId = pred.id;
-            if (S.projMeshes[oldId]) {
-              S.projMeshes[sp.id] = S.projMeshes[oldId];
-              delete S.projMeshes[oldId];
-            }
-            pred.id = sp.id;
-            pred._localPredicted = false;
-            pred._fromTick = true;
-            // Correct velocity to server's actual trajectory
-            pred.vx = sp.vx || 0; pred.vy = sp.vy || 0; pred.vy3d = sp.vz || 0;
-            pred.bolty = sp.bolty; pred.cowtank = sp.cowtank;
-          } else {
-            // No predicted tracer — create from server data (fallback)
-            S.projData.push({
-              id: sp.id, x: sp.x, y: sp.y,
-              vx: sp.vx || 0, vy: sp.vy || 0,
-              color: sp.color || 'pink',
-              bolty: sp.bolty, cowtank: sp.cowtank,
-              y3d: sp.z || 0, vy3d: sp.vz || 0,
-              _fromTick: true,
-            });
-          }
-        } else {
-          // Remote player's projectile — create from server data
-          S.projData.push({
-            id: sp.id, x: sp.x, y: sp.y,
-            vx: sp.vx || 0, vy: sp.vy || 0,
-            color: sp.color || 'pink',
-            bolty: sp.bolty, cowtank: sp.cowtank,
-            y3d: sp.z || 0, vy3d: sp.vz || 0,
-            _fromTick: true,
-          });
-          const th = getTerrainHeight(sp.x, sp.y);
-          const pos = { x: sp.x, y: th + 50, z: sp.y };
-          if (sp.bolty) sfxBolty(0.1, pos);
-          else if (sp.cowtank) sfxRocket(0.12, pos);
-          else sfxShoot(0.07, pos);
-        }
-      }
-      // Remove tick projectiles that left server state + expire predicted tracers
-      const now = performance.now();
-      for (let i = S.projData.length - 1; i >= 0; i--) {
-        const p = S.projData[i];
-        if (p._fromTick && !serverProjIds.has(p.id)) {
-          S.projData.splice(i, 1);
-        } else if (p._localPredicted && p._spawnedAt && now - p._spawnedAt > 2000) {
-          S.projData.splice(i, 1);
-        }
-      }
     }
 
     S.me = S.serverPlayers.find(p => p.id === S.myId) || null;

@@ -4,7 +4,6 @@ import { cam, ren } from './renderer.js';
 import { initAudio } from './audio.js';
 import { send } from './network.js';
 import { getServerTime } from './snapshot.js';
-import { sfxShoot, sfxBolty, sfxShotgun, sfxRocket, sfxLR } from './audio.js';
 import { TICK_RATE, BURST_FAMILY, JUMP_VZ } from '../shared/constants.js';
 
 // Jump prediction: server applies vz=200 + onGround=false on receipt of
@@ -18,13 +17,6 @@ function predictJump() {
   mp.vz = JUMP_VZ;
   mp.onGround = false;
 }
-
-// Client-side fire cooldown — mirrors the server's attackCooldown so
-// predicted tracers don't spawn faster than the weapon can fire.
-// Reset from the server tick value each tick, decremented locally each frame.
-let _localAttackCooldown = 0;
-export function tickLocalCooldown(serverCooldown) { _localAttackCooldown = serverCooldown; }
-export function stepLocalCooldown(dt) { if (_localAttackCooldown > 0) _localAttackCooldown -= dt; }
 
 // Lag comp: attack messages carry serverTime so the server can rewind
 // entity positions to what the shooter was seeing via SI vault.
@@ -51,51 +43,6 @@ export function doAttack() {
     fireMode: S.fireMode,
     serverTime: getServerTime(),
   });
-  // Instant predicted tracer — spawn from the local muzzle so the
-  // shooter sees their shot immediately without waiting for the server.
-  // Gated on the LOCAL cooldown timer to prevent spawning faster than
-  // the weapon's fire rate.
-  if (S.me && _localAttackCooldown <= 0 && (S.me.ammo > 0 || S.me.ammo === -1)
-      && (!S.me.reloading || S.me.weapon === 'shotgun')) {
-    const wep = S.me.weapon || 'normal';
-    const MUZZLES = {
-      normal: { x: 2, y: -2.8, z: -13 }, shotgun: { x: 2, y: -0.8, z: -24 },
-      burst: { x: 3.5, y: -2.6, z: -22 }, bolty: { x: 0, y: -4, z: -26 },
-      cowtank: { x: 2, y: -3, z: -22 }, aug: { x: 3.5, y: -2.6, z: -22 },
-      mp5k: { x: 2, y: -2.8, z: -16 }, thompson: { x: 2, y: -2.5, z: -18 },
-      sks: { x: 2.5, y: -2.6, z: -22 }, akm: { x: 2.5, y: -2.6, z: -20 },
-    };
-    const m = MUZZLES[wep] || MUZZLES.normal;
-    const muzzleDir = new THREE.Vector3(m.x, m.y, m.z).applyQuaternion(cam.quaternion);
-    const speed = 700;
-    S.projData.push({
-      id: '_pred_' + (S._predProjCounter = (S._predProjCounter || 0) + 1),
-      x: cam.position.x + muzzleDir.x,
-      y: cam.position.z + muzzleDir.z,
-      vx: _inputDir.x * speed, vy: _inputDir.z * speed,
-      color: S.myColor || 'pink',
-      bolty: wep === 'bolty', cowtank: wep === 'cowtank',
-      y3d: cam.position.y + muzzleDir.y, vy3d: _inputDir.y * speed,
-      _localPredicted: true,
-      _spawnedAt: performance.now(),
-    });
-    // Set local cooldown to prevent spawning another tracer before the
-    // weapon can fire again.
-    const COOLDOWNS = {
-      normal: 0.3, shotgun: 1.0, bolty: 2.5, cowtank: 1.0,
-      burst: 0.12, aug: 0.12, mp5k: 0.1, thompson: 0.13,
-      sks: 0.176, akm: 0.133,
-    };
-    _localAttackCooldown = COOLDOWNS[wep] || 0.15;
-    // Own weapon sound (predicted — fires instantly, not on server tick)
-    if (wep === 'bolty') sfxBolty();
-    else if (wep === 'cowtank') sfxRocket(0.12);
-    else if (wep === 'shotgun') sfxShotgun(0.1);
-    else if (BURST_FAMILY.has(wep)) sfxLR(0.1);
-    else sfxShoot();
-    // Recoil applied via the recoil system in message-handlers.js when
-    // the server projectile arrives (still fires from the old handler).
-  }
 }
 
 export function doDash() {
