@@ -31,6 +31,7 @@ function initHudRefs() {
     barricadeBar: document.getElementById('barricadeBar'),
     barricadeFill: document.getElementById('barricadeFill'),
     barricadeLabel: document.getElementById('barricadeLabel'),
+    compass: document.getElementById('compass'),
     resourceBar: document.getElementById('resourceBar'),
     spectateMsg: document.getElementById('spectateMsg'),
     playerCount: document.getElementById('playerCount'),
@@ -230,6 +231,18 @@ export function updateHud(me, time, dt) {
   for (let i = 0; i < S.serverPlayers.length; i++) if (S.serverPlayers[i].alive) _aliveCount++;
   const pcSig = _aliveCount + '/' + S.serverPlayers.length;
   if (S._pcSig !== pcSig) { S._pcSig = pcSig; H.playerCount.textContent = '\u{1F404} ' + pcSig; }
+
+  // Compass — shows heading based on camera yaw
+  if (H.compass) {
+    const yawDeg = ((S.yaw * 180 / Math.PI) % 360 + 360) % 360;
+    const dirs = ['S', 'SW', 'W', 'NW', 'N', 'NE', 'E', 'SE'];
+    const idx = Math.round(yawDeg / 45) % 8;
+    const compassTxt = dirs[idx] + ' ' + Math.round(yawDeg) + '\u00B0';
+    if (S._compassSig !== compassTxt) {
+      S._compassSig = compassTxt;
+      H.compass.textContent = compassTxt;
+    }
+  }
 
   // Resource bar — shows gathered resources, visible while alive
   if (H.resourceBar) {
