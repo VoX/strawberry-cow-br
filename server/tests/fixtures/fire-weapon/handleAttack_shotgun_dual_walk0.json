@@ -144,8 +144,7 @@
   "mutations": {
     "_shotgunAlt": true,
     "ammo": 49,
-    "attackCooldown": 0.55,
-    "hunger": 95.5
+    "attackCooldown": 0.55
   },
   "projectiles": [
     {

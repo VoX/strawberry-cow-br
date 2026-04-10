@@ -19,8 +19,7 @@
     "aimAngle": -1.570796,
     "ammo": 49,
     "attackCooldown": 2.5,
-    "botActionTimer": 0.300276,
-    "hunger": 92
+    "botActionTimer": 0.300276
   },
   "projectiles": [
     {

@@ -20,7 +20,6 @@
     "ammo": 15,
     "attackCooldown": 1,
     "botActionTimer": 0.300276,
-    "hunger": 95,
     "weapon": "normal"
   },
   "projectiles": [

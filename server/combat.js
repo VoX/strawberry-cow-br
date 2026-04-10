@@ -41,9 +41,7 @@ function handleAttack(player, msg) {
   const { cdMult, dmgMult, hungerDiscount } = weaponFire.extractShooterModifiers(player);
   const dualWield = !!player.dualWield;
 
-  // Resolve stats (applies hungerDiscount to the per-shot cost/gate pairs)
   const stats = weaponFire.resolvePlayerStats(weapon, hungerDiscount);
-  if (player.hunger <= stats.hungerGate) return;
 
   // Normalize aim with cardinal-direction fallback for idle shooters
   let ax = msg.aimX || 0, ay = msg.aimY || 0, az = msg.aimZ || 0;

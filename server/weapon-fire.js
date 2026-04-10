@@ -18,7 +18,7 @@
 
 const gameState = require('./game-state');
 const { broadcast } = require('./network');
-const { applyHungerDelta } = require('./player');
+// applyHungerDelta removed — firing no longer drains milk (ammo system replaces it).
 const { BURST_FAMILY, MAG_SIZES } = require('../shared/constants');
 
 // --- Player base stats ----------------------------------------------------
@@ -255,7 +255,7 @@ function fireWeapon(shooter, weapon, aim, stats, opts = {}) {
       );
     }
     const cd = dualWield && stats.cooldownDualMult !== undefined ? stats.cooldown * stats.cooldownDualMult : stats.cooldown;
-    applyHungerDelta(shooter, -stats.hungerCost * (dualWield ? 0.5 : 1));
+
     shooter.attackCooldown = cd * cdMult;
     if (MAG_SIZES[weapon]) shooter.ammo = Math.max(0, shooter.ammo - 1);
     return true;
@@ -290,7 +290,6 @@ function fireWeapon(shooter, weapon, aim, stats, opts = {}) {
           0,
         );
       }
-      applyHungerDelta(shooter, -a.hungerCost * (dualWield ? 0.5 : 1));
       shooter.attackCooldown = a.cooldown * cdMult;
       if (MAG_SIZES[weapon]) shooter.ammo = Math.max(0, shooter.ammo - autoCount);
       return true;
@@ -316,7 +315,6 @@ function fireWeapon(shooter, weapon, aim, stats, opts = {}) {
           0,
         );
       }
-      applyHungerDelta(shooter, -s.hungerCost * (dualWield ? 0.5 : 1));
       shooter.attackCooldown = s.cooldown * cdMult;
       if (MAG_SIZES[weapon]) shooter.ammo = Math.max(0, shooter.ammo - semiCount);
       return true;
@@ -361,7 +359,7 @@ function fireWeapon(shooter, weapon, aim, stats, opts = {}) {
         );
       }
     }
-    applyHungerDelta(shooter, -stats.hungerCost * (dualWield ? 0.5 : 1));
+
     shooter.attackCooldown = stats.cooldown * cdMult;
     if (MAG_SIZES[weapon]) shooter.ammo = Math.max(0, shooter.ammo - burstCount * volleys);
     return true;
@@ -391,7 +389,6 @@ function fireWeapon(shooter, weapon, aim, stats, opts = {}) {
     broadcastExtras,
     0,
   );
-  applyHungerDelta(shooter, -stats.hungerCost);
   shooter.attackCooldown = stats.cooldown * cdMult;
   if (MAG_SIZES[weapon]) shooter.ammo = Math.max(0, shooter.ammo - 1);
   return true;

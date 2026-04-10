@@ -130,7 +130,6 @@ function fireBot(bot, ax, ay, target) {
   const { cdMult, dmgMult } = weaponFire.extractShooterModifiers(bot);
 
   const stats = weaponFire.BOT_STATS[weapon] || weaponFire.BOT_STATS.normal;
-  if (bot.hunger <= stats.hungerGate) return;
 
   // Compute vertical aim from target elevation — bots don't have a camera, so
   // they lead the target's eye position using flat-ground distance.

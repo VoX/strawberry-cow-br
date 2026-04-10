@@ -29,8 +29,7 @@
   ],
   "mutations": {
     "ammo": 48,
-    "attackCooldown": 0.12,
-    "hunger": 99
+    "attackCooldown": 0.12
   },
   "projectiles": [
     {
