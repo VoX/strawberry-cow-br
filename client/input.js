@@ -57,6 +57,7 @@ export function doAttack() {
     color: S.myColor || 'pink',
     y3d: cam.position.y, vy3d: az * speed,
     _predicted: true,
+    _spawnedAt: performance.now(),
   });
 }
 
