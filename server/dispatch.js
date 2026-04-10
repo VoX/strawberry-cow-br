@@ -8,7 +8,7 @@
 // here is a verbatim move from the old inline ws.on('message') handler.
 
 const { MAP_W, MAP_H } = require('./config');
-const { STATEFUL_INPUT_TYPES, JUMP_VZ, SPEED_MULT_MIN, SPEED_MULT_MAX, CRAFTING_RECIPES, MAG_SIZES, TOOL_CUPBOARD_RADIUS } = require('../shared/constants');
+const { STATEFUL_INPUT_TYPES, JUMP_VZ, SPEED_MULT_MIN, SPEED_MULT_MAX, CRAFTING_RECIPES, MAG_SIZES, TOOL_CUPBOARD_RADIUS, WEAPON_DURABILITY } = require('../shared/constants');
 const lobbyState = require('./lobby-state');
 const gameState = require('./game-state');
 const { broadcast, sendTo } = require('./network');
@@ -158,6 +158,7 @@ function dispatchMessage(player, msg) {
       cancelReload(player);
       player.weapon = give.weapon;
       player.ammo = give.ammo || (MAG_SIZES[give.weapon] || 15);
+      player.durability = WEAPON_DURABILITY[give.weapon] || 100;
       player.dualWield = false;
       broadcastPlayerSnapshot(player);
     } else if (give.ammoFor) {

@@ -102,6 +102,10 @@ const TOOL_CUPBOARD_RADIUS = 120; // units — build protection zone
 
 // Building piece types — B key cycles through these. Each has a different
 // size, cost, and visual. Collision uses the existing barricade OBB system.
+// Weapon durability — shots before the weapon breaks and reverts to knife.
+// Gives crafted weapons finite lifespan, creating demand for resources.
+const WEAPON_DURABILITY = { normal: 120, shotgun: 80, burst: 200, bolty: 40, aug: 180, cowtank: 1 };
+
 const BUILDING_PIECES = {
   plank:      { label: 'Plank',      w: 52, h: 8,  cost: 25,  hp: 200 },
   wall:       { label: 'Wall',       w: 80, h: 10, cost: 50,  hp: 300 },
@@ -128,7 +132,7 @@ module.exports = {
   SPEED_MULT_MIN, SPEED_MULT_MAX,
   KNIFE_MELEE_RANGE, KNIFE_MELEE_CONE_COS, KNIFE_MELEE_DAMAGE, KNIFE_MELEE_CD_MS,
   RESOURCE_TYPES, RESOURCE_SPAWN_COUNTS, RESOURCE_CAP,
-  CRAFTING_RECIPES, TOOL_CUPBOARD_RADIUS, BUILDING_PIECES,
+  CRAFTING_RECIPES, TOOL_CUPBOARD_RADIUS, BUILDING_PIECES, WEAPON_DURABILITY,
   STATEFUL_INPUT_TYPES, BURST_FAMILY, DUAL_WIELD_FAMILY, MAG_SIZES, EXT_MAG_SIZES,
   COLORS, FOOD_TYPES, WEAPON_TYPES,
 };

@@ -26,7 +26,7 @@ const FRESH_PLAYER_STATS = {
   perks: { speedMult: 1, maxHunger: 100, sizeMult: 1, damage: 1 },
   weaponPerks: { cooldown: 1, hungerDiscount: 0, damageMult: 1 },
   weapon: 'normal', weaponTimer: 0,
-  ammo: 15, reloading: 0,
+  ammo: 15, reloading: 0, durability: 120,
   spawnProtection: 2,
   barricadeReadyAt: 0, mooReadyAt: 0, meleeReadyAt: 0,
   resources: { grass: 0, wood: 0, stone: 0, metal: 0 },

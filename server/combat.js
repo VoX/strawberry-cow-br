@@ -68,7 +68,19 @@ function handleAttack(player, msg) {
   if (!fired) return;
 
   // Cowtank is single-use — drop back to normal weapon after firing.
-  if (weapon === 'cowtank') weaponFire.resetAfterCowtank(player);
+  if (weapon === 'cowtank') { weaponFire.resetAfterCowtank(player); return; }
+
+  // Weapon durability: each shot decrements. At 0, weapon breaks → knife.
+  if (typeof player.durability === 'number' && !player.isBot) {
+    player.durability--;
+    if (player.durability <= 0) {
+      cancelReload(player);
+      player.weapon = 'knife';
+      player.ammo = -1;
+      player.durability = 0;
+      broadcastPlayerSnapshot(player);
+    }
+  }
 }
 
 function applyExplosion(pr, excludeId) {

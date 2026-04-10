@@ -150,10 +150,11 @@ export function updateHud(me, time, dt) {
     fireModeBlock = '<div>' + modeLabel + '</div>';
   }
   const dualTag = me.dualWield ? ' ×2' : '';
-  const weaponSig = wep + '|' + ammoTxt + '|' + dualTag + '|' + fireModeBlock + '|' + reloadBlock;
+  const durTxt = (wep !== 'knife' && me.durability != null) ? ' [' + me.durability + ']' : '';
+  const weaponSig = wep + '|' + ammoTxt + '|' + dualTag + '|' + fireModeBlock + '|' + reloadBlock + '|' + durTxt;
   if (S._weaponSig !== weaponSig) {
     S._weaponSig = weaponSig;
-    H.weapon.innerHTML = reloadBlock + fireModeBlock + (wepNames[wep] || wep) + dualTag + ammoTxt;
+    H.weapon.innerHTML = reloadBlock + fireModeBlock + (wepNames[wep] || wep) + dualTag + ammoTxt + durTxt;
   }
   const armorVal = me.armor || 0;
   H.armorBar.style.display = (aliveHud && armorVal > 0) ? 'block' : 'none';

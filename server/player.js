@@ -124,6 +124,7 @@ function getPlayerTick(p) {
     ammo: p.ammo !== undefined ? p.ammo : -1, reloading: p.reloading > 0,
     crouching: !!p.walking,
     resources: p.resources || null,
+    durability: p.durability || 0,
   };
 }
 
