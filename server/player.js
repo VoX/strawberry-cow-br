@@ -159,6 +159,7 @@ function eliminatePlayer(p, reason) {
   // Event flags — client detects alive→false + these fields in the next tick.
   p._justEliminated = true;
   p._eliminatedRank = remaining + 1;
+  broadcast(buildServerStatus());
 }
 
 function serializeFood(f) {
