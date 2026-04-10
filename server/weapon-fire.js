@@ -17,7 +17,7 @@
 //     touched when opts.dualWield is true).
 
 const gameState = require('./game-state');
-const { broadcast } = require('./network');
+// broadcast removed — projectiles now ride the tick state.
 // applyHungerDelta removed — firing no longer drains milk (ammo system replaces it).
 const { BURST_FAMILY, MAG_SIZES } = require('../shared/constants');
 
@@ -181,22 +181,20 @@ function _spawnProjectile(shooter, posX, posY, posZ, dirX, dirY, dirZ, speed, dm
     fireServerTime: extras && extras.fireServerTime != null ? extras.fireServerTime : null,
     ticksAlive: 0,
     ...extras,
+    // Visual metadata for the tick state — clients use these to pick
+    // the right mesh/trail when the projectile first appears.
+    _color: shooter.color,
+    bolty: !!(broadcastExtras && broadcastExtras.bolty),
+    cowtank: !!(broadcastExtras && broadcastExtras.cowtank),
+    shotgun: broadcastExtras && broadcastExtras.shotgun !== undefined ? broadcastExtras.shotgun : undefined,
   };
-  // _firstTick lets updateProjectiles handle point-blank walls correctly.
   proj._firstTick = [shooter.x, shooter.y, posZ];
-  gameState.addProjectile(proj);
-
-  const bc = {
-    type: 'projectile',
-    id: projId,
-    ownerId: shooter.id,
-    x: proj.x, y: proj.y, z: proj.z,
-    vx: proj.vx, vy: proj.vy, vz: proj.vz,
-    color: shooter.color,
-    ...broadcastExtras,
-  };
-  if (delayMs) gameState.scheduleRoundTimer(() => broadcast(bc), delayMs);
-  else broadcast(bc);
+  if (delayMs) {
+    gameState.scheduleRoundTimer(() => gameState.addProjectile(proj), delayMs);
+  } else {
+    gameState.addProjectile(proj);
+  }
+  // No broadcast — projectile appears in the next tick's projectiles array.
 }
 
 // Main entry point. `stats` is the resolved (post-perk) per-shot numbers.

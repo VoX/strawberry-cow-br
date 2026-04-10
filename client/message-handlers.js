@@ -460,6 +460,39 @@ export const handlers = {
       setArmorSpawns(msg.armorPickups);
     }
 
+    // Diff active projectiles — new IDs spawn tracers, removed IDs dispose them.
+    if (msg.projectiles) {
+      const serverProjIds = new Set();
+      for (const sp of msg.projectiles) {
+        serverProjIds.add(sp.id);
+        const existing = S.projData.find(p => p.id === sp.id);
+        if (existing) {
+          existing.x = sp.x; existing.y = sp.y; existing.y3d = sp.z || 0;
+        } else {
+          S.projData.push({
+            id: sp.id, x: sp.x, y: sp.y,
+            vx: 0, vy: 0,
+            color: sp.color || 'pink',
+            bolty: sp.bolty, cowtank: sp.cowtank,
+            y3d: sp.z || 0, vy3d: 0,
+            _fromTick: true,
+          });
+          if (sp.ownerId !== S.myId) {
+            const th = getTerrainHeight(sp.x, sp.y);
+            const pos = { x: sp.x, y: th + 50, z: sp.y };
+            if (sp.bolty) sfxBolty(0.1, pos);
+            else if (sp.cowtank) sfxRocket(0.12, pos);
+            else sfxShoot(0.07, pos);
+          }
+        }
+      }
+      for (let i = S.projData.length - 1; i >= 0; i--) {
+        if (S.projData[i]._fromTick && !serverProjIds.has(S.projData[i].id)) {
+          S.projData.splice(i, 1);
+        }
+      }
+    }
+
     S.me = S.serverPlayers.find(p => p.id === S.myId) || null;
     if (S.me) {
       const dx = S.me.x - iw.lastMeX, dy = S.me.y - iw.lastMeY;

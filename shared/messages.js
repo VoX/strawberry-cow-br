@@ -19,7 +19,7 @@ const S2C = Object.freeze({
   start: 'start',
   tick: 'tick',
   inputAck: 'inputAck',
-  projectile: 'projectile',
+  // projectile removed — rides tick state as projectiles array.
   projectileHit: 'projectileHit',
   wallImpact: 'wallImpact',
   explosion: 'explosion',

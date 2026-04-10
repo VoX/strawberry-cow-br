@@ -1,136 +1,5 @@
 {
-  "broadcasts": [
-    {
-      "color": 16777215,
-      "id": 2,
-      "ownerId": 200,
-      "shotgun": true,
-      "type": "projectile",
-      "vx": 1379.926202,
-      "vy": -14.271551,
-      "vz": 73.130559,
-      "x": 1039.997861,
-      "y": 999.586332,
-      "z": 35
-    },
-    {
-      "color": 16777215,
-      "id": 3,
-      "ownerId": 200,
-      "shotgun": false,
-      "type": "projectile",
-      "vx": 1379.20493,
-      "vy": 46.837598,
-      "vz": -113.901364,
-      "x": 1039.976954,
-      "y": 1001.357612,
-      "z": 35
-    },
-    {
-      "color": 16777215,
-      "id": 4,
-      "ownerId": 200,
-      "shotgun": false,
-      "type": "projectile",
-      "vx": 1379.980482,
-      "vy": 7.339507,
-      "vz": -86.739074,
-      "x": 1039.999434,
-      "y": 1000.212739,
-      "z": 35
-    },
-    {
-      "color": 16777215,
-      "id": 5,
-      "ownerId": 200,
-      "shotgun": false,
-      "type": "projectile",
-      "vx": 1379.570532,
-      "vy": 34.425953,
-      "vz": 76.721003,
-      "x": 1039.987552,
-      "y": 1000.997854,
-      "z": 35
-    },
-    {
-      "color": 16777215,
-      "id": 6,
-      "ownerId": 200,
-      "shotgun": false,
-      "type": "projectile",
-      "vx": 1379.978849,
-      "vy": -7.640454,
-      "vz": -93.171049,
-      "x": 1039.999387,
-      "y": 999.778538,
-      "z": 35
-    },
-    {
-      "color": 16777215,
-      "id": 7,
-      "ownerId": 200,
-      "shotgun": false,
-      "type": "projectile",
-      "vx": 1375.973217,
-      "vy": 105.345654,
-      "vz": 43.673568,
-      "x": 1039.883282,
-      "y": 1003.053497,
-      "z": 35
-    },
-    {
-      "color": 16777215,
-      "id": 8,
-      "ownerId": 200,
-      "shotgun": false,
-      "type": "projectile",
-      "vx": 1378.972071,
-      "vy": -53.254356,
-      "vz": -107.707941,
-      "x": 1039.970205,
-      "y": 998.456395,
-      "z": 35
-    },
-    {
-      "color": 16777215,
-      "id": 9,
-      "ownerId": 200,
-      "shotgun": false,
-      "type": "projectile",
-      "vx": 1379.999985,
-      "vy": 0.201339,
-      "vz": 27.354917,
-      "x": 1040,
-      "y": 1000.005836,
-      "z": 35
-    },
-    {
-      "color": 16777215,
-      "id": 10,
-      "ownerId": 200,
-      "shotgun": false,
-      "type": "projectile",
-      "vx": 1379.662273,
-      "vy": 30.528877,
-      "vz": -161.089345,
-      "x": 1039.990211,
-      "y": 1000.884895,
-      "z": 35
-    },
-    {
-      "color": 16777215,
-      "id": 11,
-      "ownerId": 200,
-      "shotgun": false,
-      "type": "projectile",
-      "vx": 1379.976438,
-      "vy": -8.064143,
-      "vz": 68.95513,
-      "x": 1039.999317,
-      "y": 999.766257,
-      "z": 35
-    }
-  ],
+  "broadcasts": [],
   "mutations": {
     "_lastChatT": 1,
     "aimAngle": -1.570796,
@@ -140,9 +9,13 @@
   },
   "projectiles": [
     {
+      "_color": 16777215,
+      "bolty": false,
+      "cowtank": false,
       "dmg": 4,
       "id": 2,
       "ownerId": 200,
+      "shotgun": true,
       "volleyId": 1,
       "vx": 1379.926202,
       "vy": -14.271551,
@@ -152,9 +25,13 @@
       "z": 35
     },
     {
+      "_color": 16777215,
+      "bolty": false,
+      "cowtank": false,
       "dmg": 4,
       "id": 3,
       "ownerId": 200,
+      "shotgun": false,
       "volleyId": 1,
       "vx": 1379.20493,
       "vy": 46.837598,
@@ -164,9 +41,13 @@
       "z": 35
     },
     {
+      "_color": 16777215,
+      "bolty": false,
+      "cowtank": false,
       "dmg": 4,
       "id": 4,
       "ownerId": 200,
+      "shotgun": false,
       "volleyId": 1,
       "vx": 1379.980482,
       "vy": 7.339507,
@@ -176,9 +57,13 @@
       "z": 35
     },
     {
+      "_color": 16777215,
+      "bolty": false,
+      "cowtank": false,
       "dmg": 4,
       "id": 5,
       "ownerId": 200,
+      "shotgun": false,
       "volleyId": 1,
       "vx": 1379.570532,
       "vy": 34.425953,
@@ -188,9 +73,13 @@
       "z": 35
     },
     {
+      "_color": 16777215,
+      "bolty": false,
+      "cowtank": false,
       "dmg": 4,
       "id": 6,
       "ownerId": 200,
+      "shotgun": false,
       "volleyId": 1,
       "vx": 1379.978849,
       "vy": -7.640454,
@@ -200,9 +89,13 @@
       "z": 35
     },
     {
+      "_color": 16777215,
+      "bolty": false,
+      "cowtank": false,
       "dmg": 4,
       "id": 7,
       "ownerId": 200,
+      "shotgun": false,
       "volleyId": 1,
       "vx": 1375.973217,
       "vy": 105.345654,
@@ -212,9 +105,13 @@
       "z": 35
     },
     {
+      "_color": 16777215,
+      "bolty": false,
+      "cowtank": false,
       "dmg": 4,
       "id": 8,
       "ownerId": 200,
+      "shotgun": false,
       "volleyId": 1,
       "vx": 1378.972071,
       "vy": -53.254356,
@@ -224,9 +121,13 @@
       "z": 35
     },
     {
+      "_color": 16777215,
+      "bolty": false,
+      "cowtank": false,
       "dmg": 4,
       "id": 9,
       "ownerId": 200,
+      "shotgun": false,
       "volleyId": 1,
       "vx": 1379.999985,
       "vy": 0.201339,
@@ -236,9 +137,13 @@
       "z": 35
     },
     {
+      "_color": 16777215,
+      "bolty": false,
+      "cowtank": false,
       "dmg": 4,
       "id": 10,
       "ownerId": 200,
+      "shotgun": false,
       "volleyId": 1,
       "vx": 1379.662273,
       "vy": 30.528877,
@@ -248,9 +153,13 @@
       "z": 35
     },
     {
+      "_color": 16777215,
+      "bolty": false,
+      "cowtank": false,
       "dmg": 4,
       "id": 11,
       "ownerId": 200,
+      "shotgun": false,
       "volleyId": 1,
       "vx": 1379.976438,
       "vy": -8.064143,
