@@ -7,6 +7,8 @@
 // call the same ws.send. Unreliable is advisory — the geckos.io sibling
 // honors it as fire-and-forget UDP.
 
+import { encode, decode } from '@msgpack/msgpack';
+
 let _ws = null;
 let _onMessage = null;
 let _onOpen = null;
@@ -18,10 +20,14 @@ function connect(opts) {
   _onClose = opts && opts.onClose;
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   _ws = new WebSocket(proto + '://' + location.host + '/strawberrycow-fps-ws/');
+  _ws.binaryType = 'arraybuffer';
   _ws.onopen = () => { if (_onOpen) _onOpen(); };
   _ws.onmessage = e => {
     if (!_onMessage) return;
-    try { _onMessage(JSON.parse(e.data)); } catch (err) { /* drop garbage */ }
+    try {
+      const msg = e.data instanceof ArrayBuffer ? decode(new Uint8Array(e.data)) : JSON.parse(e.data);
+      _onMessage(msg);
+    } catch (err) { /* drop garbage */ }
   };
   _ws.onclose = () => { if (_onClose) _onClose(); };
   _ws.onerror = () => { /* surfaced via onclose */ };
@@ -29,7 +35,7 @@ function connect(opts) {
 
 function sendReliable(msg) {
   if (!_ws || _ws.readyState !== 1) return;
-  _ws.send(typeof msg === 'string' ? msg : JSON.stringify(msg));
+  _ws.send(encode(msg));
 }
 
 // Over TCP there's no true unreliable channel — same wire path, different

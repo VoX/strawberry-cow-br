@@ -9,7 +9,7 @@ const { generateMap } = require('./map');
 const { getGroundHeight, WALL_HEIGHT, generateTerrain, getSeed } = require('./terrain');
 const { spawnInitialFood, spawnFood, spawnGoldenFood, spawnWeaponPickup, safeRandPos } = require('./spawning');
 const { spawnBots, updateBots } = require('./bots');
-const { getPlayerStates, getPlayerTicks, broadcastPlayerSnapshot, applyHungerDelta, resolveDeaths, clearPendingDeaths, eliminatePlayer, serializeFood, buildServerStatus } = require('./player');
+const { getPlayerStates, getPlayerTicks, getPlayerTickDeltas, broadcastPlayerSnapshot, applyHungerDelta, resolveDeaths, clearPendingDeaths, eliminatePlayer, serializeFood, buildServerStatus } = require('./player');
 const { handleWeaponPickups, handleArmorPickups } = require('./weapons');
 const { updateProjectiles } = require('./combat');
 const { rand } = require('./utils');
@@ -176,9 +176,15 @@ function gameTick() {
       moveSpeedMult = KNIFE_SPEED_MULT;
     }
 
-    // Capture whether this player was spawn-protected BEFORE the call.
-    // stepPlayerMovement decrements in place; matches the original
-    // skip-rest-of-per-player-work semantics if protection drops mid-call.
+    // Apply deferred jump at drain time so it's in sync with the client
+    // prediction cadence. Checked AFTER queue drain so it fires on the
+    // same tick as the move that was active when Space was pressed.
+    if (p._pendingJump && p.onGround) {
+      p.vz = JUMP_VZ;
+      p.onGround = false;
+      p._pendingJump = false;
+    }
+
     const wasSpawnProtected = p.spawnProtection > 0;
 
     stepPlayerMovement(p, dt, moveWorld, { dx: p.dx, dy: p.dy, walking: p.walking, speedMult: moveSpeedMult }, moveTerrain);
@@ -318,7 +324,7 @@ function gameTick() {
   const tickPayload = {
     type: 'tick',
     tickNum: gameState.getTickNum(),
-    players: getPlayerTicks(),
+    players: getPlayerTickDeltas(),
     zone: gameState.getZone(),
     gameTime: Math.floor(gameState.getGameTime()),
   };
@@ -337,7 +343,8 @@ function gameTick() {
   // idle ticks past the input and snap on every ack. The snapshot is
   // captured in the per-player movement loop above when lastInputSeq
   // first advances.
-  if (gameState.getTickNum() % 5 === 0) {
+  // inputAck at 15 Hz (every 2nd tick) — faster reconciliation for the new TTK
+  if (gameState.getTickNum() % 2 === 0) {
     for (const [, p] of gameState.getPlayers()) {
       if (p.isBot || !p.ws || !p._ackSnapshot) continue;
       const snap = p._ackSnapshot;

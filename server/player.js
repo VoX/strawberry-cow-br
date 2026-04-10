@@ -126,8 +126,44 @@ function getPlayerTick(p) {
   };
 }
 
-// Build the slim tick-broadcast payload. Mirrors getPlayerStates()'s
-// visibility predicate (alive, not-lobby, not-corpse-reaped).
+// Delta tick state cache — stores the previous tick's full state per player
+// so we can compute diffs and only send changed fields.
+const _prevTickState = new Map();
+
+// Build delta tick payload — only sends fields that changed since last tick.
+// First tick for a player sends full state. Players who haven't changed at
+// all are omitted entirely.
+function getPlayerTickDeltas() {
+  const arr = [];
+  for (const [, p] of gameState.getPlayers()) {
+    if (p.corpseReaped) continue;
+    if (!p.alive && !(!p.inLobby && lobbyState.isPlaying())) continue;
+    const cur = getPlayerTick(p);
+    const prev = _prevTickState.get(p.id);
+    if (!prev) {
+      // New player or first tick — send full state
+      arr.push(cur);
+      _prevTickState.set(p.id, { ...cur });
+      continue;
+    }
+    const delta = { id: p.id };
+    let changed = false;
+    for (const key of Object.keys(cur)) {
+      if (key === 'id') continue;
+      if (cur[key] !== prev[key]) { delta[key] = cur[key]; changed = true; }
+    }
+    if (changed) arr.push(delta);
+    // Update cache
+    _prevTickState.set(p.id, { ...cur });
+  }
+  // Clean up cache for players who left
+  for (const id of _prevTickState.keys()) {
+    if (!gameState.getPlayer(id)) _prevTickState.delete(id);
+  }
+  return arr;
+}
+
+// Full tick payload (legacy — used for compatibility if needed)
 function getPlayerTicks() {
   const arr = [];
   for (const [, p] of gameState.getPlayers()) {
@@ -180,4 +216,4 @@ function buildServerStatus() {
   return { type: 'serverStatus', gameState: lobbyState.getPhase(), alive, total, debugScene: gameState.isDebugScene() };
 }
 
-module.exports = { assignColor, getPlayerStates, getPlayerSnapshot, getPlayerTick, getPlayerTicks, broadcastPlayerSnapshot, applyHungerDelta, applyArmorDelta, resolveDeaths, clearPendingDeaths, eliminatePlayer, serializeFood, buildServerStatus };
+module.exports = { assignColor, getPlayerStates, getPlayerSnapshot, getPlayerTick, getPlayerTicks, getPlayerTickDeltas, broadcastPlayerSnapshot, applyHungerDelta, applyArmorDelta, resolveDeaths, clearPendingDeaths, eliminatePlayer, serializeFood, buildServerStatus };

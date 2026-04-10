@@ -5,6 +5,7 @@
 // into server/transports/geckos.js without touching any other file.
 
 const { WebSocketServer } = require('ws');
+const { encodeMsg, decodeMsg } = require('../codec');
 
 // Per-impl peer set. Pre-W.2 the broadcast loop iterated
 // gameState.getPlayers() and skipped non-WS refs by checking
@@ -101,7 +102,7 @@ function init(httpServer) {
 
     ws.on('message', (raw) => {
       let msg;
-      try { msg = JSON.parse(raw); } catch { return; }
+      try { msg = decodeMsg(raw); } catch { return; }
       if (msg && msg.type && !checkRate(ws, msg.type)) return;
       if (_onMessage) _onMessage(ws, msg);
     });
@@ -121,29 +122,21 @@ function onDisconnect(cb) { _onDisconnect = cb; }
 // sibling will tag the payload with `{reliable: true, interval, runs}`.
 function sendReliable(ws, msg) {
   if (!ws || ws.readyState !== 1) return;
-  ws.send(typeof msg === 'string' ? msg : JSON.stringify(msg));
+  ws.send(encodeMsg(msg));
 }
 
-// Unreliable send — over TCP/WS there's no true unreliable channel, but
-// we can approximate by dropping on backpressure. This matches the Phase 7
-// tick broadcast behavior: slow clients fall behind gracefully instead of
-// stalling the entire broadcast loop.
 function sendUnreliable(ws, msg) {
   if (!ws || ws.readyState !== 1) return;
   if (ws.bufferedAmount > BACKPRESSURE_BYTES) return;
-  ws.send(typeof msg === 'string' ? msg : JSON.stringify(msg));
+  ws.send(encodeMsg(msg));
 }
 
-// Broadcast helpers walk this impl's own peer set. Callers that have
-// their own loop (Phase 7's per-client tick stride) call
-// sendReliable/sendUnreliable directly in that loop rather than through
-// broadcast.
 function _broadcast(msg, droppable) {
-  const str = typeof msg === 'string' ? msg : JSON.stringify(msg);
+  const buf = encodeMsg(msg);
   for (const ws of _peers) {
     if (ws.readyState !== 1) continue;
     if (droppable && ws.bufferedAmount > BACKPRESSURE_BYTES) continue;
-    ws.send(str);
+    ws.send(buf);
   }
 }
 function broadcastReliable(msg)   { _broadcast(msg, false); }

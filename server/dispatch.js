@@ -247,9 +247,11 @@ function dispatchMessage(player, msg) {
   if (msg.type === 'dash') {
     handleDash(player);
   }
-  if (msg.type === 'jump' && player._joined && player.alive && player.onGround) {
-    player.vz = JUMP_VZ;
-    player.onGround = false;
+  // Jump is deferred to the next move-queue drain in gameTick so it
+  // applies at the same cadence as client prediction. Fixes Z-axis
+  // reconciliation mismatch that caused jump rubber-banding.
+  if (msg.type === 'jump' && player._joined && player.alive) {
+    player._pendingJump = true;
   }
   // Knife loadout slot — secondary weapon, always available, +20% move
   // speed while held. Pressing 2 stashes the primary on `_primaryWeapon`/
