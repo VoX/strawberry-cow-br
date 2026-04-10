@@ -17,7 +17,7 @@ import { updateHud } from './hud.js';
 import { updateParticles, spawnParticle, PGEO_SPHERE_LO, PGEO_TORUS } from './particles.js';
 import { updateBulletHoles } from './bullet-holes.js';
 import { handlers } from './message-handlers.js';
-import { interpSamplePlayer } from './interp.js';
+import { getInterpolatedEntity, updateInterpolation, clearSnapshots } from './snapshot.js';
 import { predictStep, initPrediction, setCurrentInput, getRenderedPredicted, getRenderOffset } from './prediction.js';
 
 // Wire up viewmodel group ref for input.js ADS toggle
@@ -31,7 +31,9 @@ const _tmpEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 
 // Game loop
 let last = performance.now();
+let frameCount = 0;
 function loop(ts) {
+  frameCount++;
   requestAnimationFrame(loop);
   const rawFrameGap = ts - last;
   const dt = Math.min(rawFrameGap / 1000, 0.1); last = ts;
@@ -52,6 +54,8 @@ function loop(ts) {
 
   if (S.state !== 'playing') { ren.render(scene, cam); return; }
   updateMusicMood(); tickMusic();
+  // Update SI interpolation cache once per frame — all entity lookups read from this.
+  updateInterpolation(frameCount);
 
   const now = Date.now();
   // Killcam / spectator: follow a tracked target. Defaults to killer on death; cyclable via click/arrows.
@@ -67,10 +71,9 @@ function loop(ts) {
     if (!target && firstAlive) { target = firstAlive; S.spectateTargetId = target.id; }
     if (target) {
       spectatingTarget = true;
-      // Sample the interpolation ring so the killcam frames the cow where it
+      // Sample SI interpolation so the killcam frames the cow where it
       // actually renders, not where it jumped to on the latest raw tick.
-      // Without this the orbit visibly stutters 100 ms ahead of the cow mesh.
-      const smooth = interpSamplePlayer(target, performance.now());
+      const smooth = getInterpolatedEntity(target);
       const targetH = getTerrainHeight(smooth.x, smooth.y) + (smooth.z || 0) + 18;
       // Orbit using yaw/pitch — player looks around with mouse, camera stays anchored to target
       const orbitDist = 90;
@@ -349,19 +352,10 @@ setMessageHandler(msg => {
 
 // When the tab regains focus, clear stale interpolation buffers and the
 // CSP frame timing so the first frame after un-throttling doesn't try to
-// lerp between samples that are seconds old. Browsers throttle RAF +
-// network event handlers when a tab is hidden, so on tab return the
-// histBuf is frozen at pre-tab-out state and renderT (now-100ms) is way
-// past the latest sample — interpSamplePlayer would freeze remote cows
-// until fresh ticks arrive. Dropping the buffers forces a clean
-// repopulate from the next few ticks.
+// On tab return, clear SI vaults to prevent interpolation from frozen data.
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) return;
-  for (const p of S.serverPlayers) {
-    if (p._histBuf) p._histBuf.length = 0;
-  }
-  // Reset the render-loop frame clock so dt isn't a multi-second value
-  // on the first un-throttled frame.
+  clearSnapshots();
   last = performance.now();
 });
 

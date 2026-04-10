@@ -3,7 +3,8 @@ import S from './state.js';
 import { cam, ren } from './renderer.js';
 import { initAudio } from './audio.js';
 import { send } from './network.js';
-import { INTERP_DELAY_MS } from './interp.js';
+// SI interpolation buffer is (1000/30)*3 = 100ms — same as old INTERP_DELAY_MS.
+const INTERP_DELAY_MS = 100;
 import { TICK_RATE, BURST_FAMILY, JUMP_VZ } from '../shared/constants.js';
 
 // Jump prediction: server applies vz=200 + onGround=false on receipt of

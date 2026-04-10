@@ -25,8 +25,7 @@ import { disposeMeshTree } from './three-utils.js';
 import { S2C } from '../shared/messages.js';
 import { BURST_FAMILY, HIT_SLOW_DURATION_MS } from '../shared/constants.js';
 import { COL_HEX } from './config.js';
-import { INTERP_HIST_CAP, interpSamplePlayer } from './interp.js';
-import { reconcilePrediction } from './prediction.js';
+import { addSnapshot, getInterpolatedEntity } from './snapshot.js';
 import { spawnBulletHole, clearBulletHoles, removeBulletHolesBySurfaceKey } from './bullet-holes.js';
 
 // Reusable temp vector for the projectile muzzle-offset transform.
@@ -310,48 +309,35 @@ export const handlers = {
       if (iw.gapsCount < 120) iw.gapsCount++;
     }
     iw.lastStateTs = iwNow;
+    // Feed the SI snapshot for time-based interpolation of remote players.
+    if (msg.snapshot) addSnapshot(msg.snapshot);
+
     // Merge each tick into the matching existing player. Track which ids we
-    // saw so we can drop players the server no longer lists (corpse reaped,
-    // left lobby, disconnected). Remote players (not myId) also get their
-    // position appended to an interpolation history ring — the renderer
-    // reads from the ring INTERP_DELAY_MS in the past so motion is smooth
-    // instead of stepping once per tick. Local player keeps the direct
-    // Object.assign path since phase 4 replaces that with CSP.
+    // saw so we can drop players the server no longer lists. All fields
+    // (including position) are merged onto S.serverPlayers for non-interp
+    // uses (HUD, kill feed, etc). Position rendering for remote players
+    // comes from SI.calcInterpolation() in the render loop.
     // Build a one-shot id→player map so the merge loop is O(n) instead of
     // O(n²) per tick on `S.serverPlayers.find(...)`.
     const byId = new Map();
     for (const sp of S.serverPlayers) byId.set(sp.id, sp);
     const seen = new Set();
-    for (const t of msg.players) {
+    const tickPlayers = msg.snapshot ? msg.snapshot.state : (msg.players || []);
+    for (const t of tickPlayers) {
       seen.add(t.id);
       const existing = byId.get(t.id);
       if (!existing) continue; // race: no snapshot yet, skip until one arrives
       if (existing.id === S.myId) {
-        // Camera owns aim/dir for the local player; the server's values
-        // are a stale RTT echo and would clobber the live look direction.
         const { aimAngle, dir, ...rest } = t;
         Object.assign(existing, rest);
-        // Sync server-only movement gates (stun + spawn protection) into
-        // the predicted player. Both make stepPlayerMovement skip the
-        // movement integration entirely, but the client has no way to
-        // predict them — getting hit is server-authoritative, so the
-        // local CSP loop just charges forward into the stun window and
-        // builds up drift until the next reconcile snaps it back. Keeping
-        // these in lockstep with the tick broadcast means the next predict
-        // step after the hit also respects the stun.
+        // Sync server-only movement gates onto predicted player.
         if (S.mePredicted) {
           S.mePredicted.stunTimer = existing.stunTimer || 0;
           S.mePredicted.spawnProtection = existing.spawnProt ? 1 : 0;
         }
       } else {
-        // Merge everything EXCEPT position/aim — those ride the interp ring.
-        // Stats like hunger/ammo/score still want to snap to latest.
+        // Merge all fields — position rendering comes from SI interpolation.
         Object.assign(existing, t);
-        if (!existing._histBuf) existing._histBuf = [];
-        existing._histBuf.push({
-          t: iwNow, x: t.x, y: t.y, z: t.z, aim: t.aimAngle,
-        });
-        if (existing._histBuf.length > INTERP_HIST_CAP) existing._histBuf.shift();
       }
     }
     // Drop players the server dropped. Preserves sticky fields on survivors.
@@ -369,36 +355,6 @@ export const handlers = {
     }
     if (msg.zone) S.serverZone = msg.zone;
     if (S.pingLast > 0) { const pd = performance.now() - S.pingLast; if (pd < 2000) S.pingVal = S.pingVal * 0.7 + pd * 0.3; S.pingLast = 0; }
-  },
-
-  // Low-rate (~6 Hz) echo of the server's highest-applied input seq for
-  // THIS client PLUS the server's authoritative position at this tick.
-  // Phase 4 CSP reconcile compares predicted-at-seq against the embedded
-  // position (not S.me, which would be a later tick and race).
-  inputAck(msg) {
-    if (typeof msg.seq !== 'number' || msg.seq <= S.lastAckedInput) return;
-    if (typeof msg.x !== 'number' || typeof msg.y !== 'number' || typeof msg.z !== 'number') return;
-    S.lastAckedInput = msg.seq;
-    // Net stats: ack arrival timing + server-reported move-channel loss.
-    const ns = S.netStats;
-    const ackT = performance.now();
-    ns.inputAckArrivals.push(ackT);
-    while (ns.inputAckArrivals.length > 0 && ackT - ns.inputAckArrivals[0] > 1000) {
-      ns.inputAckArrivals.shift();
-    }
-    if (typeof msg.moveArrivedPct === 'number') ns.moveArrivedPct = msg.moveArrivedPct;
-    // Snap server-only movement gates onto the predicted player too.
-    // The tick handler also syncs these, but inputAck can arrive between
-    // ticks and we want the very next predict step to respect the gates.
-    if (S.mePredicted) {
-      if (typeof msg.stunTimer === 'number') S.mePredicted.stunTimer = msg.stunTimer;
-      if (typeof msg.spawnProt === 'boolean') S.mePredicted.spawnProtection = msg.spawnProt ? 1 : 0;
-    }
-    reconcilePrediction({
-      x: msg.x, y: msg.y, z: msg.z,
-      vz: msg.vz || 0,
-      onGround: !!msg.onGround,
-    });
   },
 
   // Upsert a single player's full sticky+mutable shape. Emitted by the server
@@ -769,7 +725,7 @@ export const handlers = {
       if (target) {
         const smooth = target.id === S.myId
           ? { x: target.x, y: target.y, z: target.z }
-          : interpSamplePlayer(target, performance.now());
+          : getInterpolatedEntity(target);
         const tz = smooth.z !== undefined ? smooth.z : getTerrainHeight(smooth.x, smooth.y);
         const impactY = msg.headshot ? tz + 36 : tz + 20;
         const count = msg.headshot ? 18 : 8;
@@ -1212,7 +1168,7 @@ export const handlers = {
       // the visible cow, not 100 ms ahead of it.
       const smooth = dasher.id === S.myId
         ? { x: dasher.x, y: dasher.y }
-        : interpSamplePlayer(dasher, performance.now());
+        : getInterpolatedEntity(dasher);
       const th = getTerrainHeight(smooth.x, smooth.y);
       for (let i = 0; i < 15; i++) {
         const sz = 3 + Math.random() * 4;

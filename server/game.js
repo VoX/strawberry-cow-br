@@ -1,5 +1,11 @@
 const { TICK_RATE, MAP_W, MAP_H } = require('./config');
 const { KNIFE_SPEED_MULT, JUMP_VZ } = require('../shared/constants');
+const { SnapshotInterpolation } = require('@geckos.io/snapshot-interpolation');
+
+// Server-side SI — creates timestamped snapshots and stores them in a vault
+// for lag-compensated hit detection (time rewind).
+const SI = new SnapshotInterpolation(TICK_RATE);
+SI.vault.setMaxSize(300); // 10 seconds at 30 FPS
 const { stepPlayerMovement } = require('../shared/movement');
 const { broadcast, sendTo } = require('./network');
 const transport = require('./transport');
@@ -189,22 +195,6 @@ function gameTick() {
 
     stepPlayerMovement(p, dt, moveWorld, { dx: p.dx, dy: p.dy, walking: p.walking, speedMult: moveSpeedMult }, moveTerrain);
 
-    // Snapshot stored in place — re-armed only when lastInputSeq
-    // advances. Each draining of the queue advances lastInputSeq by
-    // exactly one client predict step's worth, so the snapshot now
-    // truly represents "first server tick that integrated this seq",
-    // matching the client's first ring entry for that seq.
-    if (!p.isBot && (p._ackSnapshot == null || p.lastInputSeq > p._ackSnapshot.seq)) {
-      if (!p._ackSnapshot) p._ackSnapshot = { seq: 0, x: 0, y: 0, z: 0, vz: 0, onGround: false, stunTimer: 0, spawnProt: false };
-      const snap = p._ackSnapshot;
-      snap.seq = p.lastInputSeq || 0;
-      snap.x = p.x; snap.y = p.y; snap.z = p.z;
-      snap.vz = p.vz || 0;
-      snap.onGround = !!p.onGround;
-      snap.stunTimer = p.stunTimer || 0;
-      snap.spawnProt = p.spawnProtection > 0;
-    }
-
     // Skip the remaining per-player work (hunger, food, cooldowns) for
     // spawn-protected players just like the old inline code did.
     if (wasSpawnProtected) continue;
@@ -307,24 +297,18 @@ function gameTick() {
   // "dead" players from appearing alive for another 33 ms.
   if (resolveDeaths() > 0) checkWinner();
 
-  // Broadcast tick — mutable-per-tick player fields only. Sticky fields
-  // (name/color/weapon/perks/xpToNext/sizeMult/recoilMult/extMagMult) travel
-  // on the 'playerSnapshot' message emitted at weapon pickup / perk /
-  // level up / armor / dual-wield events. Zone is 4 numbers, sent every tick.
-  // Phase 7: build the tick payload once, then per-client sendUnreliable
-  // with a stride gate so each client sees their chosen updateRate. A
-  // player with updateRate=15 gets every 2nd tick; updateRate=30 gets
-  // every tick. `tick` is unreliable — on WebSocket this drops under
-  // backpressure; on geckos.io it goes out as fire-and-forget UDP.
-  //
-  // KNOWN LATENT ISSUES — safe today because no client UI changes
-  // updateRate from the default 30 (stride always = 1). Fix together
-  // BEFORE shipping a client-side rate control: interp delay, displayTick
-  // math, and inputAck cadence all assume 30 Hz tick arrival.
+  // Broadcast tick as an SI snapshot. The snapshot wraps the mutable-per-tick
+  // player fields in a timestamped envelope that the client's SI instance
+  // uses for interpolation (remote players) and reconciliation (local player).
+  // Sticky fields (name/color/weapon/perks) still travel on 'playerSnapshot'.
+  const players = getPlayerTicks();
+  const snapshot = SI.snapshot.create(players);
+  SI.vault.add(snapshot); // store for lag-compensated hit detection
+
   const tickPayload = {
     type: 'tick',
     tickNum: gameState.getTickNum(),
-    players: getPlayerTicks(),
+    snapshot,
     zone: gameState.getZone(),
     gameTime: Math.floor(gameState.getGameTime()),
   };
@@ -334,35 +318,6 @@ function gameTick() {
     const stride = Math.max(1, Math.round(TICK_RATE / (p.updateRate || TICK_RATE)));
     if (currentTick % stride !== 0) continue;
     transport.sendUnreliable(p.ws, tickPayload);
-  }
-
-  // Phase 2 input ack — echo each human player's last-applied input seq
-  // plus the server-authoritative position AT THE TICK THAT FIRST PROCESSED
-  // THAT SEQ. CSP reconcile pairs predicted-at-seq against this snapshot;
-  // sending the LATEST position would let drift accumulate linearly with
-  // idle ticks past the input and snap on every ack. The snapshot is
-  // captured in the per-player movement loop above when lastInputSeq
-  // first advances.
-  // inputAck at 15 Hz (every 2nd tick) — faster reconciliation for the new TTK
-  if (gameState.getTickNum() % 2 === 0) {
-    for (const [, p] of gameState.getPlayers()) {
-      if (p.isBot || !p.ws || !p._ackSnapshot) continue;
-      const snap = p._ackSnapshot;
-      // Net stats — moves received in the trailing 1-second window vs
-      // expected (TICK_RATE/sec). Lets the client debug overlay show
-      // unreliable C2S packet loss.
-      const moveArrivedPct = p._moveArrivals ? Math.round((p._moveArrivals.length / TICK_RATE) * 100) : 0;
-      sendTo(p.ws, {
-        type: 'inputAck',
-        seq: snap.seq,
-        x: snap.x, y: snap.y, z: snap.z,
-        vz: snap.vz,
-        onGround: snap.onGround,
-        stunTimer: snap.stunTimer,
-        spawnProt: snap.spawnProt,
-        moveArrivedPct,
-      });
-    }
   }
 }
 
@@ -384,4 +339,4 @@ function checkWinner() {
 
 gameFsm.registerStartGame(startGame);
 
-module.exports = { startGame, gameTick, checkWinner };
+module.exports = { startGame, gameTick, checkWinner, SI };
