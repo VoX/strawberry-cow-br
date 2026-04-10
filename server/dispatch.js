@@ -46,6 +46,12 @@ function createPlayer(transportRef) {
     lastInputSeq: 0,
     updateRate: 30,
     _joined: false,
+    // Per-client delta compression state. Ring of recent full snapshots
+    // indexed by sequence number. The tick broadcast deltas against the
+    // last snapshot the client acked.
+    _snapRing: new Array(32).fill(null),
+    _snapSeq: 0,
+    _lastAckedSnapSeq: -1,
   };
 }
 
@@ -201,6 +207,10 @@ function dispatchMessage(player, msg) {
     }
   }
   if (msg.type === 'move' && player._joined && player.alive) {
+    // Update delta compression ack — client piggybacks on every move.
+    if (typeof msg.ackSnap === 'number' && msg.ackSnap > player._lastAckedSnapSeq) {
+      player._lastAckedSnapSeq = msg.ackSnap;
+    }
     // Enqueue the move for the next tick's drain instead of overwriting
     // dx/dy directly. Each queue entry carries its OWN seq + input —
     // the gameTick movement loop pops one per tick and integrates

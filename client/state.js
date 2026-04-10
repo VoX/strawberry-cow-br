@@ -46,6 +46,7 @@ const S = {
   lastTickNum: 0, // monotonic server tick counter — updated from every `tick` broadcast. Consumers: phases 1/4/5/6 of the netcode plan.
   inputSeq: 0,    // client-side monotonic counter for STATEFUL_INPUT_TYPES. Incremented in network.js::send.
   lastAckedInput: 0, // highest seq the server has confirmed applying — echoed via inputAck broadcast.
+  lastRecvSnapSeq: -1, // last snapshot seq received — piggybacked on moves for delta ack
   mePredicted: null, // predicted local player state — camera reads from here, reconciled against server on inputAck.
   localHitSlowEndsAt: 0, // performance.now() ms — local on-hit slowdown timer (client-authoritative)
   localPrimaryWeapon: null, // last-held primary stashed when switching to knife

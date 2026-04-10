@@ -303,42 +303,58 @@ export const handlers = {
       if (iw.gapsCount < 120) iw.gapsCount++;
     }
     iw.lastStateTs = iwNow;
-    // Feed the SI snapshot for time-based interpolation of remote players.
-    if (msg.snapshot) addSnapshot(msg.snapshot);
+    // Track snapshot seq for delta compression ack piggybacking.
+    if (typeof msg.snapSeq === 'number') S.lastRecvSnapSeq = msg.snapSeq;
 
-    // Merge each tick into the matching existing player. Track which ids we
-    // saw so we can drop players the server no longer lists. All fields
-    // (including position) are merged onto S.serverPlayers for non-interp
-    // uses (HUD, kill feed, etc). Position rendering for remote players
-    // comes from SI.calcInterpolation() in the render loop.
-    // Build a one-shot id→player map so the merge loop is O(n) instead of
-    // O(n²) per tick on `S.serverPlayers.find(...)`.
+    // Delta merge: if this is a delta tick (no keyframe flag), the state
+    // array contains only changed fields per entity. Merge onto cached
+    // S.serverPlayers. If keyframe, replace entirely.
     const byId = new Map();
     for (const sp of S.serverPlayers) byId.set(sp.id, sp);
-    const seen = new Set();
     const tickPlayers = msg.snapshot ? msg.snapshot.state : (msg.players || []);
-    for (const t of tickPlayers) {
-      seen.add(t.id);
-      const existing = byId.get(t.id);
-      if (!existing) continue; // race: no snapshot yet, skip until one arrives
-      if (existing.id === S.myId) {
-        const { aimAngle, dir, ...rest } = t;
-        Object.assign(existing, rest);
-        // Sync server-only movement gates onto predicted player.
-        if (S.mePredicted) {
-          S.mePredicted.stunTimer = existing.stunTimer || 0;
-          S.mePredicted.spawnProtection = existing.spawnProt ? 1 : 0;
+    const isKeyframe = !!msg.keyframe;
+
+    if (isKeyframe) {
+      // Full state — replace serverPlayers entirely.
+      S.serverPlayers = tickPlayers.map(t => ({ ...t }));
+    } else {
+      // Delta — merge changed fields onto existing cached state.
+      const seen = new Set();
+      for (const t of tickPlayers) {
+        seen.add(t.id);
+        const existing = byId.get(t.id);
+        if (!existing) {
+          // New player (or _full flag) — append.
+          S.serverPlayers.push({ ...t });
+          continue;
         }
-      } else {
-        // Merge all fields — position rendering comes from SI interpolation.
-        Object.assign(existing, t);
+        if (existing.id === S.myId) {
+          const { aimAngle, dir, ...rest } = t;
+          Object.assign(existing, rest);
+        } else {
+          Object.assign(existing, t);
+        }
       }
+      // On keyframes we replaced entirely. On deltas, players omitted from
+      // the delta are UNCHANGED (not removed). Only remove players that
+      // the server explicitly stopped including — detected by comparing
+      // against a full-state tick. For deltas, we keep everyone.
     }
-    // Drop players the server dropped. Preserves sticky fields on survivors.
-    for (let i = S.serverPlayers.length - 1; i >= 0; i--) {
-      if (!seen.has(S.serverPlayers[i].id)) S.serverPlayers.splice(i, 1);
+
+    // Sync server-only movement gates onto predicted player.
+    const me = S.serverPlayers.find(p => p.id === S.myId);
+    if (me && S.mePredicted) {
+      S.mePredicted.stunTimer = me.stunTimer || 0;
+      S.mePredicted.spawnProtection = me.spawnProt ? 1 : 0;
     }
-    S.me = byId.get(S.myId) || null;
+
+    // Feed reconstructed full state to SI for remote player interpolation.
+    if (msg.snapshot) {
+      const fullState = S.serverPlayers.map(p => ({ ...p }));
+      addSnapshot({ id: msg.snapshot.id, time: msg.snapshot.time, state: fullState });
+    }
+
+    S.me = S.serverPlayers.find(p => p.id === S.myId) || null;
     if (S.me) {
       const dx = S.me.x - iw.lastMeX, dy = S.me.y - iw.lastMeY;
       iw.deltas[iw.deltasIdx] = Math.sqrt(dx * dx + dy * dy);

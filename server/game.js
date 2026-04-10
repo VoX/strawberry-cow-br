@@ -304,26 +304,66 @@ function gameTick() {
   // "dead" players from appearing alive for another 33 ms.
   if (resolveDeaths() > 0) checkWinner();
 
-  // Broadcast tick as an SI snapshot. The snapshot wraps the mutable-per-tick
-  // player fields in a timestamped envelope that the client's SI instance
-  // uses for interpolation (remote players) and reconciliation (local player).
-  // Sticky fields (name/color/weapon/perks) are included in every tick.
+  // Build full player state and SI snapshot for lag comp vault.
   const players = getPlayerTicks();
   const snapshot = SI.snapshot.create(players);
-  SI.vault.add(snapshot); // store for lag-compensated hit detection
+  SI.vault.add(snapshot);
 
-  const tickPayload = {
-    type: 'tick',
-    tickNum: gameState.getTickNum(),
-    snapshot,
-    zone: gameState.getZone(),
-    gameTime: Math.floor(gameState.getGameTime()),
-  };
+  // Per-client delta-compressed tick broadcast. Each client gets a delta
+  // against the last snapshot they acked, or a full keyframe if no ack.
+  const SNAP_RING_SIZE = 32;
   const currentTick = gameState.getTickNum();
+  const tickZone = gameState.getZone();
+  const gameTime = Math.floor(gameState.getGameTime());
   for (const [, p] of gameState.getPlayers()) {
     if (p.isBot || !p.ws) continue;
     const stride = Math.max(1, Math.round(TICK_RATE / (p.updateRate || TICK_RATE)));
     if (currentTick % stride !== 0) continue;
+
+    const seq = p._snapSeq++;
+    // Store current full state in the ring for future deltas.
+    p._snapRing[seq % SNAP_RING_SIZE] = { seq, state: players };
+
+    // Find the acked baseline.
+    let baseline = null;
+    if (p._lastAckedSnapSeq >= 0) {
+      const entry = p._snapRing[p._lastAckedSnapSeq % SNAP_RING_SIZE];
+      if (entry && entry.seq === p._lastAckedSnapSeq) baseline = entry.state;
+    }
+
+    let tickPayload;
+    if (!baseline) {
+      // No valid baseline — send full keyframe.
+      tickPayload = {
+        type: 'tick', tickNum: currentTick, snapSeq: seq,
+        snapshot: { id: snapshot.id, time: snapshot.time, state: players },
+        zone: tickZone, gameTime, keyframe: true,
+      };
+    } else {
+      // Compute delta against baseline.
+      const baseById = new Map();
+      for (const bp of baseline) baseById.set(bp.id, bp);
+      const delta = [];
+      for (const cur of players) {
+        const base = baseById.get(cur.id);
+        if (!base) {
+          delta.push({ ...cur, _full: true }); // new player
+          continue;
+        }
+        const d = { id: cur.id };
+        let changed = false;
+        for (const key of Object.keys(cur)) {
+          if (key === 'id') continue;
+          if (cur[key] !== base[key]) { d[key] = cur[key]; changed = true; }
+        }
+        if (changed) delta.push(d);
+      }
+      tickPayload = {
+        type: 'tick', tickNum: currentTick, snapSeq: seq,
+        snapshot: { id: snapshot.id, time: snapshot.time, state: delta },
+        zone: tickZone, gameTime,
+      };
+    }
     transport.sendUnreliable(p.ws, tickPayload);
   }
 
