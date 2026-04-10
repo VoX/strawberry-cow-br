@@ -115,6 +115,19 @@ function generateMap() {
   gameState.addShelter({ x: MAP_W / 2, y: MAP_H - 60, r: 60 });
   gameState.addShelter({ x: 60, y: MAP_H / 2, r: 60 });
   gameState.addShelter({ x: MAP_W - 60, y: MAP_H / 2, r: 60 });
+
+  // --- Survival landmarks ---
+  // The Barn — large central structure, main gathering hub
+  addHouse(MAP_W / 2, MAP_H / 2, 240, 200, 'S');
+
+  // Milking Station — east side, scrap-heavy area
+  addHouse(MAP_W - 350, MAP_H / 2, 160, 140, 'W');
+
+  // Hay Fields outpost — west side, food-rich area
+  addHouse(350, MAP_H / 2, 140, 120, 'E');
+
+  // Quarry shelter — south, near stone/metal resources
+  addHouse(MAP_W / 2, MAP_H - 250, 160, 140, 'N');
 }
 
 module.exports = { generateMap };
