@@ -26,6 +26,7 @@ import { S2C } from '../shared/messages.js';
 import { BURST_FAMILY, HIT_SLOW_DURATION_MS } from '../shared/constants.js';
 import { COL_HEX } from './config.js';
 import { addSnapshot, getInterpolatedEntity } from './snapshot.js';
+import { tickLocalCooldown } from './input.js';
 import { reconcilePrediction } from './prediction.js';
 import { spawnBulletHole, clearBulletHoles, removeBulletHolesBySurfaceKey } from './bullet-holes.js';
 
@@ -379,6 +380,8 @@ export const handlers = {
       S.mePredicted.stunTimer = me.stunTimer || 0;
       S.mePredicted.spawnProtection = me.spawnProt ? 1 : 0;
     }
+    // Sync local fire cooldown from server tick
+    if (me) tickLocalCooldown(me.attackCooldown || 0);
 
     // Feed reconstructed full state to SI for remote player interpolation.
     if (msg.snapshot) {

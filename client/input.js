@@ -18,6 +18,13 @@ function predictJump() {
   mp.onGround = false;
 }
 
+// Client-side fire cooldown — mirrors the server's attackCooldown so
+// predicted tracers don't spawn faster than the weapon can fire.
+// Reset from the server tick value each tick, decremented locally each frame.
+let _localAttackCooldown = 0;
+export function tickLocalCooldown(serverCooldown) { _localAttackCooldown = serverCooldown; }
+export function stepLocalCooldown(dt) { if (_localAttackCooldown > 0) _localAttackCooldown -= dt; }
+
 // Lag comp: attack messages carry serverTime so the server can rewind
 // entity positions to what the shooter was seeing via SI vault.
 
@@ -45,9 +52,9 @@ export function doAttack() {
   });
   // Instant predicted tracer — spawn from the local muzzle so the
   // shooter sees their shot immediately without waiting for the server.
-  // The tick handler remaps this to the real server projectile ID when
-  // it arrives, correcting velocity + trajectory.
-  if (S.me && S.me.attackCooldown <= 0 && (S.me.ammo > 0 || S.me.ammo === -1)
+  // Gated on the LOCAL cooldown timer to prevent spawning faster than
+  // the weapon's fire rate.
+  if (S.me && _localAttackCooldown <= 0 && (S.me.ammo > 0 || S.me.ammo === -1)
       && (!S.me.reloading || S.me.weapon === 'shotgun')) {
     const wep = S.me.weapon || 'normal';
     const MUZZLES = {
@@ -71,6 +78,10 @@ export function doAttack() {
       _localPredicted: true,
       _spawnedAt: performance.now(),
     });
+    // Set local cooldown to prevent spawning another tracer before the
+    // weapon can fire again. Uses the server's attackCooldown from the
+    // last tick as the base — it reflects the weapon's actual fire rate.
+    _localAttackCooldown = S.me.attackCooldown > 0 ? S.me.attackCooldown : 0.15;
   }
 }
 

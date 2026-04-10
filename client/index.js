@@ -4,7 +4,7 @@ import S from './state.js';
 import { sfx, tickMusic, updateMusicMood, updateAudioListener } from './audio.js';
 import { scene, cam, ren, sun, sky, cloudPlanes, vmScene, vmCam } from './renderer.js';
 import { getTerrainHeight } from './terrain.js';
-import { setVmGroupRef } from './input.js';
+import { setVmGroupRef, stepLocalCooldown } from './input.js';
 import { connect, send, setMessageHandler } from './network.js';
 import './ui.js';
 import { updateCows } from './entities.js';
@@ -123,6 +123,7 @@ function loop(ts) {
     setCurrentInput(curMx, curMz, curWalking, curAim);
     if (!S.mePredicted) initPrediction();
     predictStep(dt);
+    stepLocalCooldown(dt);
     // Repeat jump while space is held — re-trigger when landing
     if (S._spaceHeld && S.mePredicted && S.mePredicted.onGround) {
       send({ type: 'jump' });
