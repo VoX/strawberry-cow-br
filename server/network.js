@@ -20,9 +20,7 @@ const transport = require('./transport');
 const UNRELIABLE_TYPES = new Set([
   'tick',
   // Temp entities — fire-and-forget visuals/audio:
-  // projectile stays reliable — the shooter needs to see their own tracer.
-  // A full hitscan conversion (Phase 4) would add client-side tracer
-  // prediction and make this unreliable, but that's a bigger change.
+  'projectile',  // tracer visual — shooter has client-side predicted tracer
   'wallImpact', 'explosion',
   'meleeSwing', 'meleeHit', 'shieldHit',
   'mooTaunt', 'cowstrikeWarning', 'cowstrike',
