@@ -867,6 +867,26 @@ export const handlers = {
     if (msg.playerId === S.myId) {
       sfx(600, 0.06, 'square', 0.05);
     }
+    // Debris particles at the node's position
+    const nodePos = S._resourceNodePositions && S._resourceNodePositions.find(n => n.id === msg.nodeId);
+    if (nodePos) {
+      const th = getTerrainHeight(nodePos.x, nodePos.y);
+      const col = { grass: 0x44aa22, wood: 0x8B4513, stone: 0x888888, metal: 0xcc7722 }[msg.resourceType] || 0x888888;
+      for (let i = 0; i < 5; i++) {
+        spawnParticle({
+          geo: PGEO_BOX, color: col,
+          x: nodePos.x + (Math.random() - 0.5) * 15,
+          y: th + 10 + Math.random() * 15,
+          z: nodePos.y + (Math.random() - 0.5) * 15,
+          sx: 1 + Math.random() * 2,
+          vx: (Math.random() - 0.5) * 60,
+          vy: 20 + Math.random() * 40,
+          vz: (Math.random() - 0.5) * 60,
+          gy: 200,
+          life: 0.6 + Math.random() * 0.3, peakOpacity: 0.8,
+        });
+      }
+    }
   },
 
   sleepingBagPlaced(msg) {
