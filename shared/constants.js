@@ -66,6 +66,17 @@ const STATEFUL_INPUT_TYPES = new Set([
   'move',
 ]);
 
+// Resource nodes — gathering via knife melee. Each type defines HP to
+// harvest, resource yield per hit, resource type name, and respawn time.
+const RESOURCE_TYPES = {
+  grass: { hp: 30,  yield: 5,  resource: 'grass', respawnMs: 120000 },
+  tree:  { hp: 80,  yield: 10, resource: 'wood',  respawnMs: 120000 },
+  rock:  { hp: 100, yield: 8,  resource: 'stone', respawnMs: 120000 },
+  scrap: { hp: 60,  yield: 4,  resource: 'metal', respawnMs: 120000 },
+};
+const RESOURCE_SPAWN_COUNTS = { grass: 40, tree: 20, rock: 15, scrap: 8 };
+const RESOURCE_CAP = 500;
+
 const COLORS = ['pink','blue','green','gold','purple','red','orange','cyan'];
 const FOOD_TYPES = [
   {name:'strawberry',hunger:15,pts:10},
@@ -85,6 +96,7 @@ module.exports = {
   KNIFE_SPEED_MULT, HIT_SLOW_MULT, HIT_SLOW_DURATION_MS,
   SPEED_MULT_MIN, SPEED_MULT_MAX,
   KNIFE_MELEE_RANGE, KNIFE_MELEE_CONE_COS, KNIFE_MELEE_DAMAGE, KNIFE_MELEE_CD_MS,
+  RESOURCE_TYPES, RESOURCE_SPAWN_COUNTS, RESOURCE_CAP,
   STATEFUL_INPUT_TYPES, BURST_FAMILY, DUAL_WIELD_FAMILY, MAG_SIZES, EXT_MAG_SIZES,
   COLORS, FOOD_TYPES, WEAPON_TYPES,
 };

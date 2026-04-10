@@ -123,6 +123,7 @@ function getPlayerTick(p) {
     spawnProt: p.spawnProtection > 0,
     ammo: p.ammo !== undefined ? p.ammo : -1, reloading: p.reloading > 0,
     crouching: !!p.walking,
+    resources: p.resources || null,
   };
 }
 

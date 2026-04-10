@@ -13,6 +13,7 @@ const { getPlayerStates, getPlayerTicks, broadcastPlayerSnapshot, applyHungerDel
 const { handleWeaponPickups, handleArmorPickups } = require('./weapons');
 const { updateProjectiles } = require('./combat');
 const { rand } = require('./utils');
+const { spawnResourceNodes, tickResourceNodes, serializeActiveNodes } = require('./resources');
 const gameFsm = require('./game-fsm');
 
 // Default stats applied to every player on spawn/respawn. Kept here so
@@ -28,6 +29,7 @@ const FRESH_PLAYER_STATS = {
   ammo: 15, reloading: 0,
   spawnProtection: 2,
   barricadeReadyAt: 0, mooReadyAt: 0, meleeReadyAt: 0,
+  resources: { grass: 0, wood: 0, stone: 0, metal: 0 },
 };
 
 function randomSpawnPos() {
@@ -57,6 +59,7 @@ function initWorld() {
   generateMap();
   spawnInitialFood();
   spawnBots();
+  spawnResourceNodes();
   gameState.clearTickInterval();
   gameState.setTickInterval(setInterval(gameTick, 1000 / TICK_RATE));
 }
@@ -73,6 +76,7 @@ function buildWorldSnapshot() {
     barricades: gameState.getBarricades(),
     armorPickups: gameState.getArmorPickups().map(a => ({ id: a.id, x: a.x, y: a.y })),
     weapons: gameState.getWeaponPickups().map(w => ({ id: w.id, x: w.x, y: w.y, weapon: w.weapon, spawnTime: w.spawnTime })),
+    resourceNodes: serializeActiveNodes(),
   };
 }
 
@@ -270,6 +274,9 @@ function gameTick() {
 
   // Update AI bots
   updateBots(dt);
+
+  // Resource node respawn tick
+  tickResourceNodes();
 
   // Projectile updates
   updateProjectiles(dt);

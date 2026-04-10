@@ -5,7 +5,7 @@ const { getTerrainHeight, getGroundHeight, WALL_HEIGHT } = require('./terrain');
 const ballistics = require('./ballistics');
 const weaponFire = require('./weapon-fire');
 const { applyHungerDelta, applyArmorDelta, broadcastPlayerSnapshot } = require('./player');
-const { MAG_SIZES, EXT_MAG_SIZES, DUAL_WIELD_FAMILY, KNIFE_MELEE_RANGE, KNIFE_MELEE_CONE_COS, KNIFE_MELEE_DAMAGE, KNIFE_MELEE_CD_MS } = require('../shared/constants');
+const { MAG_SIZES, EXT_MAG_SIZES, DUAL_WIELD_FAMILY, KNIFE_MELEE_RANGE, KNIFE_MELEE_CONE_COS, KNIFE_MELEE_DAMAGE, KNIFE_MELEE_CD_MS, RESOURCE_TYPES, RESOURCE_CAP } = require('../shared/constants');
 
 
 const BASE_EYE_HEIGHT = 35;
@@ -455,6 +455,45 @@ function handleMelee(player) {
   const fx = Math.sin(aim);
   const fy = Math.cos(aim);
   const rangeSq = KNIFE_MELEE_RANGE * KNIFE_MELEE_RANGE;
+
+  // --- Resource node gathering (checked before player targets) ---
+  const nodeRange = KNIFE_MELEE_RANGE + 20; // nodes are slightly larger
+  const nodeRangeSq = nodeRange * nodeRange;
+  let hitNode = null, hitNodeDistSq = Infinity;
+  for (const node of gameState.getResourceNodes()) {
+    if (node.respawnAt) continue; // depleted
+    const dx = node.x - player.x, dy = node.y - player.y;
+    const distSq = dx * dx + dy * dy;
+    if (distSq > nodeRangeSq || distSq < 1) continue;
+    const dist = Math.sqrt(distSq);
+    const dot = (dx * fx + dy * fy) / dist;
+    if (dot < KNIFE_MELEE_CONE_COS) continue;
+    if (distSq < hitNodeDistSq) { hitNode = node; hitNodeDistSq = distSq; }
+  }
+
+  broadcast({ type: 'meleeSwing', playerId: player.id, x: player.x, y: player.y });
+
+  if (hitNode) {
+    const cfg = RESOURCE_TYPES[hitNode.type];
+    hitNode.hp -= KNIFE_MELEE_DAMAGE;
+    // Grant resources to the gatherer
+    if (player.resources) {
+      const resKey = cfg.resource;
+      player.resources[resKey] = Math.min(RESOURCE_CAP, (player.resources[resKey] || 0) + cfg.yield);
+    }
+    if (hitNode.hp <= 0) {
+      hitNode.hp = 0;
+      hitNode.respawnAt = Date.now() + cfg.respawnMs;
+      broadcast({ type: 'resourceNodeDepleted', id: hitNode.id });
+    }
+    broadcast({
+      type: 'resourceHit', nodeId: hitNode.id, playerId: player.id,
+      hp: hitNode.hp, yield: cfg.yield, resourceType: cfg.resource,
+    });
+    return; // node hit — don't also check players
+  }
+
+  // --- Player melee target ---
   let hit = null, hitDistSq = Infinity;
   for (const [, p] of gameState.getPlayers()) {
     if (p.id === player.id || !p.alive || !p._joined) continue;
@@ -467,7 +506,6 @@ function handleMelee(player) {
     if (distSq < hitDistSq) { hit = p; hitDistSq = distSq; }
   }
 
-  broadcast({ type: 'meleeSwing', playerId: player.id, x: player.x, y: player.y });
   if (!hit) return;
 
   let dmg = KNIFE_MELEE_DAMAGE;

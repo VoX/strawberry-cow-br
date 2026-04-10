@@ -31,6 +31,7 @@ function initHudRefs() {
     barricadeBar: document.getElementById('barricadeBar'),
     barricadeFill: document.getElementById('barricadeFill'),
     barricadeLabel: document.getElementById('barricadeLabel'),
+    resourceBar: document.getElementById('resourceBar'),
     spectateMsg: document.getElementById('spectateMsg'),
     playerCount: document.getElementById('playerCount'),
     chatLog: document.getElementById('chatLog'),
@@ -220,6 +221,21 @@ export function updateHud(me, time, dt) {
   for (let i = 0; i < S.serverPlayers.length; i++) if (S.serverPlayers[i].alive) _aliveCount++;
   const pcSig = _aliveCount + '/' + S.serverPlayers.length;
   if (S._pcSig !== pcSig) { S._pcSig = pcSig; H.playerCount.textContent = '\u{1F404} ' + pcSig; }
+
+  // Resource bar — shows gathered resources, visible while alive
+  if (H.resourceBar) {
+    if (me.resources) {
+      const r = me.resources;
+      H.resourceBar.style.display = 'block';
+      const sig = r.grass + '|' + r.wood + '|' + r.stone + '|' + r.metal;
+      if (S._resSig !== sig) {
+        S._resSig = sig;
+        H.resourceBar.textContent = '\u{1F33F} ' + r.grass + '  \u{1FAB5} ' + r.wood + '  \u{1FAA8} ' + r.stone + '  \u{2699} ' + r.metal;
+      }
+    } else {
+      H.resourceBar.style.display = 'none';
+    }
+  }
 
   // Debug overlay
   let dbg = document.getElementById('debugOverlay');

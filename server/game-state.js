@@ -32,6 +32,7 @@ class GameState {
     this._weaponPickups = [];
     this._armorPickups = [];
     this._barricades = [];
+    this._resourceNodes = [];
 
     // static round features (rebuilt each round in generateMap)
     this._walls = [];
@@ -180,6 +181,8 @@ class GameState {
 
   getBarricades() { return this._barricades; }
   addBarricade(b) { this._barricades.push(b); }
+  getResourceNodes() { return this._resourceNodes; }
+  addResourceNode(n) { this._resourceNodes.push(n); }
   removeBarricade(id) {
     const idx = this._barricades.findIndex(b => b.id === id);
     if (idx >= 0) this._barricades.splice(idx, 1);
@@ -263,6 +266,7 @@ class GameState {
     this._weaponPickups.length = 0;
     this._armorPickups.length = 0;
     this._barricades.length = 0;
+    this._resourceNodes.length = 0;
     this._walls.length = 0;
     this._mudPatches.length = 0;
     this._healPonds.length = 0;

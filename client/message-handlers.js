@@ -27,6 +27,7 @@ import { COL_HEX } from './config.js';
 import { INTERP_HIST_CAP, interpSamplePlayer } from './interp.js';
 import { reconcilePrediction } from './prediction.js';
 import { spawnBulletHole, clearBulletHoles, removeBulletHolesBySurfaceKey } from './bullet-holes.js';
+import { spawnNode, removeNode, clearNodes } from './resources.js';
 
 // Reusable temp vector for the projectile muzzle-offset transform. Was shared
 // with the render loop in index.js via `_tmpDir`; we get our own private one so
@@ -227,6 +228,9 @@ export const handlers = {
     clearRocketSounds();
     clearParticles();
     clearBulletHoles();
+    // Spawn resource nodes from world snapshot
+    clearNodes();
+    if (msg.resourceNodes) msg.resourceNodes.forEach(n => spawnNode(n));
   },
 
   // 30 Hz broadcast of mutable player fields only. Sticky fields
@@ -820,6 +824,21 @@ export const handlers = {
     removeBulletHolesBySurfaceKey('barricade:' + msg.id);
     sfx(300, 0.08, 'square', 0.05, pos);
     sfx(150, 0.15, 'sawtooth', 0.04, pos);
+  },
+
+  // --- Resource gathering ---
+  resourceNodeSpawn(msg) {
+    if (msg.node) spawnNode(msg.node);
+  },
+
+  resourceNodeDepleted(msg) {
+    removeNode(msg.id);
+  },
+
+  resourceHit(msg) {
+    if (msg.playerId === S.myId) {
+      sfx(600, 0.06, 'square', 0.05);
+    }
   },
 
   barricadeHit(msg) {

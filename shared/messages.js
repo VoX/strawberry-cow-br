@@ -59,6 +59,9 @@ const S2C = Object.freeze({
   mooTaunt: 'mooTaunt',
   meleeSwing: 'meleeSwing',
   meleeHit: 'meleeHit',
+  resourceNodeSpawn: 'resourceNodeSpawn',
+  resourceNodeDepleted: 'resourceNodeDepleted',
+  resourceHit: 'resourceHit',
 });
 
 // --- client -> server ------------------------------------------------------
