@@ -179,6 +179,7 @@ function eliminatePlayer(p, reason) {
   if (!p.alive) return;
   p.alive = false;
   p.deathTime = Date.now();
+  p._pendingJump = false;
   // countAlive iterates live players — p is already alive=false so we don't
   // subtract. rank = remaining_live + 1 == eliminated player's finishing rank.
   const remaining = gameState.countAlive(false);

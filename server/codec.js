@@ -3,7 +3,7 @@
 const { encode, decode } = require('@msgpack/msgpack');
 
 function encodeMsg(obj) {
-  return Buffer.from(encode(obj));
+  return encode(obj); // ws accepts Uint8Array directly, no Buffer copy needed
 }
 
 function decodeMsg(data) {

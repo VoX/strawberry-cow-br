@@ -102,7 +102,7 @@ function isInWallDeadzone(x, y, walls) {
 // Push a target point out of any wall deadzone by finding the nearest
 // edge and offsetting past it. Returns the original point if clear.
 function pushOutOfDeadzone(x, y, walls) {
-  const pad = 50;
+  const pad = 45; // must match isInWallDeadzone
   for (const w of walls) {
     if (x > w.x - pad && x < w.x + w.w + pad && y > w.y - pad && y < w.y + w.h + pad) {
       // Find nearest edge to escape to
