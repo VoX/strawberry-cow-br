@@ -423,13 +423,19 @@ function placeBarricadeForPlayer(player, aimX, aimY) {
   const cy = player.y + ay * 45;
   const angle = Math.atan2(ay, ax);
   const W = 52, H = 8;
+  // Survival mode: placing a barricade costs 25 wood and is permanent (no
+  // expiry timer). HP is 200 for wood tier. Bots use the legacy free path.
+  if (!player.isBot) {
+    if (!player.resources || (player.resources.wood || 0) < 25) return false;
+    player.resources.wood -= 25;
+  }
   const bid = gameState.nextBarricadeId();
-  // Cache cos/sin and terrain height — barricades are static so this never changes
   gameState.addBarricade({
     id: bid, cx, cy, w: W, h: H, angle,
     _cosA: Math.cos(angle), _sinA: Math.sin(angle),
     _terrainH: getTerrainHeight(cx, cy),
-    ownerId: player.id, placedAt: nowMs, hp: 50,
+    ownerId: player.id, placedAt: nowMs, hp: player.isBot ? 50 : 200,
+    permanent: !player.isBot,
   });
   const cdMs = player.isBot ? gameState.BOT_BARRICADE_COOLDOWN_MS : gameState.BARRICADE_COOLDOWN_MS;
   player.barricadeReadyAt = nowMs + cdMs;

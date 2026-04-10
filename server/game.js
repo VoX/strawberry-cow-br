@@ -94,9 +94,11 @@ function gameTick() {
   // Expire barricades older than 30 seconds
   const nowMs = Date.now();
   const barricades = gameState.getBarricades();
+  // Expire non-permanent barricades (bot-placed) after 30 seconds.
+  // Player-placed survival barricades are permanent until destroyed.
   for (let i = barricades.length - 1; i >= 0; i--) {
     const b = barricades[i];
-    if (nowMs - b.placedAt > 30000) {
+    if (!b.permanent && nowMs - b.placedAt > 30000) {
       broadcast({ type: 'barricadeDestroyed', id: b.id });
       gameState.removeBarricadeAt(i);
     }
