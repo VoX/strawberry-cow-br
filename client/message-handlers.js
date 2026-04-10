@@ -496,19 +496,6 @@ export const handlers = {
   // food, eat — removed, state rides tick payload (foodIds array).
 
   projectile(msg) {
-    // Own shots: a predicted tracer was already spawned by doAttack().
-    // Remap the predicted tracer's ID to the server's ID so projectileHit
-    // can clean it up, then skip creating a duplicate.
-    if (msg.ownerId === S.myId) {
-      const pred = S.projData.find(p => p._predicted);
-      if (pred) {
-        pred.id = msg.id;
-        pred._predicted = false;
-        // Update velocity to match server's actual trajectory
-        pred.vx = msg.vx; pred.vy = msg.vy; pred.vy3d = msg.vz || 0;
-        return;
-      }
-    }
     let vy3d = msg.vz || 0, spawnH = msg.z || (15 + getTerrainHeight(msg.x, msg.y));
     let spawnX = msg.x, spawnZ = msg.y;
     if (msg.ownerId === S.myId) {

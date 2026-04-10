@@ -20,7 +20,8 @@ const transport = require('./transport');
 const UNRELIABLE_TYPES = new Set([
   'tick',
   // Temp entities — fire-and-forget visuals/audio:
-  'projectile',  // tracer visual — shooter has client-side predicted tracer
+  // projectile stays reliable — client needs it to create + step the visual
+  // tracer entity. Converting to hitscan (CS-style) would eliminate this.
   'wallImpact', 'explosion',
   'meleeSwing', 'meleeHit', 'shieldHit',
   'mooTaunt', 'cowstrikeWarning', 'cowstrike',

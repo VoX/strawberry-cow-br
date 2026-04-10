@@ -43,23 +43,6 @@ export function doAttack() {
     fireMode: S.fireMode,
     serverTime: getServerTime(),
   });
-  // Client-side tracer prediction: spawn a local tracer only if the
-  // attack cooldown and reload state allow it (mirrors server's fire gate).
-  if (S.me && S.me.attackCooldown <= 0 && (S.me.ammo > 0 || S.me.ammo === -1)
-      && (!S.me.reloading || (S.me.weapon === 'shotgun' && S.me.ammo > 0))) {
-    const predId = '_pred_' + (S._predProjCounter = (S._predProjCounter || 0) + 1);
-    const speed = 700;
-    const ax = _inputDir.x, ay = _inputDir.z, az = _inputDir.y;
-    S.projData.push({
-      id: predId,
-      x: cam.position.x, y: cam.position.z,
-      vx: ax * speed, vy: ay * speed,
-      color: S.myColor || 'pink',
-      y3d: cam.position.y, vy3d: az * speed,
-      _predicted: true,
-      _spawnedAt: performance.now(),
-    });
-  }
 }
 
 export function doDash() {
