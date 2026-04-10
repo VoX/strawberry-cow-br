@@ -202,18 +202,23 @@ export function predictStep(frameDt) {
 let _lastReconcileServerX = 0;
 let _lastReconcileServerY = 0;
 let _lastReconcileServerZ = 0;
+let _lastServerUpdateTime = 0;
 
 // Called from the tick handler when we receive our own position.
 export function onServerPositionUpdate(x, y, z) {
   _lastReconcileServerX = x;
   _lastReconcileServerY = y;
   _lastReconcileServerZ = z;
+  _lastServerUpdateTime = performance.now();
 }
 
 function reconcile() {
   if (!S.mePredicted || !S.myId) return;
-  // Only reconcile if we have a server position to compare against.
-  if (_lastReconcileServerX === 0 && _lastReconcileServerY === 0) return;
+  // Only reconcile if we have a recent server position. If the server
+  // disconnected, let prediction run freely instead of snapping back
+  // to a stale position.
+  if (_lastServerUpdateTime === 0) return;
+  if (performance.now() - _lastServerUpdateTime > 500) return;
 
   const dx = S.mePredicted.x - _lastReconcileServerX;
   const dy = S.mePredicted.y - _lastReconcileServerY;
