@@ -43,6 +43,35 @@ export function doAttack() {
     fireMode: S.fireMode,
     serverTime: getServerTime(),
   });
+  // Instant predicted tracer — spawn from the local muzzle so the
+  // shooter sees their shot immediately without waiting for the server.
+  // The tick handler remaps this to the real server projectile ID when
+  // it arrives, correcting velocity + trajectory.
+  if (S.me && S.me.attackCooldown <= 0 && (S.me.ammo > 0 || S.me.ammo === -1)
+      && (!S.me.reloading || S.me.weapon === 'shotgun')) {
+    const wep = S.me.weapon || 'normal';
+    const MUZZLES = {
+      normal: { x: 2, y: -2.8, z: -13 }, shotgun: { x: 2, y: -0.8, z: -24 },
+      burst: { x: 3.5, y: -2.6, z: -22 }, bolty: { x: 0, y: -4, z: -26 },
+      cowtank: { x: 2, y: -3, z: -22 }, aug: { x: 3.5, y: -2.6, z: -22 },
+      mp5k: { x: 2, y: -2.8, z: -16 }, thompson: { x: 2, y: -2.5, z: -18 },
+      sks: { x: 2.5, y: -2.6, z: -22 }, akm: { x: 2.5, y: -2.6, z: -20 },
+    };
+    const m = MUZZLES[wep] || MUZZLES.normal;
+    const muzzleDir = new THREE.Vector3(m.x, m.y, m.z).applyQuaternion(cam.quaternion);
+    const speed = 700;
+    S.projData.push({
+      id: '_pred_' + (S._predProjCounter = (S._predProjCounter || 0) + 1),
+      x: cam.position.x + muzzleDir.x,
+      y: cam.position.z + muzzleDir.z,
+      vx: _inputDir.x * speed, vy: _inputDir.z * speed,
+      color: S.myColor || 'pink',
+      bolty: wep === 'bolty', cowtank: wep === 'cowtank',
+      y3d: cam.position.y + muzzleDir.y, vy3d: _inputDir.y * speed,
+      _localPredicted: true,
+      _spawnedAt: performance.now(),
+    });
+  }
 }
 
 export function doDash() {

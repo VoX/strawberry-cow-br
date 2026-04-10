@@ -470,7 +470,30 @@ export const handlers = {
           // Snap to server position + update velocity for local stepping
           existing.x = sp.x; existing.y = sp.y; existing.y3d = sp.z || 0;
           existing.vx = sp.vx || 0; existing.vy = sp.vy || 0; existing.vy3d = sp.vz || 0;
+        } else if (sp.ownerId === S.myId) {
+          // Own shot — find the predicted tracer and remap its ID to the server's.
+          // The predicted tracer was spawned instantly by doAttack().
+          const pred = S.projData.find(p => p._localPredicted);
+          if (pred) {
+            pred.id = sp.id;
+            pred._localPredicted = false;
+            pred._fromTick = true;
+            // Correct velocity to server's actual trajectory
+            pred.vx = sp.vx || 0; pred.vy = sp.vy || 0; pred.vy3d = sp.vz || 0;
+            pred.bolty = sp.bolty; pred.cowtank = sp.cowtank;
+          } else {
+            // No predicted tracer — create from server data (fallback)
+            S.projData.push({
+              id: sp.id, x: sp.x, y: sp.y,
+              vx: sp.vx || 0, vy: sp.vy || 0,
+              color: sp.color || 'pink',
+              bolty: sp.bolty, cowtank: sp.cowtank,
+              y3d: sp.z || 0, vy3d: sp.vz || 0,
+              _fromTick: true,
+            });
+          }
         } else {
+          // Remote player's projectile — create from server data
           S.projData.push({
             id: sp.id, x: sp.x, y: sp.y,
             vx: sp.vx || 0, vy: sp.vy || 0,
@@ -479,17 +502,20 @@ export const handlers = {
             y3d: sp.z || 0, vy3d: sp.vz || 0,
             _fromTick: true,
           });
-          if (sp.ownerId !== S.myId) {
-            const th = getTerrainHeight(sp.x, sp.y);
-            const pos = { x: sp.x, y: th + 50, z: sp.y };
-            if (sp.bolty) sfxBolty(0.1, pos);
-            else if (sp.cowtank) sfxRocket(0.12, pos);
-            else sfxShoot(0.07, pos);
-          }
+          const th = getTerrainHeight(sp.x, sp.y);
+          const pos = { x: sp.x, y: th + 50, z: sp.y };
+          if (sp.bolty) sfxBolty(0.1, pos);
+          else if (sp.cowtank) sfxRocket(0.12, pos);
+          else sfxShoot(0.07, pos);
         }
       }
+      // Remove tick projectiles that left server state + expire predicted tracers
+      const now = performance.now();
       for (let i = S.projData.length - 1; i >= 0; i--) {
-        if (S.projData[i]._fromTick && !serverProjIds.has(S.projData[i].id)) {
+        const p = S.projData[i];
+        if (p._fromTick && !serverProjIds.has(p.id)) {
+          S.projData.splice(i, 1);
+        } else if (p._localPredicted && p._spawnedAt && now - p._spawnedAt > 2000) {
           S.projData.splice(i, 1);
         }
       }
