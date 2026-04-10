@@ -504,6 +504,21 @@ function handleMelee(player) {
       const resKey = cfg.resource;
       player.resources[resKey] = Math.min(RESOURCE_CAP, (player.resources[resKey] || 0) + cfg.yield);
     }
+    // Grant XP for gathering — lets players level up through farming
+    player.xp = (player.xp || 0) + 2;
+    if (player.xp >= (player.xpToNext || 50)) {
+      player.xp = Math.max(0, player.xp - (player.xpToNext || 50));
+      player.level = (player.level || 0) + 1;
+      player.xpToNext = Math.floor(50 + player.level * 25 + player.level * player.level * 5);
+      if (player.isBot) {
+        const { botPickRandomPerk } = require('./perks');
+        botPickRandomPerk(player);
+      } else {
+        const { sendTo } = require('./network');
+        sendTo(player.ws, { type: 'levelup', level: player.level });
+        broadcastPlayerSnapshot(player);
+      }
+    }
     if (hitNode.hp <= 0) {
       hitNode.hp = 0;
       hitNode.respawnAt = Date.now() + cfg.respawnMs;
