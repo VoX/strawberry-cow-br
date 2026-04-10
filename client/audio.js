@@ -1852,3 +1852,57 @@ export function tickMusic() {
   }
   nextNote = t + tempo;
 }
+
+// --- Ambient nature sounds ---
+// Subtle wind + bird chirps. Wind is a continuous filtered noise node.
+// Birds chirp randomly during daytime. Volume on music slider.
+let _windNode = null, _windGain = null;
+let _lastBirdT = 0;
+export function tickAmbient(gameTime) {
+  if (!actx) return;
+  const v = musicVol() * 0.3; // ambient is quiet relative to music
+  // Wind — one-shot init, volume updates every call
+  if (!_windNode) {
+    const bufSize = actx.sampleRate * 2;
+    const buf = actx.createBuffer(1, bufSize, actx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < bufSize; i++) d[i] = (Math.random() * 2 - 1) * 0.4;
+    _windNode = actx.createBufferSource();
+    _windNode.buffer = buf; _windNode.loop = true;
+    const lp = actx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 400; lp.Q.value = 0.5;
+    _windGain = actx.createGain();
+    _windGain.gain.value = v;
+    _windNode.connect(lp); lp.connect(_windGain); _windGain.connect(actx.destination);
+    _windNode.start();
+  }
+  if (_windGain) _windGain.gain.value = v;
+  // Bird chirps — daytime only (gameTime % 1200 < 600), random ~every 3-8s
+  const cycleT = (gameTime || 0) % 1200;
+  const isDay = cycleT < 600;
+  const now = actx.currentTime;
+  if (isDay && now - _lastBirdT > 3 + Math.random() * 5) {
+    _lastBirdT = now;
+    const freq = 2000 + Math.random() * 2000;
+    const dur = 0.05 + Math.random() * 0.08;
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(freq, now);
+    o.frequency.exponentialRampToValueAtTime(freq * (0.8 + Math.random() * 0.4), now + dur);
+    g.gain.setValueAtTime(v * 0.5, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + dur);
+    o.connect(g); g.connect(actx.destination);
+    o.start(now); o.stop(now + dur + 0.01);
+    // Sometimes double-chirp
+    if (Math.random() < 0.4) {
+      const o2 = actx.createOscillator(), g2 = actx.createGain();
+      o2.type = 'sine';
+      o2.frequency.setValueAtTime(freq * 1.2, now + dur + 0.05);
+      o2.frequency.exponentialRampToValueAtTime(freq * 1.1, now + dur + 0.05 + dur);
+      g2.gain.setValueAtTime(v * 0.4, now + dur + 0.05);
+      g2.gain.exponentialRampToValueAtTime(0.001, now + dur * 2 + 0.05);
+      o2.connect(g2); g2.connect(actx.destination);
+      o2.start(now + dur + 0.05); o2.stop(now + dur * 2 + 0.08);
+    }
+  }
+}

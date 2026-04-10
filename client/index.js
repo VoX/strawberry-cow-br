@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { CH } from './config.js';
 import S from './state.js';
-import { sfx, tickMusic, updateMusicMood, updateAudioListener } from './audio.js';
+import { sfx, tickMusic, updateMusicMood, updateAudioListener, tickAmbient } from './audio.js';
 import { scene, cam, ren, sun, sky, cloudPlanes, vmScene, vmCam } from './renderer.js';
 import { getTerrainHeight } from './terrain.js';
 import { setVmGroupRef } from './input.js';
@@ -51,7 +51,7 @@ function loop(ts) {
   updateHud(me, time, dt);
 
   if (S.state !== 'playing') { ren.render(scene, cam); return; }
-  updateMusicMood(); tickMusic();
+  updateMusicMood(); tickMusic(); tickAmbient(S.lastTickNum / 30);
 
   const now = Date.now();
   // Killcam / spectator: follow a tracked target. Defaults to killer on death; cyclable via click/arrows.
