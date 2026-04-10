@@ -72,7 +72,8 @@ function autoFireLoop() {
   if (!autoFireActive) return;
   if (!mouseDown || S.state !== 'playing' || !S.locked) { stopAutoFire(); return; }
   const me = S.me;
-  if (!me || !me.alive || (!BURST_FAMILY.has(me.weapon) && me.weapon !== 'thompson')) { stopAutoFire(); return; }
+  const AUTO_WEAPONS_SET = new Set(['thompson', 'm249', 'minigun']);
+  if (!me || !me.alive || (!BURST_FAMILY.has(me.weapon) && !AUTO_WEAPONS_SET.has(me.weapon))) { stopAutoFire(); return; }
   const now = performance.now();
   if (now >= nextFireTime) {
     doAttack();
