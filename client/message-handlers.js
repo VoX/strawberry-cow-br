@@ -422,6 +422,7 @@ export const handlers = {
         bolty:   { x: 0, y: -4.0, z: -26 },
         cowtank: { x: 2.0, y: -3.0, z: -22 },
         aug:     { x: 3.5, y: -2.6, z: -22 },
+        mp5k:    { x: 2.0, y: -2.8, z: -16 },
       };
       let m = MUZZLES[myWep] || MUZZLES.normal;
       // Dual-wield M16: volley 1 uses the left barrel
@@ -431,6 +432,10 @@ export const handlers = {
       // Dual-wield Benelli: alternate shots come out of the left barrel
       if (myWep === 'shotgun' && S.me && S.me.dualWield && msg.muzzle === 1) {
         m = { x: m.x - 9, y: m.y, z: m.z };
+      }
+      // Dual-wield MP5K: left gun offset
+      if (myWep === 'mp5k' && S.me && S.me.dualWield && msg.muzzle === 1) {
+        m = { x: m.x - 8, y: m.y, z: m.z };
       }
       // Bolty hip-fire: default offset (0, -4, -26) is centered for the ADS
       // scope view, but when hip-firing the gun is held to the right like the
@@ -452,11 +457,27 @@ export const handlers = {
       spawnZ = cam.position.z + _tmpDir.z;
     }
     if (msg.shotgun !== undefined) { vy3d += (Math.random() - 0.5) * 150; }
-    // Pre-seed the trail's last position to the actual spawn point so the
-    // first trail frame interpolates from the muzzle forward instead of from
-    // the mesh's default (0,0,0) position, which drew a garbage trail from
-    // world origin on the first frame after spawn.
-    S.projData.push({ id: msg.id, x: spawnX, y: spawnZ, vx: msg.vx, vy: msg.vy, color: msg.color || 'pink', bolty: msg.bolty, cowtank: msg.cowtank, y3d: spawnH, vy3d, _lastTrailPos: msg.bolty ? { x: spawnX, y: spawnH, z: spawnZ } : undefined });
+    // Muzzle-to-trajectory correction: the visual tracer starts at the
+    // weapon muzzle but the server trajectory originates from the camera
+    // center. Recompute the visual velocity so the tracer flies FROM the
+    // muzzle TOWARD a convergence point on the server trajectory (~0.1s
+    // ahead). After convergence the paths are close enough to be seamless.
+    let projVx = msg.vx, projVy = msg.vy, projVy3d = vy3d;
+    if (msg.ownerId === S.myId) {
+      const speed = Math.hypot(msg.vx, msg.vy);
+      const convergeT = 0.12;
+      const cx = msg.x + msg.vx * convergeT;
+      const cy = msg.y + msg.vy * convergeT;
+      const cz = (msg.z || spawnH) + vy3d * convergeT;
+      const dx = cx - spawnX, dy = cy - spawnZ, dz = cz - spawnH;
+      const dLen = Math.hypot(dx, dy);
+      if (dLen > 1) {
+        projVx = dx / dLen * speed;
+        projVy = dy / dLen * speed;
+        projVy3d = dz / dLen * speed;
+      }
+    }
+    S.projData.push({ id: msg.id, x: spawnX, y: spawnZ, vx: projVx, vy: projVy, color: msg.color || 'pink', bolty: msg.bolty, cowtank: msg.cowtank, y3d: spawnH, vy3d: projVy3d, _lastTrailPos: msg.bolty ? { x: spawnX, y: spawnH, z: spawnZ } : undefined });
     if (msg.ownerId !== S.myId) {
       // Remote weapon sound — PannerNode handles distance attenuation +
       // directional panning. Volume stays at full base level.
@@ -472,7 +493,12 @@ export const handlers = {
       const myWep = S.me ? S.me.weapon : 'normal';
       // Skip extra shotgun pellets (only first pellet plays sound), but play each burst round
       if (msg.shotgun === false) { /* skip extra pellets */ }
-      else if (myWep === 'bolty' || msg.bolty) sfxBolty();
+      else if (myWep === 'bolty' || msg.bolty) {
+        sfxBolty();
+        // Un-ADS during bolt rack (500ms after shot, lasts ~500ms)
+        setTimeout(() => { S.adsActive = false; S._boltRacking = true; }, 500);
+        setTimeout(() => { S._boltRacking = false; }, 1000);
+      }
       else if (myWep === 'cowtank' || msg.cowtank) sfxRocket(0.12);
       else if (msg.shotgun === true) sfxShotgun(0.1);
       else if (myWep === 'shotgun') sfxShotgun(0.1);
@@ -513,6 +539,20 @@ export const handlers = {
         ],
         normal: [ // Spit: small kick
           { p: 0.008, y: (Math.random()-0.5)*0.004 },
+        ],
+        // MP5K — fast erratic jitter, 1.2x LR magnitude, bias upward-left
+        // then correcting right. Stockless = less predictable.
+        mp5k: [
+          { p: 0.014, y: -0.005 }, { p: 0.016, y: -0.008 }, { p: 0.013, y: -0.003 },
+          { p: 0.015, y: 0.006 }, { p: 0.018, y: 0.009 }, { p: 0.014, y: 0.004 },
+          { p: 0.012, y: -0.007 }, { p: 0.017, y: -0.010 }, { p: 0.013, y: -0.005 },
+          { p: 0.016, y: 0.008 }, { p: 0.019, y: 0.007 }, { p: 0.014, y: 0.003 },
+          { p: 0.013, y: -0.006 }, { p: 0.015, y: -0.008 }, { p: 0.012, y: -0.004 },
+          { p: 0.016, y: 0.007 }, { p: 0.018, y: 0.009 }, { p: 0.013, y: 0.005 },
+          { p: 0.014, y: -0.006 }, { p: 0.017, y: -0.009 }, { p: 0.012, y: -0.003 },
+          { p: 0.015, y: 0.008 }, { p: 0.019, y: 0.010 }, { p: 0.013, y: 0.004 },
+          { p: 0.014, y: -0.005 }, { p: 0.016, y: -0.007 }, { p: 0.012, y: -0.002 },
+          { p: 0.015, y: 0.006 }, { p: 0.018, y: 0.008 }, { p: 0.013, y: 0.003 },
         ],
         // AUG — vertical-dominant kick with a slow rightward drift, very
         // different from the M16 snake. Bullpup centerline = predictable
@@ -580,6 +620,24 @@ export const handlers = {
   projectileHit(msg) {
     S.projData = S.projData.filter(p => p.id !== msg.projectileId);
     if (S.projMeshes[msg.projectileId]) { disposeMeshTree(S.projMeshes[msg.projectileId]); delete S.projMeshes[msg.projectileId]; }
+    // Debug: red cube at server-authoritative hit location
+    if (S.debugMode && msg.ownerId === S.myId) {
+      let hx, hy, hz;
+      if (msg.wall && typeof msg.x === 'number') {
+        hx = msg.x; hz = msg.y; hy = typeof msg.z === 'number' ? msg.z : getTerrainHeight(msg.x, msg.y);
+      } else if (msg.targetId) {
+        const t = S.serverPlayers.find(p => p.id === msg.targetId);
+        if (t) { hx = t.x; hz = t.y; hy = (t.z || 0) + getTerrainHeight(t.x, t.y) + 20; }
+      }
+      if (hx != null) {
+        const dbgGeo = new THREE.BoxGeometry(3, 3, 3);
+        const dbgMat = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.7 });
+        const dbgCube = new THREE.Mesh(dbgGeo, dbgMat);
+        dbgCube.position.set(hx, hy, hz);
+        scene.add(dbgCube);
+        setTimeout(() => { scene.remove(dbgCube); dbgGeo.dispose(); dbgMat.dispose(); }, 10000);
+      }
+    }
     if (msg.targetId === S.myId) {
       sfxHit(); flashHit(0.5, 150); flashEdge('damageEdgeFlash');
       // Client-authoritative on-hit slowdown — predict step folds the
@@ -1115,7 +1173,7 @@ export const handlers = {
 
   weaponPickup(msg) {
     S.clientWeapons = S.clientWeapons.filter(w => w.id !== msg.pickupId);
-    const _wn = { shotgun: 'Benelli', burst: 'M16A2', bolty: 'L96', cowtank: 'M72 LAW', aug: 'AUG' };
+    const _wn = { shotgun: 'Benelli', burst: 'M16A2', bolty: 'L96', cowtank: 'M72 LAW', aug: 'AUG', mp5k: 'MP5K' };
     const wpName = _wn[msg.weapon] || msg.weapon || 'weapon';
     if (msg.playerId === S.myId) {
       addKillFeed('Picked up ' + wpName + '!', 3);
@@ -1152,6 +1210,7 @@ export const handlers = {
 
   emptyMag(msg) {
     sfxEmptyMag();
+    S.adsActive = false;
   },
 
   armorPickup(msg) {

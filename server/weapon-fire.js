@@ -28,7 +28,7 @@ const { BURST_FAMILY, MAG_SIZES } = require('../shared/constants');
 const PLAYER_STATS_BASE = {
   normal: {
     hungerGate: [1, 3], hungerCost: [1, 2],
-    cooldown: 0.6, dmg: 8, speed: 1400, spreadBase: 0.0286, pellets: 1, spawnOffset: 40,
+    cooldown: 0.15, dmg: 8, speed: 1400, spreadBase: 0.0286, pellets: 1, spawnOffset: 40,
   },
   burst: {
     hungerGate: [2, 6], hungerCost: [2, 5],
@@ -61,6 +61,15 @@ const PLAYER_STATS_BASE = {
     cooldown: 1.0, dmg: 38, speed: 2000, spreadBase: 0, pellets: 1, spawnOffset: 40,
     explosive: true, blastRadius: 180, broadcastTag: 'cowtank',
   },
+  // MP5K — stockless SMG. 2/3 LR damage, 2x LR spread, 600 RPM auto.
+  // Burst mode mirrors the LR burst-vs-auto ratio (2x dmg per pellet,
+  // 3-round burst with 92ms step). Faster cycle than LR in all modes.
+  mp5k: {
+    hungerGate: [2, 5], hungerCost: [1, 3],
+    cooldown: 0.6, dmg: 4, speed: 1400, spreadBase: 0.022, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
+    burstStepMs: 92, defaultMode: 'auto',
+    auto: { hungerCost: [1, 2], cooldown: 0.1, dmg: 2, speed: 1300, spreadBase: 0.044, pellets: 1, dualPelletMult: 2 },
+  },
   // AUG — bullpup rifle with integrated 2x optic. Solo only (the
   // weapons.js dual-wield gate doesn't include 'aug'). Auto = 450 RPM
   // (slower than the M16's 500), burst = +30% cycle rate vs auto. Same
@@ -69,10 +78,10 @@ const PLAYER_STATS_BASE = {
   // not scoped.
   aug: {
     hungerGate: [2, 6], hungerCost: [2, 5],
-    cooldown: 0.615, dmg: 6, speed: 2024, spreadBase: 0, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
+    cooldown: 0.615, dmg: 6, speed: 2328, spreadBase: 0, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
     burstStepMs: 92,
-    auto: { hungerCost: [1, 2], cooldown: 0.133, dmg: 3, speed: 1840, spreadBase: 0.022, pellets: 1, dualPelletMult: 1 },
-    semi: { hungerCost: [1, 2], cooldown: 0.266, dmg: 3, speed: 2024, spreadBase: 0, pellets: 1, dualPelletMult: 1 },
+    auto: { hungerCost: [1, 2], cooldown: 0.133, dmg: 3, speed: 2116, spreadBase: 0.022, pellets: 1, dualPelletMult: 1 },
+    semi: { hungerCost: [1, 2], cooldown: 0.266, dmg: 3, speed: 2328, spreadBase: 0, pellets: 1, dualPelletMult: 1 },
   },
 };
 
@@ -80,7 +89,7 @@ const PLAYER_STATS_BASE = {
 // Final values (no hungerDiscount). Kept separate so bot nerfs can diverge
 // from player numbers at will.
 const BOT_STATS = {
-  normal:  { hungerGate: 10, hungerCost: 3, cooldown: 1.0, dmg: 8,  speed: 1400, spreadBase: 0, pellets: 1, spawnOffset: 40 },
+  normal:  { hungerGate: 10, hungerCost: 3, cooldown: 0.3, dmg: 8,  speed: 1400, spreadBase: 0, pellets: 1, spawnOffset: 40 },
   burst:   {
     hungerGate: 4, hungerCost: 5, cooldown: 0.8, dmg: 6, speed: 1600, spreadBase: 0, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
     auto: { hungerCost: 1, cooldown: 0.1, dmg: 3, speed: 1600, spreadBase: 0.035, pellets: 1 },
@@ -88,6 +97,10 @@ const BOT_STATS = {
   shotgun: { hungerGate: 7, hungerCost: 7, cooldown: 1.0, dmg: 5, speed: 1200, spreadBase: 0.2, pellets: 5, spawnOffset: 40, volleyed: true, broadcastTag: 'shotgun', vzSpreadBase: 0.2 },
   bolty:   { hungerGate: 12, hungerCost: 8, cooldown: 2.5, dmg: 28, speed: 16800, spreadBase: 0, pellets: 1, spawnOffset: 40, wallPiercing: true, broadcastTag: 'bolty' },
   cowtank: { hungerGate: 6, hungerCost: 5, cooldown: 1.0, dmg: 38, speed: 2000, spreadBase: 0, pellets: 1, spawnOffset: 40, explosive: true, blastRadius: 180, broadcastTag: 'cowtank' },
+  mp5k: {
+    hungerGate: 4, hungerCost: 3, cooldown: 0.6, dmg: 4, speed: 1300, spreadBase: 0.022, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
+    auto: { hungerCost: 1, cooldown: 0.1, dmg: 2, speed: 1300, spreadBase: 0.055, pellets: 1 },
+  },
 };
 
 // Extract cooldown / damage / hungerDiscount multipliers from a shooter's

@@ -143,7 +143,8 @@ document.addEventListener('mousemove', e => {
 document.addEventListener('mousedown', e => {
   if (e.button === 2 && S.locked && S.state === 'playing') {
     const me = S.me;
-    if (me && me.alive && (me.weapon === 'bolty' || me.weapon === 'aug')) {
+    // Block ADS during bolt rack and reload
+    if (me && me.alive && (me.weapon === 'bolty' || me.weapon === 'aug') && !S._boltRacking && !me.reloading) {
       S.adsActive = true;
       cam.fov = me.weapon === 'aug' ? 37.5 : 12.5;
       cam.updateProjectionMatrix();
@@ -173,6 +174,8 @@ if (isMobile) {
   document.getElementById('touchDpad').style.display = 'block';
   document.getElementById('touchShoot').style.display = 'block';
   document.getElementById('touchDash').style.display = 'block';
+  const _mobileEls = ['touchReload', 'touchFireMode', 'touchADS', 'touchDebug', 'touchDrop'];
+  _mobileEls.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'block'; });
   document.getElementById('lockMsg').style.display = 'none';
   const dp = document.getElementById('touchDpad'), dpCtx = dp.getContext('2d');
   let tdx = 0, tdy = 0;
@@ -213,8 +216,72 @@ if (isMobile) {
   }, { passive: true });
   document.addEventListener('touchend', e => { for (const t of e.changedTouches) delete lookTouches[t.identifier]; }, { passive: true });
   document.addEventListener('touchcancel', e => { for (const t of e.changedTouches) delete lookTouches[t.identifier]; }, { passive: true });
-  document.getElementById('touchShoot').addEventListener('touchstart', e => { e.preventDefault(); doAttack(); }, { passive: false });
+  // Touch fire: single tap fires once, hold fires auto (same RAF loop as mouse)
+  let _touchFiring = false;
+  function touchAutoLoop() {
+    if (!_touchFiring) return;
+    const me = S.me;
+    if (!me || !me.alive) { _touchFiring = false; return; }
+    const now = performance.now();
+    if (now >= nextFireTime) {
+      doAttack();
+      nextFireTime = now + AUTO_FIRE_INTERVAL;
+    }
+    requestAnimationFrame(touchAutoLoop);
+  }
+  const shootBtn = document.getElementById('touchShoot');
+  shootBtn.addEventListener('touchstart', e => {
+    e.preventDefault();
+    doAttack();
+    _touchFiring = true;
+    if (nextFireTime < performance.now()) nextFireTime = performance.now() + AUTO_FIRE_INTERVAL;
+    touchAutoLoop();
+  }, { passive: false });
+  shootBtn.addEventListener('touchend', e => { _touchFiring = false; }, { passive: true });
+  shootBtn.addEventListener('touchcancel', e => { _touchFiring = false; }, { passive: true });
   document.getElementById('touchDash').addEventListener('touchstart', e => { e.preventDefault(); doDash(); }, { passive: false });
+  const touchReload = document.getElementById('touchReload');
+  if (touchReload) touchReload.addEventListener('touchstart', e => { e.preventDefault(); send({ type: 'reload' }); }, { passive: false });
+  const touchFireMode = document.getElementById('touchFireMode');
+  if (touchFireMode) touchFireMode.addEventListener('touchstart', e => {
+    e.preventDefault();
+    const myWep = S.me ? S.me.weapon : '';
+    if (myWep === 'mp5k') S.fireMode = S.fireMode === 'auto' ? 'burst' : 'auto';
+    else S.fireMode = S.fireMode === 'burst' ? 'auto' : S.fireMode === 'auto' ? 'semi' : 'burst';
+  }, { passive: false });
+  const touchADS = document.getElementById('touchADS');
+  if (touchADS) {
+    touchADS.addEventListener('touchstart', e => {
+      e.preventDefault();
+      const me = S.me;
+      if (!me || !me.alive) return;
+      if (S._boltRacking || me.reloading) return;
+      if (S.adsActive) {
+        // Un-ADS
+        S.adsActive = false;
+        cam.fov = 75; cam.updateProjectionMatrix();
+        document.getElementById('scopeOverlay').style.display = 'none';
+        document.getElementById('augScopeOverlay').style.display = 'none';
+        document.getElementById('crosshair').style.display = 'block';
+        const vg = vmGroupRef && vmGroupRef();
+        if (vg) vg.visible = true;
+      } else if (me.weapon === 'bolty' || me.weapon === 'aug') {
+        // ADS
+        S.adsActive = true;
+        cam.fov = me.weapon === 'aug' ? 37.5 : 12.5;
+        cam.updateProjectionMatrix();
+        const overlayId = me.weapon === 'aug' ? 'augScopeOverlay' : 'scopeOverlay';
+        document.getElementById(overlayId).style.display = 'block';
+        document.getElementById('crosshair').style.display = 'none';
+        const vg = vmGroupRef && vmGroupRef();
+        if (vg) vg.visible = false;
+      }
+    }, { passive: false });
+  }
+  const touchDrop = document.getElementById('touchDrop');
+  if (touchDrop) touchDrop.addEventListener('touchstart', e => { e.preventDefault(); send({ type: 'dropWeapon' }); }, { passive: false });
+  const touchDebug = document.getElementById('touchDebug');
+  if (touchDebug) touchDebug.addEventListener('touchstart', e => { e.preventDefault(); S.debugMode = !S.debugMode; }, { passive: false });
 }
 
 // Chat input
@@ -277,13 +344,20 @@ addEventListener('keydown', e => {
   }
   if (e.code === 'KeyP') { S.debugMode = !S.debugMode; }
   if (e.code === 'KeyO') { toggleFullscreen(); }
-  if (e.code === 'KeyR' && S.state === 'playing') send({ type: 'reload' });
+  if (e.code === 'KeyR' && S.state === 'playing') { send({ type: 'reload' }); S.adsActive = false; }
   if (e.code === 'KeyX' && S.state === 'playing') {
-    // Cycle burst → auto → semi → burst.
-    S.fireMode = S.fireMode === 'burst' ? 'auto'
-               : S.fireMode === 'auto'  ? 'semi'
-               : 'burst';
-    S.chatLog.push({ name: '', color: '', text: 'M16A2: ' + S.fireMode.toUpperCase() + ' mode', t: 2, system: true });
+    const myWep = S.me ? S.me.weapon : '';
+    if (myWep === 'mp5k') {
+      // MP5K: toggle auto ↔ burst only (no semi)
+      S.fireMode = S.fireMode === 'auto' ? 'burst' : 'auto';
+    } else {
+      // LR/AUG: cycle burst → auto → semi → burst
+      S.fireMode = S.fireMode === 'burst' ? 'auto'
+                 : S.fireMode === 'auto'  ? 'semi'
+                 : 'burst';
+    }
+    const wepLabel = myWep === 'mp5k' ? 'MP5K' : myWep === 'aug' ? 'AUG' : 'M16A2';
+    S.chatLog.push({ name: '', color: '', text: wepLabel + ': ' + S.fireMode.toUpperCase() + ' mode', t: 2, system: true });
     if (S.chatLog.length > 10) S.chatLog.shift();
   }
   if (e.code === 'KeyC' && S.state === 'playing') {

@@ -180,6 +180,54 @@ function _buildPartyHatTemplate() {
   return g;
 }
 
+// Hair color: random shade between black and light brown, seeded per template
+function _randomHairColor() {
+  const t = Math.random() * 0.6; // 0=black, 0.6=light brown
+  const r = Math.floor(40 + t * 140);
+  const g = Math.floor(25 + t * 90);
+  const b = Math.floor(15 + t * 50);
+  return (r << 16) | (g << 8) | b;
+}
+
+function _buildPompadourTemplate() {
+  const g = new THREE.Group();
+  const col = _randomHairColor();
+  const mat = markSharedMaterial(new THREE.MeshLambertMaterial({ color: col }));
+  // Base dome
+  const base = new THREE.Mesh(markSharedGeometry(new THREE.SphereGeometry(5.5, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2)), mat);
+  base.position.y = 38; g.add(base);
+  // Pompadour volume — tall front swept-back shape
+  const pomp = new THREE.Mesh(markSharedGeometry(new THREE.BoxGeometry(7, 6, 5)), mat);
+  pomp.position.set(0, 43, 2); pomp.rotation.x = -0.3; g.add(pomp);
+  // Front curl
+  const curl = new THREE.Mesh(markSharedGeometry(new THREE.SphereGeometry(3, 8, 6)), mat);
+  curl.position.set(0, 45, 5); g.add(curl);
+  return g;
+}
+
+function _buildAfroTemplate() {
+  const g = new THREE.Group();
+  const col = _randomHairColor();
+  const mat = markSharedMaterial(new THREE.MeshLambertMaterial({ color: col }));
+  // Big spherical afro
+  const afro = new THREE.Mesh(markSharedGeometry(new THREE.SphereGeometry(9, 10, 8)), mat);
+  afro.position.y = 42; g.add(afro);
+  return g;
+}
+
+function _buildMohawkTemplate() {
+  const g = new THREE.Group();
+  const col = _randomHairColor();
+  const mat = markSharedMaterial(new THREE.MeshLambertMaterial({ color: col }));
+  // Mohawk strip — a row of boxes down the center
+  for (let i = 0; i < 5; i++) {
+    const spike = new THREE.Mesh(markSharedGeometry(new THREE.BoxGeometry(1.5, 5 + Math.random() * 3, 2.5)), mat);
+    spike.position.set(0, 42 + i * 0.5, -3 + i * 2);
+    g.add(spike);
+  }
+  return g;
+}
+
 // One template per hat type, built once at module load. cloneHat(type)
 // returns a fresh Group whose Mesh children reference the same shared geo/mats.
 const _HAT_TEMPLATES = {
@@ -188,6 +236,9 @@ const _HAT_TEMPLATES = {
   crown:  _buildCrownHatTemplate(),
   cap:    _buildCapHatTemplate(),
   party:  _buildPartyHatTemplate(),
+  pompadour: _buildPompadourTemplate(),
+  afro:   _buildAfroTemplate(),
+  mohawk: _buildMohawkTemplate(),
 };
 function cloneHat(type) {
   const tpl = _HAT_TEMPLATES[type] || _HAT_TEMPLATES.party;
@@ -335,7 +386,7 @@ export function updateCows(time, dt) {
       nsprite.scale.set(40 * (cw / 256), 10, 1);
       m.add(nsprite);
       // 3D hat — pick stably from player id, clone the shared template
-      const hatType = ['cowboy', 'wizard', 'party', 'crown', 'cap'][Math.abs(p.id || 0) % 5];
+      const hatType = ['cowboy', 'wizard', 'party', 'crown', 'cap', 'pompadour', 'afro', 'mohawk'][Math.abs(p.id || 0) % 8];
       m.add(cloneHat(hatType));
       S.cowMeshes[pid] = { mesh: m, nameSprite: nsprite };
     }

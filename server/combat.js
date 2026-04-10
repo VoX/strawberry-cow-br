@@ -400,7 +400,8 @@ function handleReload(player) {
     player.reloadTimer = gameState.scheduleRoundTimer(loadShell, shellMs);
   } else {
     // Full mag reload for other weapons — 2x time when dual-wielding
-    const reloadTime = (weapon === 'bolty' ? 2500 : 2000) * dualMult;
+    const RELOAD_MS = { normal: 2000, burst: 3000, mp5k: 3000, aug: 3500, bolty: 2500 };
+    const reloadTime = (RELOAD_MS[weapon] || 2000) * dualMult;
     player.reloadTimer = gameState.scheduleRoundTimer(() => {
       player.ammo = getMaxAmmo(player, player.weapon);
       player.reloading = 0;

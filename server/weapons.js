@@ -1,7 +1,7 @@
 const { broadcast } = require('./network');
 const gameState = require('./game-state');
 const combat = require('./combat');
-const { MAG_SIZES } = require('../shared/constants');
+const { MAG_SIZES, DUAL_WIELD_FAMILY } = require('../shared/constants');
 const { broadcastPlayerSnapshot, applyArmorDelta } = require('./player');
 
 function handleWeaponPickups(dt) {
@@ -19,12 +19,12 @@ function handleWeaponPickups(dt) {
         if (heldPrimary !== 'normal' && heldPrimary !== w.weapon) continue;
         const sameWeapon = heldPrimary === w.weapon;
         if (sameWeapon) {
-          // Picking up a second of the same weapon (only benelli + M16A2 support dual-wield)
-          if ((w.weapon === 'shotgun' || w.weapon === 'burst') && !(p.weapon === 'knife' ? p._primaryDualWield : p.dualWield)) {
-            if (p.weapon === 'knife') p._primaryDualWield = true;
-            else p.dualWield = true;
-            p._shotgunAlt = false;
-          }
+          const alreadyDual = p.weapon === 'knife' ? p._primaryDualWield : p.dualWield;
+          if (!DUAL_WIELD_FAMILY.has(w.weapon)) continue; // can't dual-wield this weapon
+          if (alreadyDual) continue; // already dual-wielding, no third gun
+          if (p.weapon === 'knife') p._primaryDualWield = true;
+          else p.dualWield = true;
+          p._shotgunAlt = false;
           // Refill ammo on whichever slot the primary lives on right now.
           if (p.weapon === 'knife') p._primaryAmmo = combat.getMaxAmmo({ ...p, weapon: w.weapon, dualWield: p._primaryDualWield }, w.weapon);
           else p.ammo = combat.getMaxAmmo(p, p.weapon);
@@ -74,8 +74,8 @@ function handleDropWeapon(player) {
     const stashed = player._primaryWeapon;
     if (!stashed || stashed === 'normal') return;
     const dropId = gameState.nextEntityId();
-    gameState.addWeaponPickup({ id: dropId, x: player.x + 20, y: player.y, weapon: stashed });
-    broadcast({ type: 'weaponSpawn', id: dropId, x: player.x + 20, y: player.y, weapon: stashed });
+    gameState.addWeaponPickup({ id: dropId, x: player.x + 50, y: player.y, weapon: stashed });
+    broadcast({ type: 'weaponSpawn', id: dropId, x: player.x + 50, y: player.y, weapon: stashed });
     player._primaryWeapon = 'normal';
     player._primaryAmmo = combat.getMaxAmmo(player, 'normal');
     player._primaryDualWield = false;
@@ -86,8 +86,8 @@ function handleDropWeapon(player) {
   }
   if (player.weapon === 'normal') return;
   const dropId = gameState.nextEntityId();
-  gameState.addWeaponPickup({ id: dropId, x: player.x + 20, y: player.y, weapon: player.weapon });
-  broadcast({ type: 'weaponSpawn', id: dropId, x: player.x + 20, y: player.y, weapon: player.weapon });
+  gameState.addWeaponPickup({ id: dropId, x: player.x + 50, y: player.y, weapon: player.weapon });
+  broadcast({ type: 'weaponSpawn', id: dropId, x: player.x + 50, y: player.y, weapon: player.weapon });
   if (player.dualWield) {
     // Dropping one of two — stay with single weapon, halve the mag
     player.dualWield = false;

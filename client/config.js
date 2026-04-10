@@ -5,7 +5,7 @@ export const COL={pink:0xff88aa,blue:0x88aaff,green:0x88ff88,gold:0xffdd44,purpl
 // CSS hex strings for the same palette — used by chat bubbles, HUD chat,
 // name plates, and anywhere canvas drawing needs a fillStyle.
 export const COL_HEX={pink:'#ff88aa',blue:'#88aaff',green:'#88ff88',gold:'#ffdd44',purple:'#cc88ff',red:'#ff4444',orange:'#ff8844',cyan:'#44ffdd'};
-export const WPCOL={shotgun:0xff4444,burst:0x44aaff,bolty:0xffaa00,cowtank:0x44ff44,aug:0xaa44ff};
+export const WPCOL={shotgun:0xff4444,burst:0x44aaff,bolty:0xffaa00,cowtank:0x44ff44,aug:0xaa44ff,mp5k:0x44dddd};
 export const PERKS=[
   {id:'speed',name:'Swift Hooves',desc:'+15% speed'},
   {id:'extrahunger',name:'Big Udders',desc:'+40 max milk'},

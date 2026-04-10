@@ -61,9 +61,11 @@ function startGame() {
         perks: { speedMult: 1, maxHunger: 100, sizeMult: 1, damage: 1 },
         weaponPerks: { cooldown: 1, hungerDiscount: 0, damageMult: 1 },
         weapon: 'normal', weaponTimer: 0,
-        ammo: 15, reloading: 0,
+        ammo: 10, reloading: 0,
         spawnProtection: 1,
       });
+      // Debug: give specific players a test weapon at spawn
+      if (p.name === 'cowtools') { p.weapon = 'bolty'; p.ammo = 5; }
       i++;
     }
   }

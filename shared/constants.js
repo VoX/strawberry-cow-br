@@ -38,19 +38,22 @@ const KNIFE_MELEE_CD_MS = 500;
 // recoil ramp shape, fire-mode selector, and reload sound. Used in
 // hud.js, input.js, message-handlers.js, and weapon-fire.js to avoid
 // scattered string OR-checks.
-const BURST_FAMILY = new Set(['burst', 'aug']);
+const BURST_FAMILY = new Set(['burst', 'aug', 'mp5k']);
 
 // Weapons that benefit from the dual-wield perk (two pistols / two Benellis /
 // dual M16A2). Used by hud.js mag display, combat.js ammo calc, and the
 // weapon-pickup path in weapons.js to decide whether a second copy counts.
-const DUAL_WIELD_FAMILY = new Set(['normal', 'shotgun', 'burst']);
+// Dual-wield: only lightweight weapons. M16 + Benelli disabled for now
+// (too heavy to dual-wield realistically). Re-enable by adding back
+// 'shotgun' and 'burst' to this set.
+const DUAL_WIELD_FAMILY = new Set(['normal', 'mp5k']);
 
 // Base magazine capacity by weapon. Single source of truth for hud.js,
 // server/weapon-fire.js, and server/combat.js reload/extMag math.
-const MAG_SIZES = { normal: 15, burst: 20, shotgun: 6, bolty: 5, aug: 30 };
+const MAG_SIZES = { normal: 10, burst: 20, shotgun: 6, bolty: 5, aug: 30, mp5k: 30 };
 // Extended-mag perk grants these capacities instead; dual-wield multiplies
 // by 2 further.
-const EXT_MAG_SIZES = { normal: 19, burst: 25, shotgun: 8, bolty: 7, aug: 38 };
+const EXT_MAG_SIZES = { normal: 13, burst: 25, shotgun: 8, bolty: 7, aug: 38, mp5k: 38 };
 
 // Client input types that carry a monotonic seq number for CSP reconciliation.
 // The client stamps seq on every stateful send; the server tracks the highest
@@ -76,7 +79,7 @@ const FOOD_TYPES = [
   {name:'cupcake',hunger:22,pts:18},
   {name:'cookie',hunger:12,pts:8},
 ];
-const WEAPON_TYPES = ['shotgun','burst','bolty','shotgun','burst','bolty','cowtank','aug'];
+const WEAPON_TYPES = ['shotgun','burst','bolty','shotgun','burst','bolty','cowtank','aug','mp5k'];
 
 module.exports = {
   MAP_W, MAP_H, TICK_RATE,

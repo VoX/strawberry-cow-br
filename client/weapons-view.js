@@ -218,6 +218,41 @@ export function buildViewmodel(type, dual) {
     hoof.userData.reloadStyle = 'magswap';
     vmGroup.add(hoof);
     vmGroup.userData.hoof = hoof;
+  } else if (type === 'mp5k') {
+    // MP5K viewmodel — compact stockless SMG. Parts in a sub-group so
+    // dual-wield can clone the whole gun to the left side.
+    const bodyMat = new THREE.MeshBasicMaterial({ color: 0x2a2a2a });
+    const gunGroup = new THREE.Group();
+    const recv = new THREE.Mesh(new THREE.BoxGeometry(2.0, 2.0, 7), bodyMat);
+    recv.position.set(0, 0, -3); gunGroup.add(recv);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 4, 6), black);
+    barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.3, -8.5); gunGroup.add(barrel);
+    const fSight = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.8, 0.3), metal);
+    fSight.position.set(0, 1.5, -7); gunGroup.add(fSight);
+    const rSight = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.6, 0.4), metal);
+    rSight.position.set(0, 1.4, -0.5); gunGroup.add(rSight);
+    const mag = new THREE.Mesh(new THREE.BoxGeometry(1.0, 3.5, 1.4), new THREE.MeshBasicMaterial({ color: 0x1a1a1a }));
+    mag.position.set(0, -2.5, -2.5); mag.rotation.x = 0.15; gunGroup.add(mag);
+    const trig = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.8, 0.6), metal);
+    trig.position.set(0, -1.3, -4.5); gunGroup.add(trig);
+    const fg = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.5, 0.8), bodyMat);
+    fg.position.set(0, -1.5, -5.5); gunGroup.add(fg);
+    gunGroup.position.set(2, 0, 0);
+    vmGroup.add(gunGroup);
+    // Dual-wield: cloned MP5K offset to the left
+    const gunLeft = gunGroup.clone(true);
+    gunLeft.position.set(-6, 0, 0);
+    gunLeft.visible = vmDual;
+    vmGroup.add(gunLeft);
+    vmGroup.userData.mp5kSecond = gunLeft;
+    const hoof = buildHoof();
+    hoof.position.set(-0.3, -0.5, -7);
+    hoof.rotation.set(-0.2, 0.1, 0.5);
+    hoof.userData.restPos = hoof.position.clone();
+    hoof.userData.restRot = hoof.rotation.clone();
+    hoof.userData.reloadStyle = 'magswap';
+    vmGroup.add(hoof);
+    vmGroup.userData.hoof = hoof;
   } else if (type === 'cowtank') {
     const outerTube = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 16, 10), olive);
     outerTube.rotation.x = Math.PI / 2; outerTube.position.set(0, 0, -8); vmGroup.add(outerTube);
@@ -273,6 +308,7 @@ export function updateViewmodel() {
     vmDual = meDual;
     if (vmGroup && vmGroup.userData.m16Second) vmGroup.userData.m16Second.visible = meDual;
     if (vmGroup && vmGroup.userData.benelliSecond) vmGroup.userData.benelliSecond.visible = meDual;
+    if (vmGroup && vmGroup.userData.mp5kSecond) vmGroup.userData.mp5kSecond.visible = meDual;
   }
   // Animate the thrown LAW — tumble to the right and down over 1.2s
   if (_throwAway) {
@@ -297,6 +333,14 @@ export function updateViewmodel() {
     const t = performance.now() / 1000;
     vmGroup.position.y = -4 + (moving ? Math.sin(t * 8) * 0.5 : 0);
     vmGroup.position.x = 4 + (moving ? Math.cos(t * 6) * 0.3 : 0);
+    // L96 bolt rack animation — tilt the gun right + rotate during rack
+    if (S._boltRacking && vmType === 'bolty') {
+      vmGroup.rotation.z = -0.3;
+      vmGroup.position.x += 2;
+      vmGroup.position.y -= 1;
+    } else if (vmType === 'bolty') {
+      vmGroup.rotation.z *= 0.8; // smooth return
+    }
     // Hoof reload animation — style varies per weapon
     const hoof = vmGroup.userData.hoof;
     if (hoof && hoof.userData.restPos && hoof.userData.restRot) {
