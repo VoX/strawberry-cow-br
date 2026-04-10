@@ -467,14 +467,16 @@ export const handlers = {
         serverProjIds.add(sp.id);
         const existing = S.projData.find(p => p.id === sp.id);
         if (existing) {
+          // Snap to server position + update velocity for local stepping
           existing.x = sp.x; existing.y = sp.y; existing.y3d = sp.z || 0;
+          existing.vx = sp.vx || 0; existing.vy = sp.vy || 0; existing.vy3d = sp.vz || 0;
         } else {
           S.projData.push({
             id: sp.id, x: sp.x, y: sp.y,
-            vx: 0, vy: 0,
+            vx: sp.vx || 0, vy: sp.vy || 0,
             color: sp.color || 'pink',
             bolty: sp.bolty, cowtank: sp.cowtank,
-            y3d: sp.z || 0, vy3d: 0,
+            y3d: sp.z || 0, vy3d: sp.vz || 0,
             _fromTick: true,
           });
           if (sp.ownerId !== S.myId) {

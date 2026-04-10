@@ -323,7 +323,9 @@ function gameTick() {
   // sends color/bolty/cowtank/shotgun only on spawn (first tick), then
   // just x/y/z on subsequent ticks.
   const projState = gameState.getProjectiles().map(p => ({
-    id: p.id, x: p.x, y: p.y, z: p.z, ownerId: p.ownerId,
+    id: p.id, x: p.x, y: p.y, z: p.z,
+    vx: p.vx, vy: p.vy, vz: p.vz,
+    ownerId: p.ownerId,
     color: p._color, bolty: !!p.bolty, cowtank: !!p.cowtank, shotgun: !!p.shotgun,
   }));
 
