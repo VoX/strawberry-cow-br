@@ -1,12 +1,12 @@
 // Client-side movement prediction with snapshot-interpolation reconciliation.
-// Replaces the old Bernier ring-buffer + replay approach with:
-//   - Immediate local input application (prediction via shared/movement.js)
-//   - Time-stamped prediction vault (via SI's Vault class)
-//   - Gradual drift correction from server snapshots (no replay)
+// Uses SI vault for time-based server state matching, but keeps the main
+// branch's render-offset smoother for jerk-free visual corrections.
 //
-// The local player is EXCLUDED from SI.calcInterpolation() — remote players
-// use that for smooth rendering. The local player predicts immediately and
-// reconciles against the server snapshot at the closest matching time.
+// Local player: predict immediately via shared/movement.js, reconcile by
+// snapping logical position to server state and absorbing the visual delta
+// into a render offset that decays over ERR_LINEAR_TIME.
+//
+// Remote players: SI.calcInterpolation() handles smooth interpolation.
 
 import S from './state.js';
 import { stepPlayerMovement } from '../shared/movement.js';
@@ -19,13 +19,50 @@ import { SI, playerVault, createPredictionSnapshot } from './snapshot.js';
 const TICK_HZ = 30;
 const TICK_DT = 1 / TICK_HZ;
 
-// Hard-snap threshold — above this, teleport instantly (respawn/portal).
-const SNAP_THRESHOLD = 40;
+// Reconciliation thresholds
+const RECONCILE_EPSILON = 1.0;  // below this, prediction matched — no correction
+const SNAP_THRESHOLD = 40;      // above this, hard teleport (respawn/portal)
+const ERR_DEAD_ZONE = 0.05;     // render offset below this zeroed out
 
-// Correction speed — how fast we correct drift per frame.
-// Lower = faster correction. 60 = aggressive (moving), 180 = gentle (still).
-const CORRECTION_MOVING = 60;
-const CORRECTION_STILL = 180;
+// Render offset smoother — same as main branch (Source-style cl_smooth).
+// Corrections are absorbed into errX/Y/Z and decayed linearly over
+// ERR_LINEAR_TIME seconds. Camera reads mePredicted + renderOffset, so
+// the logical position gets instant correction but the visual glides.
+let errX = 0, errY = 0, errZ = 0;
+let errRemainTime = 0;
+const ERR_LINEAR_TIME = 0.15;    // 150ms decay
+
+export function getRenderOffset() { return { x: errX, y: errY, z: errZ }; }
+
+function decayRenderOffset(frameDt) {
+  if (errRemainTime <= 0) { errX = 0; errY = 0; errZ = 0; return; }
+  if (frameDt >= errRemainTime) {
+    errX = 0; errY = 0; errZ = 0; errRemainTime = 0;
+    return;
+  }
+  const f = frameDt / errRemainTime;
+  errX -= errX * f;
+  errY -= errY * f;
+  errZ -= errZ * f;
+  errRemainTime -= frameDt;
+}
+
+function foldError(dx, dy, dz) {
+  const newX = errX + dx;
+  const newY = errY + dy;
+  const newZ = errZ + dz;
+  const mag = Math.hypot(newX, newY, newZ);
+  if (mag > SNAP_THRESHOLD) {
+    errX = 0; errY = 0; errZ = 0; errRemainTime = 0;
+    return;
+  }
+  if (mag < ERR_DEAD_ZONE) {
+    errX = 0; errY = 0; errZ = 0; errRemainTime = 0;
+    return;
+  }
+  errX = newX; errY = newY; errZ = newZ;
+  errRemainTime = ERR_LINEAR_TIME;
+}
 
 // Terrain shim matching the server/terrain.js shape.
 const terrain = {
@@ -70,6 +107,7 @@ export function initPrediction() {
   };
   accumulator = 0;
   _prevPredicted._set = false;
+  errX = 0; errY = 0; errZ = 0; errRemainTime = 0;
   playerVault.clear();
 }
 
@@ -105,11 +143,6 @@ export function getRenderedPredicted() {
   return _renderedOut;
 }
 
-// Render offset — kept for API compatibility but no longer used for
-// error accumulation. The gradual correction approach applies directly
-// to mePredicted instead of through a separate error channel.
-export function getRenderOffset() { return { x: 0, y: 0, z: 0 }; }
-
 // Client-authoritative speed effects.
 function computeLocalSpeedMult() {
   const mp = S.mePredicted;
@@ -134,7 +167,6 @@ export function predictStep(frameDt) {
     _stepInput.dy = currentInput.dy;
     _stepInput.walking = !!currentInput.walking;
     _stepInput.speedMult = computeLocalSpeedMult();
-    // Send move to server (still uses seq for ordering on server side).
     send({ type: 'move', dx: _stepInput.dx, dy: _stepInput.dy, walking: _stepInput.walking, aim: currentInput.aim, speedMult: _stepInput.speedMult });
     if (S.pingLast === 0) S.pingLast = performance.now();
     try {
@@ -150,13 +182,13 @@ export function predictStep(frameDt) {
     // Store predicted position in the vault for time-based reconciliation.
     createPredictionSnapshot(S.myId, S.mePredicted.x, S.mePredicted.y, S.mePredicted.z);
   }
-  // Gradual server reconciliation every frame.
+  decayRenderOffset(frameDt);
   reconcile();
 }
 
-// Time-based server reconciliation. Compares the latest server snapshot's
-// position for our player against our predicted position at the same time.
-// Gradually corrects drift instead of snapping + replaying.
+// Time-based server reconciliation using SI vault.
+// Snap logical position to server state when drift exceeds epsilon,
+// then fold the visual delta into the render offset smoother.
 function reconcile() {
   if (!S.mePredicted || !S.myId) return;
 
@@ -164,15 +196,15 @@ function reconcile() {
   if (!serverSnapshot || !serverSnapshot.state) return;
 
   // Find our entity in the server snapshot.
-  const serverState = serverSnapshot.state;
   let serverMe = null;
-  for (let i = 0; i < serverState.length; i++) {
-    if (serverState[i].id === S.myId) { serverMe = serverState[i]; break; }
+  for (let i = 0; i < serverSnapshot.state.length; i++) {
+    if (serverSnapshot.state[i].id === S.myId) { serverMe = serverSnapshot.state[i]; break; }
   }
   if (!serverMe) return;
 
   // Find our predicted state closest to the server snapshot's time.
-  const predicted = playerVault.get(serverSnapshot.time, true);
+  const clientTime = serverSnapshot.time + (SI.timeOffset || 0);
+  const predicted = playerVault.get(clientTime, true);
   if (!predicted || !predicted.state) return;
 
   let predMe = null;
@@ -181,38 +213,37 @@ function reconcile() {
   }
   if (!predMe) return;
 
-  // Calculate drift.
-  const offsetX = predMe.x - serverMe.x;
-  const offsetY = predMe.y - serverMe.y;
-  const offsetZ = (predMe.z || 0) - (serverMe.z || 0);
-  const drift = Math.hypot(offsetX, offsetY, offsetZ);
+  // Calculate drift between predicted and server at the same time.
+  const dx = predMe.x - serverMe.x;
+  const dy = predMe.y - serverMe.y;
+  const dz = (predMe.z || 0) - (serverMe.z || 0);
+  const drift = Math.hypot(dx, dy, dz);
 
-  // Net stats tracking.
+  // Net stats.
   const ns = S.netStats;
   const nowMs = performance.now();
-  ns.reconcileSnapsWindow.push({ t: nowMs, drift, snapped: drift > SNAP_THRESHOLD });
+  ns.reconcileSnapsWindow.push({ t: nowMs, drift, snapped: drift > RECONCILE_EPSILON });
   while (ns.reconcileSnapsWindow.length > 0 && nowMs - ns.reconcileSnapsWindow[0].t > 1000) {
     ns.reconcileSnapsWindow.shift();
   }
 
-  // Hard snap for teleport/respawn.
-  if (drift > SNAP_THRESHOLD) {
-    S.mePredicted.x = serverMe.x;
-    S.mePredicted.y = serverMe.y;
-    S.mePredicted.z = serverMe.z;
-    return;
-  }
+  if (drift <= RECONCILE_EPSILON) return; // prediction matched
 
-  // Skip tiny drifts.
-  if (drift < 0.05) return;
+  // Capture pre-correction position for the render smoother.
+  const preX = S.mePredicted.x;
+  const preY = S.mePredicted.y;
+  const preZ = S.mePredicted.z;
 
-  // Gradual correction — faster when moving, slower when still.
-  const isMoving = Math.abs(currentInput.dx) > 0.01 || Math.abs(currentInput.dy) > 0.01;
-  const correction = isMoving ? CORRECTION_MOVING : CORRECTION_STILL;
+  // Snap logical position to server state.
+  S.mePredicted.x = serverMe.x;
+  S.mePredicted.y = serverMe.y;
+  S.mePredicted.z = serverMe.z;
 
-  S.mePredicted.x -= offsetX / correction;
-  S.mePredicted.y -= offsetY / correction;
-  S.mePredicted.z -= offsetZ / correction;
+  // Fold the visual delta into the render offset smoother.
+  // Camera sees (mePredicted + renderOffset), so offsetting by
+  // (pre - post) keeps the camera in place visually while the
+  // logical position jumps. The offset decays over 150ms.
+  foldError(preX - S.mePredicted.x, preY - S.mePredicted.y, preZ - S.mePredicted.z);
 }
 
 // No longer used — kept as no-op for any call sites that haven't been updated.
