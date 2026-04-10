@@ -217,7 +217,6 @@ class GameState {
   resetRound() {
     this.clearRoundTimers();
     this._tickNum = 0;
-    this._positionHistory.length = 0;
     this._projectiles.length = 0;
     this._foods.length = 0;
     this._weaponPickups.length = 0;
