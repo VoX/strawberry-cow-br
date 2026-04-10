@@ -74,7 +74,7 @@ function startGame() {
     map: { walls: gameState.getWalls(), mud: gameState.getMudPatches(), ponds: gameState.getHealPonds(), portals: gameState.getPortals(), shelters: gameState.getShelters(), houses: gameState.getHouses() },
     barricades: gameState.getBarricades(),
     armorPickups: gameState.getArmorPickups().map(a => ({ id: a.id, x: a.x, y: a.y })),
-    weapons: gameState.getWeaponPickups().map(w => ({ id: w.id, x: w.x, y: w.y, weapon: w.weapon })),
+    weapons: gameState.getWeaponPickups().map(w => ({ id: w.id, x: w.x, y: w.y, weapon: w.weapon, spawnTime: w.spawnTime })),
   });
   broadcast(buildServerStatus());
 
@@ -124,7 +124,7 @@ function gameTick() {
       gameState.removeWeaponPickupAt(i);
       const nw = spawnWeaponPickup();
       nw.spawnTime = nowMs;
-      broadcast({ type: 'weaponSpawn', id: nw.id, x: nw.x, y: nw.y, weapon: nw.weapon });
+      broadcast({ type: 'weaponSpawn', id: nw.id, x: nw.x, y: nw.y, weapon: nw.weapon, spawnTime: nw.spawnTime });
     }
   }
 
@@ -173,20 +173,19 @@ function gameTick() {
     // full netcode-strategy reference; in short, the freeze-on-advance
     // is the load-bearing symmetry that keeps client and server pointing
     // at the same simulation moment.
+    // Snapshot stored in place to avoid per-tick allocation. Re-armed
+    // only when lastInputSeq advances — between advances the snapshot
+    // stays frozen at the moment of the first integrated tick for that
+    // seq, which is what the client's reconcile pairing expects.
     if (!p.isBot && (p._ackSnapshot == null || p.lastInputSeq > p._ackSnapshot.seq)) {
-      p._ackSnapshot = {
-        seq: p.lastInputSeq || 0,
-        x: p.x, y: p.y, z: p.z,
-        vz: p.vz || 0,
-        onGround: !!p.onGround,
-        // Include the gates that skip the integrator so reconcile can
-        // restore them on the predicted player. The tick handler also
-        // syncs these from the broadcast, but inputAck can arrive
-        // between ticks; without these fields a freshly-stunned client
-        // could keep predicting forward through the gap.
-        stunTimer: p.stunTimer || 0,
-        spawnProt: p.spawnProtection > 0,
-      };
+      if (!p._ackSnapshot) p._ackSnapshot = { seq: 0, x: 0, y: 0, z: 0, vz: 0, onGround: false, stunTimer: 0, spawnProt: false };
+      const snap = p._ackSnapshot;
+      snap.seq = p.lastInputSeq || 0;
+      snap.x = p.x; snap.y = p.y; snap.z = p.z;
+      snap.vz = p.vz || 0;
+      snap.onGround = !!p.onGround;
+      snap.stunTimer = p.stunTimer || 0;
+      snap.spawnProt = p.spawnProtection > 0;
     }
 
     // Skip the remaining per-player work (hunger, food, cooldowns) for
@@ -270,7 +269,8 @@ function gameTick() {
   // Periodically spawn new weapon pickups
   if (Math.random() < 0.008 && weaponPickups.length < 6) {
     const w = spawnWeaponPickup();
-    broadcast({ type: 'weaponSpawn', id: w.id, x: w.x, y: w.y, weapon: w.weapon });
+    if (!w.spawnTime) w.spawnTime = nowMs;
+    broadcast({ type: 'weaponSpawn', id: w.id, x: w.x, y: w.y, weapon: w.weapon, spawnTime: w.spawnTime });
   }
 
   // Update AI bots

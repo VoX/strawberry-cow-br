@@ -1,168 +1,26 @@
-// =============================================================================
-// NETCODE STRATEGY — central reference, read this first.
-// =============================================================================
+// Client-side movement prediction (CSP). Source/CS-style: client runs the
+// shared integrator on the same input the server will see; reconcile
+// against periodic inputAck snapshots; render-time smoothing eats small
+// drift. Three load-bearing invariants:
 //
-// This file is the heart of the client-side prediction (CSP) loop. The whole
-// netcode strategy spans server/game.js (tick + inputAck), shared/movement.js
-// (the integrator), client/network.js (transport routing), client/index.js
-// (render loop wiring), and the message handlers in client/message-handlers.js
-// — but the load-bearing invariants live HERE. Touch the rest of the netcode
-// without re-reading this comment at your own risk.
+//   1. predict and send are LOCKSTEP. predictStep emits one `move` per
+//      fixed step right before integrating, so each ring entry has a
+//      unique seq matching exactly one server-side tick. Throttling
+//      sends to a different cadence breaks this and causes inchworm.
+//   2. STATEFUL_INPUT_TYPES = {move} only. Bumping the seq for
+//      attack/jump/etc. would inject gaps the server can't match.
+//   3. Reconcile pairs the FIRST ring entry with the acked seq against
+//      the server snapshot (which is captured the first tick after
+//      lastInputSeq advances). Pairing against the LAST entry would
+//      compare an N-steps-deep prediction against a 1-tick-deep server
+//      state and snap on every ack.
 //
-// ## High-level architecture
+// stunTimer + spawnProtection are server-only and synced via the tick
+// handler + inputAck snapshot — without that sync the client charges
+// through stuns. Explosion knockback and dash are deliberately not
+// predicted (no anticipatory data).
 //
-// Authoritative server, Source/Counter-Strike-style. Three pieces:
-//
-//   1. CLIENT-SIDE PREDICTION (CSP) for the local player. The client runs
-//      the exact same movement integrator the server runs, on the exact same
-//      input the server will see, so WASD feels instant — no waiting for the
-//      round-trip to the server before the camera moves.
-//
-//   2. ENTITY INTERPOLATION for remote players (client/interp.js + the tick
-//      handler in client/message-handlers.js). Remote positions ride a 100 ms
-//      delay buffer so they always lerp between two known snapshots instead
-//      of stepping once per arriving tick. Trades 100 ms of display lag on
-//      remote motion for perfectly smooth motion.
-//
-//   3. SERVER-SIDE LAG COMPENSATION for hit detection (server/combat.js +
-//      gameState position history ring). The shooter's `attack` carries
-//      `displayTick` (the tick the interp buffer was rendering at fire time);
-//      the server rewinds entity positions to that tick before doing the
-//      hitscan. "What you see is what you can hit" — independent of latency.
-//
-// ## Why this combo
-//
-// Standard FPS netcode (Half-Life/Source/CS lineage). It's the only known
-// architecture that gives you (a) zero local input latency, (b) smooth
-// remote motion under packet loss, AND (c) fair hit detection across
-// arbitrary RTTs simultaneously. Anything simpler trades off one of those.
-//
-// ## CSP loop in detail (the part that's easy to get wrong)
-//
-// The accumulator: predictStep() runs at the render frame rate but advances
-// the simulation in fixed 1/TICK_RATE chunks. One animation frame may step
-// prediction 0, 1, or 2 times depending on elapsed wall time. This matters
-// because the server simulates at exactly TICK_RATE — variable client
-// stepping would diverge.
-//
-// Send/predict are LOCKSTEP. predictStep() emits exactly one `move` message
-// per fixed step, immediately before integrating, with the same input that
-// the integration uses. So:
-//
-//   one predict step = one move message = one unique seq
-//
-// This 1:1 mapping is THE load-bearing invariant for reconciliation. If you
-// throttle sends to a different cadence than the predict step (which is
-// what we used to do, with a 50 ms wall-clock throttle), predict steps in
-// the gap between sends inherit the OLD seq while integrating LIVE input —
-// the server gets a different input than the client's ring entry was tagged
-// with, drift accumulates, every reconcile snaps. Don't break this.
-//
-// ## Why move is the only seq-bearing input
-//
-// `STATEFUL_INPUT_TYPES` in shared/constants.js is `{move}` only. Attack,
-// jump, dash, reload, etc. all skip the seq stamp. Reason: every type that
-// increments `S.inputSeq` MUST correspond 1:1 with a predict step, because
-// the predict step right after the increment captures the new seq as its
-// own tag. If shooting bumped the seq, the next predict step would be
-// tagged seq+2 instead of seq+1, and the server (which integrates one tick
-// per move, not per shot) would have NO matching snapshot. Drift on every
-// shot — that was the strafe-fire stutter bug.
-//
-// ## Reconciliation
-//
-// Every ~167 ms (every 5 server ticks) the server sends an `inputAck`
-// containing the snapshot it captured when `lastInputSeq` last advanced —
-// {seq, x, y, z, vz, onGround, stunTimer, spawnProt}. Client looks up the
-// FIRST ring entry tagged with that seq (NOT the last — see below) and
-// compares positions:
-//
-//   - If drift ≤ RECONCILE_EPSILON (1 unit): accept, drop the ring entry,
-//     keep predicting forward.
-//   - If drift > RECONCILE_EPSILON: snap S.mePredicted to the server
-//     position, drop the ring entry plus everything older, REPLAY every
-//     remaining ring entry through stepPlayerMovement using each entry's
-//     STORED input. Bernier's paper is explicit that replay must use the
-//     original cmd, not whatever input is live at replay time, otherwise
-//     mid-turn frames re-run as if the player were turning the whole time.
-//
-// FIRST entry, not LAST: server's snapshot is captured the first tick that
-// integrates each new lastInputSeq — i.e. "one integration step into seq=N".
-// Client's first ring entry with seq=N is "one predict step into seq=N".
-// These two are symmetric. Pairing against the LAST seq=N entry would
-// compare an N-steps-deep prediction against a 1-tick-deep snapshot and
-// snap on every ack.
-//
-// ## Render-time error smoothing
-//
-// Even when reconcile snaps the LOGICAL state (S.mePredicted) to the
-// server, the camera shouldn't teleport — that's visible jerk. We fold
-// the (pre-snap → post-replay) delta into a render-only error accumulator
-// (errX/Y/Z) which decays linearly to zero over ERR_LINEAR_TIME (150 ms).
-// The camera reads (mePredicted + err), so the LOGICAL state is correct
-// immediately while the VISUAL position glides toward it. Source calls
-// this `cl_smooth` / `cl_smoothtime`.
-//
-// Two cutoffs sit on top of the smoother:
-//   - ERR_DEAD_ZONE (0.05 u): sub-dead-zone deltas are dropped entirely
-//     (floating-point noise would otherwise feed micro-corrections every ack
-//     and the smoother would never settle).
-//   - ERR_INSTANT_SNAP (40 u): deltas this large are real teleports
-//     (respawn, portal, explosion knockback), not corrections — bypass the
-//     smoother and let the camera follow the snap.
-//
-// ## Server-only state synced to mePredicted
-//
-// Some fields gate stepPlayerMovement but are server-authoritative — the
-// client has no way to predict them. These are mirrored from the tick
-// broadcast onto S.mePredicted in the message-handlers tick path AND
-// shipped on the inputAck snapshot for cases where the ack arrives between
-// ticks:
-//
-//   - stunTimer (set by combat hits, poisoned food, cowstrike). Skips the
-//     movement integration entirely.
-//   - spawnProtection. Same.
-//
-// Without this sync the client would charge forward through a stun and
-// snap back hard when reconcile finally landed. That was the "rubberband
-// when hit" bug.
-//
-// ## Server-only mutations the client CAN'T predict (deliberate)
-//
-//   - Explosion knockback (server applies a position delta directly). The
-//     client has no way to know the explosion will hit until the broadcast
-//     arrives. Reconcile catches it; for close hits the delta is past
-//     ERR_INSTANT_SNAP so the camera hard-snaps. Arguably correct for
-//     "you got blown up".
-//   - Dash (server teleports up to 120 u in <1 ms). Predicting it would
-//     require mirroring the dashCdMult perk and re-running the wall/
-//     barricade collision loop locally. Left as a delayed teleport.
-//
-// ## Transport
-//
-// The 30 Hz `tick` (S2C) and `move` (C2S) ride the unreliable channel
-// (geckos.io WebRTC data channel by default; falls back to WebSocket).
-// Everything else is reliable. Reason: TCP head-of-line blocking on a
-// dropped packet stalls the entire stream — the player sees a freeze-then-
-// catchup. Unreliable UDP for the high-frequency hot path means a dropped
-// tick is just gone, the next tick supersedes it within 33 ms, and CSP
-// handles the gap naturally. See server/transports/*.js + docs/webrtc-
-// migration-plan.md for the transport details.
-//
-// ## Files involved
-//
-//   - shared/movement.js  — the integrator both sides call
-//   - shared/constants.js — TICK_RATE, STATEFUL_INPUT_TYPES, physics consts
-//   - server/game.js      — gameTick(), inputAck snapshot capture
-//   - server/dispatch.js  — input message handlers, stale-seq drop
-//   - server/combat.js    — applies stunTimer / vz on hit (server-only)
-//   - client/prediction.js (this file) — predictStep, reconcile, smoother
-//   - client/message-handlers.js — tick handler syncs stunTimer/spawnProt;
-//     inputAck handler routes the snapshot into reconcile
-//   - client/index.js     — render loop wiring
-//   - client/interp.js    — entity interpolation buffer for remote players
-//
-// =============================================================================
+// See docs/netcode-prediction-plan.md for the full design rationale.
 
 import S from './state.js';
 import { stepPlayerMovement } from '../shared/movement.js';
@@ -233,16 +91,23 @@ function decayRenderOffset(frameDt) {
 // point after a reconcile.
 const predictRing = [];
 
-// Latest WASD input vector. Updated every render frame by the main loop
-// via `setCurrentInput(...)`. Both predictStep and reconcilePrediction read
-// from here so they use the same source. Crucially, reconcilePrediction
-// CAN'T read from S.me.dx/dy — those fields aren't in the tick broadcast
-// and would always be undefined, causing replay to step with zero input.
-let currentInput = { dx: 0, dy: 0, walking: false };
-export function setCurrentInput(dx, dy, walking) {
+// Latest WASD input vector + camera aim. Updated every render frame by
+// the main loop via `setCurrentInput(...)`. Both predictStep and
+// reconcilePrediction read from here so they use the same source.
+// Crucially, reconcilePrediction CAN'T read from S.me.dx/dy — those
+// fields aren't in the tick broadcast and would always be undefined,
+// causing replay to step with zero input.
+//
+// `aim` is the camera-forward yaw in the same convention as the bot
+// `atan2(-nx, ny)` formula in shared/movement.js — the server uses it
+// to set player.aimAngle so the cow's facing matches where the human
+// is looking, not where they're moving (those diverge during strafing).
+let currentInput = { dx: 0, dy: 0, walking: false, aim: 0 };
+export function setCurrentInput(dx, dy, walking, aim) {
   currentInput.dx = dx;
   currentInput.dy = dy;
   currentInput.walking = walking;
+  if (typeof aim === 'number') currentInput.aim = aim;
 }
 
 // Synthesized perks shape for the prediction player. The server flattens
@@ -287,88 +152,72 @@ export function initPrediction() {
   S.mePredicted = snapshotPlayer(S.me);
   predictRing.length = 0;
   accumulator = 0;
-  _prevPredicted = null;
+  _prevPredicted._set = false;
   errX = 0; errY = 0; errZ = 0;
-  // Reset the one-shot error log gate so a new round / respawn gets a
-  // fresh logging budget for any stepPlayerMovement regressions.
   _predictErrorLogged = false;
 }
 
-// Rebuild the world object the shared integrator expects. Called once per
-// prediction step so we always see the latest client-mirrored state.
-function buildWorld() {
-  return {
-    walls: S.mapFeatures.walls || [],
-    barricades: S.barricades || [],
-    mudPatches: S.mapFeatures.mud || [],
-    portals: S.mapFeatures.portals || [],
-    zone: S.serverZone,
-  };
+// Module-level scratch objects so the 30 Hz predict loop doesn't allocate
+// new world/input/prev objects every step. Field-by-field reuse: zero
+// short-lived allocations on the hot path.
+const _world = { walls: null, barricades: null, mudPatches: null, portals: null, zone: null };
+function refreshWorld() {
+  _world.walls = S.mapFeatures.walls || [];
+  _world.barricades = S.barricades || [];
+  _world.mudPatches = S.mapFeatures.mud || [];
+  _world.portals = S.mapFeatures.portals || [];
+  _world.zone = S.serverZone;
+  return _world;
 }
+const _stepInput = { dx: 0, dy: 0, walking: false };
 
 let _predictErrorLogged = false;
 
-// Previous-tick predicted state. Used together with the fractional
-// accumulator remainder to interpolate the camera-visible position
-// between whole-tick prediction steps — so at 60 fps we don't see
-// the player "hopping" once per 2 frames (the tick rate). The logical
-// S.mePredicted still advances only on whole steps (for ring / reconcile
-// correctness); the renderer reads a lerp between prev and current.
-let _prevPredicted = null;
+// Previous-tick predicted state used by getRenderedPredicted() to lerp
+// the camera between whole-tick prediction steps so 60 fps render
+// doesn't show the 30 Hz step cadence. Reused in place each tick.
+const _prevPredicted = { x: 0, y: 0, z: 0, _set: false };
+// Reusable output object for getRenderedPredicted — caller reads .x/.y/.z
+// once per frame and discards, so a shared module-level object is safe.
+const _renderedOut = { x: 0, y: 0, z: 0 };
 export function getRenderedPredicted() {
   if (!S.mePredicted) return null;
-  // Fraction of the current fixed step that wall time has advanced into.
-  // 0 right after a step ran, ~1 right before the next step will run.
   const f = Math.max(0, Math.min(1, accumulator / TICK_DT));
-  if (!_prevPredicted) return { x: S.mePredicted.x, y: S.mePredicted.y, z: S.mePredicted.z };
-  return {
-    x: _prevPredicted.x + (S.mePredicted.x - _prevPredicted.x) * f,
-    y: _prevPredicted.y + (S.mePredicted.y - _prevPredicted.y) * f,
-    z: _prevPredicted.z + (S.mePredicted.z - _prevPredicted.z) * f,
-  };
+  if (!_prevPredicted._set) {
+    _renderedOut.x = S.mePredicted.x;
+    _renderedOut.y = S.mePredicted.y;
+    _renderedOut.z = S.mePredicted.z;
+    return _renderedOut;
+  }
+  _renderedOut.x = _prevPredicted.x + (S.mePredicted.x - _prevPredicted.x) * f;
+  _renderedOut.y = _prevPredicted.y + (S.mePredicted.y - _prevPredicted.y) * f;
+  _renderedOut.z = _prevPredicted.z + (S.mePredicted.z - _prevPredicted.z) * f;
+  return _renderedOut;
 }
 
-// Advance prediction by `frameDt` seconds. Reads the live input vector
-// from the module-level `currentInput` (set by the render loop each frame
-// via setCurrentInput). Called from the main render loop once per frame.
-// Runs 0 or more fixed-timestep iterations. Each iteration sends a move
-// message to the server and advances local prediction in lockstep — so
-// every ring entry has its own unique seq and the server processes
-// exactly one move per tick. This is what eliminates the "tether"
-// rubberband: send and predict cadences MUST match or the client drifts
-// ahead of the server within each throttle window.
 export function predictStep(frameDt) {
   if (!S.mePredicted || !S.me) return;
   accumulator += frameDt;
-  // Cap the catch-up to prevent spiraling if the tab was backgrounded
-  // and accumulator built up seconds of pending work.
+  // Cap catch-up so a backgrounded tab doesn't spiral seconds of pending work.
   if (accumulator > 0.25) accumulator = 0.25;
-  const world = buildWorld();
+  const world = refreshWorld();
   while (accumulator >= TICK_DT) {
     accumulator -= TICK_DT;
-    // Snapshot the "before" state for render-time interpolation. Camera
-    // reads a lerp between _prevPredicted and S.mePredicted using the
-    // remaining accumulator as the fraction.
-    _prevPredicted = { x: S.mePredicted.x, y: S.mePredicted.y, z: S.mePredicted.z };
-    // Snapshot the input BEFORE stepPlayerMovement. Reconcile replay reads
-    // this per-seq stored input from the ring — Bernier's paper is explicit
-    // that replay must re-simulate with the exact cmds each slot was
-    // originally computed with, not whatever input is live at replay time.
-    const stepInput = { dx: currentInput.dx, dy: currentInput.dy, walking: !!currentInput.walking };
-    // Send the move with this exact input. send() increments S.inputSeq
-    // so the seq we capture immediately after is the one the server will
-    // see for this step's input. One move per step → server processes one
-    // input per tick → client predicts one step per input → no asymmetry.
-    send({ type: 'move', dx: stepInput.dx, dy: stepInput.dy, walking: stepInput.walking });
+    _prevPredicted.x = S.mePredicted.x;
+    _prevPredicted.y = S.mePredicted.y;
+    _prevPredicted.z = S.mePredicted.z;
+    _prevPredicted._set = true;
+    _stepInput.dx = currentInput.dx;
+    _stepInput.dy = currentInput.dy;
+    _stepInput.walking = !!currentInput.walking;
+    // send() increments S.inputSeq, so the seq we capture immediately
+    // after is the one the server will see for this step's input.
+    send({ type: 'move', dx: _stepInput.dx, dy: _stepInput.dy, walking: _stepInput.walking, aim: currentInput.aim });
     if (S.pingLast === 0) S.pingLast = performance.now();
     const seqAtStep = S.inputSeq;
-    // Guard the shared integrator call so a regression in stepPlayerMovement
-    // (or in the synthesized world/perks shape above) doesn't propagate
-    // out, kill the rest of the render loop, and leave camera/render
-    // frozen. Logs once per session so the first occurrence is visible
-    // in devtools without spamming the console.
+    // Guard so an integrator regression doesn't kill the render loop.
     try {
-      stepPlayerMovement(S.mePredicted, TICK_DT, world, stepInput, terrain);
+      stepPlayerMovement(S.mePredicted, TICK_DT, world, _stepInput, terrain);
     } catch (e) {
       if (!_predictErrorLogged) {
         _predictErrorLogged = true;
@@ -377,11 +226,11 @@ export function predictStep(frameDt) {
       accumulator = 0;
       return;
     }
-    predictRing.push({ seq: seqAtStep, state: snapshotPlayer(S.mePredicted), input: stepInput });
+    // Ring entry needs its own input copy — replay reads it later and
+    // _stepInput will have been overwritten by then.
+    predictRing.push({ seq: seqAtStep, state: snapshotPlayer(S.mePredicted), input: { dx: _stepInput.dx, dy: _stepInput.dy, walking: _stepInput.walking } });
     if (predictRing.length > PREDICT_RING_CAP) predictRing.shift();
   }
-  // Decay the render error offset every frame so reconcile corrections
-  // glide to zero over ERR_HALFLIFE * ln(2) ≈ 0.5 s instead of snapping.
   decayRenderOffset(frameDt);
 }
 
@@ -449,11 +298,9 @@ export function reconcilePrediction(ackedState) {
   // Drop acked+older ring entries.
   predictRing.splice(0, ackedIdx + 1);
   // Replay remaining ring entries against the new baseline using each
-  // entry's STORED input (captured at the time that step originally ran).
-  // This matches Bernier's original design — re-simulating with live
-  // current input would re-run mid-turn frames as if the player were
-  // turning the whole time, producing visible yanks on every reconcile.
-  const world = buildWorld();
+  // entry's STORED input — Bernier's design. Replaying with live input
+  // would re-run mid-turn frames as if the player turned the whole time.
+  const world = refreshWorld();
   for (const e of predictRing) {
     stepPlayerMovement(S.mePredicted, TICK_DT, world, e.input || currentInput, terrain);
     e.state = snapshotPlayer(S.mePredicted);

@@ -15,16 +15,17 @@ import { scene, cam, setNightMode } from './renderer.js';
 import { getTerrainHeight, rebuildTerrain } from './terrain.js';
 import { send, closeActive as closeActiveTransport } from './network.js';
 import { showPerkMenu } from './ui.js';
-import { spawnParts } from './entities.js';
+import { spawnParts, showChatBubble } from './entities.js';
 import { addBarricade, removeBarricade, clearBarricades, destroyWall } from './map-objects.js';
 import { clearRocketSounds } from './projectiles.js';
 import { spawnParticle, clearParticles, PGEO_SPHERE_LO, PGEO_SPHERE_MED, PGEO_BOX, PGEO_TORUS } from './particles.js';
 import { setArmorSpawns, onArmorSpawn, onArmorPickup, clearPickups } from './pickups.js';
 import { disposeMeshTree } from './three-utils.js';
 import { S2C } from '../shared/messages.js';
+import { BURST_FAMILY } from '../shared/constants.js';
 import { INTERP_HIST_CAP, interpSamplePlayer } from './interp.js';
 import { reconcilePrediction } from './prediction.js';
-import { spawnBulletHole, clearBulletHoles } from './bullet-holes.js';
+import { spawnBulletHole, clearBulletHoles, removeBulletHolesBySurfaceKey } from './bullet-holes.js';
 
 // Reusable temp vector for the projectile muzzle-offset transform. Was shared
 // with the render loop in index.js via `_tmpDir`; we get our own private one so
@@ -52,11 +53,29 @@ function flashHit(opacity, duration, bg) {
   }, duration);
 }
 
-// Prepend a killfeed line, keeping the list bounded to 5 entries. Replaces 11
-// call sites that all did `S.killfeed.unshift(...)` followed by a length check.
+// Soft edge-of-screen flashes — radial vignettes that briefly hit
+// opacity 1 and then fade back via CSS transition. Disable the
+// transition for the punch-in (so opacity 1 commits instantly), force a
+// reflow, then re-enable the transition for the fade. Without the
+// transition disable + reflow the browser collapses the 0→1→0 sequence
+// into a single 0→0 paint and the flash never appears.
+function flashEdge(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.style.transition = 'none';
+  el.style.opacity = '1';
+  void el.offsetHeight; // force reflow so the opacity:1 commits
+  el.style.transition = '';
+  el.style.opacity = '0';
+}
+
+// Push a system-style line into the chat log. Replaces the old killfeed
+// path (which had its own UI and array) — kill notifications, weapon
+// pickups, mode changes, cowstrike warnings etc. all share the same chat
+// surface now. `t` is the lifetime in seconds before fade-out.
 function addKillFeed(txt, t) {
-  S.killfeed.unshift({ txt, t });
-  if (S.killfeed.length > 5) S.killfeed.pop();
+  S.chatLog.push({ name: '', color: '', text: txt, t, system: true });
+  if (S.chatLog.length > 10) S.chatLog.shift();
 }
 
 // Host-controls toggle — referenced by several lobby handlers. Moved out of
@@ -84,6 +103,12 @@ export const handlers = {
       } else {
         el.textContent = '';
       }
+    }
+    // Relabel the join button when a round is already running so the
+    // player knows their first click will drop them in as a spectator.
+    const jb = document.getElementById('joinBtn');
+    if (jb && !S.myId) {
+      jb.textContent = msg.gameState === 'playing' ? 'SPECTATE MEADOW' : 'QUEUE FOR MEADOW';
     }
   },
 
@@ -132,18 +157,21 @@ export const handlers = {
       return '<div style="color:' + (p.ready ? '#88ff88' : '#ff8888') + ';padding:2px 0">' + dot + (p.name || '?') + crown + (p.isBot ? ' 🤖' : (p.ready ? ' \u2714' : ' ...')) + kickBtn + '</div>';
     }).join('');
     document.getElementById('joinScreen').querySelector('h2').innerHTML = readyTxt + '<div style="margin-top:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(204,136,255,0.3);border-radius:8px;padding:8px 16px;font-size:13px;max-height:200px;overflow-y:auto;width:260px;text-align:left">' + pList + '</div>';
-    if (!document.getElementById('readyBtn')) {
-      const rb = document.createElement('button'); rb.id = 'readyBtn'; rb.textContent = 'READY TO GRAZE';
-      rb.style.cssText = 'padding:8px 30px;font-size:18px;border:none;border-radius:8px;background:#44ff44;color:#000;cursor:pointer;font-weight:bold;margin-top:10px;width:220px';
-      rb.onclick = () => { send({ type: 'ready' }); };
-      document.getElementById('joinScreen').appendChild(rb);
-    }
-    const rb2 = document.getElementById('readyBtn');
-    if (rb2 && S.myId) {
+    // The same #joinBtn becomes the READY/UNREADY toggle once joined —
+    // no DOM motion, the button stays anchored at the top of the menu.
+    const jb = document.getElementById('joinBtn');
+    if (jb && S.myId) {
       const myLobby = msg.players.find(p => p.id === S.myId);
       if (myLobby) {
-        if (myLobby.ready) { rb2.textContent = 'UNREADY \u2714'; rb2.style.background = '#88ff88'; }
-        else { rb2.textContent = 'READY TO GRAZE'; rb2.style.background = '#44ff44'; }
+        if (myLobby.ready) {
+          jb.textContent = 'UNREADY \u2714';
+          jb.style.background = '#88ff88';
+          jb.style.color = '#000';
+        } else {
+          jb.textContent = 'READY TO GRAZE';
+          jb.style.background = '#44ff44';
+          jb.style.color = '#000';
+        }
       }
     }
   },
@@ -187,7 +215,7 @@ export const handlers = {
     if (msg.zone) S.serverZone = msg.zone;
     if (msg.map) { S.mapFeatures = msg.map; S.mapBuilt = false; }
     if (msg.weapons) S.clientWeapons = msg.weapons;
-    S.killfeed = []; stopMenuMusic(); resetMusic(); setMusicPlaying(true);
+    S.chatLog = []; stopMenuMusic(); resetMusic(); setMusicPlaying(true);
     S.spectateTargetId = null; S.killerId = null; S.killerName = null;
     S.barricadeReadyAt = 0;
     clearBarricades();
@@ -244,7 +272,10 @@ export const handlers = {
       const existing = S.serverPlayers.find(sp => sp.id === t.id);
       if (!existing) continue; // race: no snapshot yet, skip until one arrives
       if (existing.id === S.myId) {
-        Object.assign(existing, t);
+        // Camera owns aim/dir for the local player; the server's values
+        // are a stale RTT echo and would clobber the live look direction.
+        const { aimAngle, dir, ...rest } = t;
+        Object.assign(existing, rest);
         // Sync server-only movement gates (stun + spawn protection) into
         // the predicted player. Both make stepPlayerMovement skip the
         // movement integration entirely, but the client has no way to
@@ -395,7 +426,7 @@ export const handlers = {
       else if (myWep === 'cowtank' || msg.cowtank) sfxRocket(0.12);
       else if (msg.shotgun === true) sfxShotgun(0.1);
       else if (myWep === 'shotgun') sfxShotgun(0.1);
-      else if (myWep === 'burst' || msg.burst !== undefined) sfxLR(0.1);
+      else if (BURST_FAMILY.has(myWep) || msg.burst !== undefined) sfxLR(0.1);
       else sfxShoot();
       // Apply recoil
       const wep = myWep;
@@ -433,6 +464,17 @@ export const handlers = {
         normal: [ // Spit: small kick
           { p: 0.008, y: (Math.random()-0.5)*0.004 },
         ],
+        // AUG — vertical-dominant kick with a slow rightward drift, very
+        // different from the M16 snake. Bullpup centerline = predictable
+        // pitch ramp, then a small lateral creep that the player has to
+        // pull against.
+        aug: [
+          { p: 0.014, y: 0.001 }, { p: 0.013, y: 0.002 }, { p: 0.012, y: 0.003 },
+          { p: 0.012, y: 0.004 }, { p: 0.011, y: 0.004 }, { p: 0.011, y: 0.005 },
+          { p: 0.010, y: 0.005 }, { p: 0.010, y: 0.006 }, { p: 0.009, y: 0.006 },
+          { p: 0.009, y: -0.002 }, { p: 0.008, y: -0.003 }, { p: 0.008, y: -0.004 },
+          { p: 0.009, y: -0.001 }, { p: 0.010, y: 0.001 }, { p: 0.011, y: 0.003 },
+        ],
       };
       const pattern = recoilPatterns[wep];
       if (pattern && S.me) {
@@ -442,12 +484,14 @@ export const handlers = {
         const r = pattern[S.recoilIndex % pattern.length];
         // Burst mode kicks softer than full-auto by 35% (was 50%). Semi
         // keeps full recoil so each deliberate shot feels punchy.
-        const burstMod = (wep === 'burst' && S.fireMode === 'burst') ? 0.65 : 1;
+        const burstMod = (BURST_FAMILY.has(wep) && S.fireMode === 'burst') ? 0.65 : 1;
         const tacticowMod = S.me.recoilMult || 1;
         const walkingMod = S.crouching ? 0.73 : 1;
         // Dual-wield recoil multiplier: benelli only gets +10%, everything else +30%
         const dualMod = S.me.dualWield ? (wep === 'shotgun' ? 1.1 : 1.3) : 1;
-        const recoilMult = burstMod * tacticowMod * walkingMod * dualMod;
+        // AUG hipfire penalty: 1.5x recoil when not scoped, 1x when ADS.
+        const augHipMod = (wep === 'aug' && !S.adsActive) ? 1.5 : 1;
+        const recoilMult = burstMod * tacticowMod * walkingMod * dualMod * augHipMod;
         S.pitch += r.p * recoilMult;
         S.yaw += r.y * recoilMult;
         S.pitch = Math.max(-1.2, Math.min(1.2, S.pitch));
@@ -476,20 +520,72 @@ export const handlers = {
     // Persistent bullet hole at the entry point. The L96 wallpierce path
     // also fires a projectileHit on the SECOND wall hit which spawns the
     // exit hole through the projectileHit handler — so a single bolty
-    // wallbang leaves two visible holes (entry + exit/behind).
-    spawnBulletHole(msg.x, msg.y, impactZ);
+    // wallbang leaves two visible holes (entry + exit/behind). The
+    // surface key ties the decal to its host wall so wallDestroyed can
+    // sweep it later.
+    const wallKey = msg.wallId != null ? 'wall:' + msg.wallId : null;
+    spawnBulletHole(msg.x, msg.y, impactZ, wallKey);
   },
 
   projectileHit(msg) {
     S.projData = S.projData.filter(p => p.id !== msg.projectileId);
     if (S.projMeshes[msg.projectileId]) { disposeMeshTree(S.projMeshes[msg.projectileId]); delete S.projMeshes[msg.projectileId]; }
-    if (msg.targetId === S.myId) { sfxHit(); flashHit(0.5, 150); }
+    if (msg.targetId === S.myId) {
+      sfxHit(); flashHit(0.5, 150); flashEdge('damageEdgeFlash');
+      // Apply stun locally the moment we know we got hit, instead of
+      // waiting for the next tick to sync stunTimer. The server gates
+      // movement on stunTimer > 0 (skips the integrator), so without
+      // this the client charges forward for ~RTT/2 + tick latency
+      // before reconcile pulls them back. Mirroring the server's stun
+      // duration here shrinks the visible rubberband to whatever the
+      // smoother can absorb.
+      if (S.mePredicted) S.mePredicted.stunTimer = 0.5;
+    }
     // Persistent bullet hole on world geometry hits — wall, barricade, or
     // terrain. Player hits don't get holes (the blood particles below cover
     // them); the wall:true flag from the server marks the world-geometry path.
     if (msg.wall && typeof msg.x === 'number' && typeof msg.y === 'number') {
-      const z = typeof msg.z === 'number' ? msg.z : (getTerrainHeight(msg.x, msg.y) + 5);
-      spawnBulletHole(msg.x, msg.y, z);
+      const terrainH = getTerrainHeight(msg.x, msg.y);
+      const z = typeof msg.z === 'number' ? msg.z : (terrainH + 5);
+      const surfaceKey = msg.wallId != null ? 'wall:' + msg.wallId
+                       : msg.barricadeId != null ? 'barricade:' + msg.barricadeId
+                       : null;
+      spawnBulletHole(msg.x, msg.y, z, surfaceKey);
+      // Impact pop — sparks + a small smoke puff at the impact point. Walls
+      // get yellow sparks; ground hits (impact within ~1 unit of terrain
+      // height) swap the sparks for green grass-blade flecks so a missed
+      // shot into the meadow throws up clippings.
+      const onGround = Math.abs(z - terrainH) < 1.5;
+      const sparkColor = onGround ? 0x55cc33 : 0xffdd44;
+      const sparkCount = onGround ? 7 : 4;
+      const sparkSpread = onGround ? 60 : 40;
+      const sparkScale = onGround ? 0.6 : 0.7;
+      for (let i = 0; i < sparkCount; i++) {
+        spawnParticle({
+          geo: PGEO_SPHERE_LO, color: sparkColor,
+          x: msg.x + (Math.random()-0.5)*4,
+          y: z + (Math.random()-0.5)*4 + (onGround ? 1 : 0),
+          z: msg.y + (Math.random()-0.5)*4,
+          sx: sparkScale,
+          life: onGround ? 0.55 : 0.35, peakOpacity: 1,
+          vx: (Math.random()-0.5)*sparkSpread,
+          vy: onGround ? (8 + Math.random()*22) : (Math.random()-0.5)*sparkSpread,
+          vz: (Math.random()-0.5)*sparkSpread,
+          gy: onGround ? 60 : 0,
+        });
+      }
+      // Smoke puff — a single growing translucent sphere. Walls only;
+      // grass clippings already read as a "splash" without the smoke.
+      if (!onGround) {
+        spawnParticle({
+          geo: PGEO_SPHERE_LO, color: 0xbbbbbb,
+          x: msg.x, y: z, z: msg.y,
+          sx: 2,
+          life: 0.5, peakOpacity: 0.5,
+          growth: 4,
+          vy: 12,
+        });
+      }
     }
     // Hitmarker for attacker — overlays the crosshair without disturbing its layout
     if (msg.targetId && msg.ownerId === S.myId && msg.targetId !== S.myId) {
@@ -538,7 +634,12 @@ export const handlers = {
       if (target) {
         const dmg = msg.dmg;
         const hasShield = target.armor > 0;
-        const color = msg.headshot ? '#ff2222' : hasShield ? '#44aaff' : dmg >= 25 ? '#ff4444' : dmg >= 10 ? '#ffaa44' : '#ffffff';
+        // Shielded hits get a blue ramp by damage tier (dark blue heavy →
+        // light blue light); flesh hits get the existing red/orange/white
+        // ramp; headshots stay bright red regardless of shield.
+        const color = msg.headshot ? '#ff2222'
+                    : hasShield ? (dmg >= 25 ? '#1144aa' : dmg >= 10 ? '#3377cc' : '#88bbff')
+                    : (dmg >= 25 ? '#ff4444' : dmg >= 10 ? '#ffaa44' : '#ffffff');
         const prefix = hasShield ? '\u{1F6E1}\uFE0F ' : '';
         const label = prefix + dmg;
         const nc = document.createElement('canvas'); nc.width = 160; nc.height = 48;
@@ -639,6 +740,7 @@ export const handlers = {
   chat(msg) {
     S.chatLog.push({ name: msg.name, color: msg.color, text: msg.text, t: 10 });
     if (S.chatLog.length > 6) S.chatLog.shift();
+    if (msg.playerId != null) showChatBubble(msg.playerId, msg.text);
   },
 
   barricadePlaced(msg) {
@@ -651,6 +753,7 @@ export const handlers = {
 
   barricadeDestroyed(msg) {
     removeBarricade(msg.id);
+    removeBulletHolesBySurfaceKey('barricade:' + msg.id);
     sfx(300, 0.08, 'square', 0.05); sfx(150, 0.15, 'sawtooth', 0.04);
   },
 
@@ -682,6 +785,7 @@ export const handlers = {
 
   wallDestroyed(msg) {
     destroyWall(msg.id);
+    removeBulletHolesBySurfaceKey('wall:' + msg.id);
     // Server also removes it from WALLS, but update client S.mapFeatures for consistency
     if (S.mapFeatures && S.mapFeatures.walls) {
       S.mapFeatures.walls = S.mapFeatures.walls.filter(w => w.id !== msg.id);
@@ -701,7 +805,6 @@ export const handlers = {
 
   kill(msg) {
     addKillFeed('\u{1F480} ' + (msg.killerName || '?') + ' \u2192 ' + (msg.victimName || '?'), 5);
-    if (S.killfeed.length > 5) S.killfeed.pop();
     if (msg.victimId === S.myId) {
       S.killerId = msg.killerId;
       S.killerName = msg.killerName;
@@ -718,7 +821,7 @@ export const handlers = {
     document.getElementById('winRestart').textContent = 'Next round starting soon...';
     if (getAudioCtx()) {
       const t = getAudioCtx().currentTime;
-      const v = 0.08 * (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5);
+      const v = 0.32 * (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5);
       const chords = [[82.4, 164.8], [98, 196], [110, 220], [82.4, 164.8], [110, 220], [130.8, 261.6], [164.8, 329.6]];
       chords.forEach((notes, i) => {
         notes.forEach(freq => {
@@ -784,7 +887,7 @@ export const handlers = {
     S.me = null;
     S.serverFoods = [];
     S.clientWeapons = [];
-    S.killfeed = [];
+    S.chatLog = [];
     S.mapBuilt = false;
     S.pendingLevelUps = 0;
     S.perkMenuOpen = false;
@@ -793,7 +896,15 @@ export const handlers = {
     clearBarricades();
     S._botRevealTime = null;
     document.getElementById('perkMenu').style.display = 'none';
-    const oldRb = document.getElementById('readyBtn'); if (oldRb) oldRb.remove();
+    // Reset the queue/ready button — only reachable in debug mode where
+    // we don't reload between rounds.
+    const jbReset = document.getElementById('joinBtn');
+    if (jbReset) {
+      jbReset.textContent = 'QUEUE FOR MEADOW';
+      jbReset.style.background = '';
+      jbReset.style.color = '';
+      jbReset.style.display = '';
+    }
     startMenuMusic();
   },
 
@@ -801,6 +912,7 @@ export const handlers = {
     // Skip if spectating (not alive)
     if (!S.me || !S.me.alive) return;
     sfxLevelUp();
+    flashEdge('levelupEdgeFlash');
     S.pendingLevelUps = (S.pendingLevelUps || 0) + 1;
     if (!S.perkMenuOpen) showPerkMenu();
   },
@@ -934,18 +1046,18 @@ export const handlers = {
 
   weaponPickup(msg) {
     S.clientWeapons = S.clientWeapons.filter(w => w.id !== msg.pickupId);
-    const _wn = { shotgun: 'Benelli', burst: 'M16A2', bolty: 'L96', cowtank: 'M72 LAW' };
+    const _wn = { shotgun: 'Benelli', burst: 'M16A2', bolty: 'L96', cowtank: 'M72 LAW', aug: 'AUG' };
     const wpName = _wn[msg.weapon] || msg.weapon || 'weapon';
     if (msg.playerId === S.myId) {
       addKillFeed('Picked up ' + wpName + '!', 3);
       // Default to full-auto when picking up a weapon with a fire selector
-      if (msg.weapon === 'burst') S.fireMode = 'auto';
+      if (BURST_FAMILY.has(msg.weapon)) S.fireMode = 'auto';
     }
     else addKillFeed((msg.name || '?') + ' picked up ' + wpName, 3);
   },
 
   weaponSpawn(msg) {
-    S.clientWeapons.push({ id: msg.id, x: msg.x, y: msg.y, weapon: msg.weapon });
+    S.clientWeapons.push({ id: msg.id, x: msg.x, y: msg.y, weapon: msg.weapon, spawnTime: msg.spawnTime || Date.now() });
   },
 
   weaponDespawn(msg) {
@@ -960,7 +1072,7 @@ export const handlers = {
   reloaded(msg) {
     if (msg.playerId !== S.myId) return;
     addKillFeed('Reloaded!', 1.5);
-    if (msg.weapon === 'burst') sfxReloadLR();
+    if (BURST_FAMILY.has(msg.weapon)) sfxReloadLR();
     else if (msg.weapon === 'bolty') sfxReloadBolty();
     else if (msg.weapon === 'shotgun') sfxShellLoad();
   },

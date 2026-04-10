@@ -20,16 +20,19 @@ import { markSharedGeometry } from './three-utils.js';
 const HOLE_LIFE = 30;     // seconds before the hole disappears
 const HOLE_FADE = 4;      // seconds spent fading at the end of life
 const MAX_HOLES = 200;    // FIFO cap
-const HOLE_RADIUS = 1.6;
-const HOLE_PEAK_OPACITY = 0.85;
+const HOLE_RADIUS = 2.5;  // sphere radius — needs to poke noticeably out
+                          // of whatever surface it's half-buried in
+const HOLE_PEAK_OPACITY = 0.9;
 
 // Shared low-poly sphere — small enough that 200 of them is trivial.
 const _geo = markSharedGeometry(new THREE.SphereGeometry(HOLE_RADIUS, 6, 4));
 
-// { mesh, mat, life } for every active hole. Append on spawn, scan in update.
+// { mesh, mat, life, surfaceKey } for every active hole. surfaceKey ties
+// the hole to a wall or barricade so the wall/barricade-destroyed handlers
+// can remove decals when the surface they're sitting on vanishes.
 const _holes = [];
 
-export function spawnBulletHole(gameX, gameY, gameZ) {
+export function spawnBulletHole(gameX, gameY, gameZ, surfaceKey) {
   if (typeof gameX !== 'number' || typeof gameY !== 'number' || typeof gameZ !== 'number') return;
   if (_holes.length >= MAX_HOLES) {
     const old = _holes.shift();
@@ -46,7 +49,21 @@ export function spawnBulletHole(gameX, gameY, gameZ) {
   // Game coords (x, y, z=up) → three coords (x, y=up, z).
   mesh.position.set(gameX, gameZ, gameY);
   scene.add(mesh);
-  _holes.push({ mesh, mat, life: HOLE_LIFE });
+  _holes.push({ mesh, mat, life: HOLE_LIFE, surfaceKey: surfaceKey || null });
+}
+
+// Drop every hole tied to a given surface key. Called from the
+// wallDestroyed / barricadeDestroyed handlers — without this, decals
+// keep floating in mid-air after the surface they were on vanishes.
+export function removeBulletHolesBySurfaceKey(surfaceKey) {
+  if (!surfaceKey) return;
+  for (let i = _holes.length - 1; i >= 0; i--) {
+    if (_holes[i].surfaceKey === surfaceKey) {
+      scene.remove(_holes[i].mesh);
+      _holes[i].mat.dispose();
+      _holes.splice(i, 1);
+    }
+  }
 }
 
 export function updateBulletHoles(dt) {

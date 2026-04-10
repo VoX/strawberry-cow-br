@@ -39,6 +39,7 @@ var require_constants = __commonJS({
     var GRAVITY = 800;
     var BARRICADE_HEIGHT = 55;
     var PLAYER_WALL_INFLATE = 15;
+    var BURST_FAMILY4 = /* @__PURE__ */ new Set(["burst", "aug"]);
     var STATEFUL_INPUT_TYPES2 = /* @__PURE__ */ new Set([
       "move"
     ]);
@@ -52,7 +53,7 @@ var require_constants = __commonJS({
       { name: "cupcake", hunger: 22, pts: 18 },
       { name: "cookie", hunger: 12, pts: 8 }
     ];
-    var WEAPON_TYPES = ["shotgun", "burst", "bolty", "shotgun", "burst", "bolty", "cowtank"];
+    var WEAPON_TYPES = ["shotgun", "burst", "bolty", "shotgun", "burst", "bolty", "cowtank", "aug"];
     module.exports = {
       MAP_W: MAP_W2,
       MAP_H: MAP_H2,
@@ -64,6 +65,7 @@ var require_constants = __commonJS({
       BARRICADE_HEIGHT,
       PLAYER_WALL_INFLATE,
       STATEFUL_INPUT_TYPES: STATEFUL_INPUT_TYPES2,
+      BURST_FAMILY: BURST_FAMILY4,
       COLORS,
       FOOD_TYPES,
       WEAPON_TYPES
@@ -80,7 +82,7 @@ var init_config = __esm({
     MH = import_constants.MAP_H;
     CH = 35;
     COL = { pink: 16746666, blue: 8956671, green: 8978312, gold: 16768324, purple: 13404415, red: 16729156, orange: 16746564, cyan: 4521949 };
-    WPCOL = { shotgun: 16729156, burst: 4500223, bolty: 16755200, cowtank: 4521796 };
+    WPCOL = { shotgun: 16729156, burst: 4500223, bolty: 16755200, cowtank: 4521796, aug: 11158783 };
     PERKS = [
       { id: "speed", name: "Swift Hooves", desc: "+15% speed" },
       { id: "extrahunger", name: "Big Udders", desc: "+40 max milk" },
@@ -122,7 +124,6 @@ var init_state = __esm({
       fpsDisplay: 0,
       pingVal: 0,
       pingLast: 0,
-      killfeed: [],
       projData: [],
       projMeshes: {},
       cowMeshes: {},
@@ -298,7 +299,31 @@ function sfxBolty() {
   }, 500);
 }
 function sfxHit() {
-  sfx(200, 0.15, "sawtooth", 0.08);
+  if (!actx) return;
+  const t = actx.currentTime;
+  const v = masterVol();
+  const o1 = actx.createOscillator(), g1 = actx.createGain();
+  o1.type = "sine";
+  o1.frequency.setValueAtTime(380, t);
+  o1.frequency.exponentialRampToValueAtTime(60, t + 0.18);
+  g1.gain.setValueAtTime(1e-4, t);
+  g1.gain.exponentialRampToValueAtTime(0.32 * v, t + 5e-3);
+  g1.gain.exponentialRampToValueAtTime(1e-3, t + 0.22);
+  o1.connect(g1);
+  g1.connect(actx.destination);
+  o1.start(t);
+  o1.stop(t + 0.24);
+  const o2 = actx.createOscillator(), g2 = actx.createGain();
+  o2.type = "sawtooth";
+  o2.frequency.setValueAtTime(220, t);
+  o2.frequency.exponentialRampToValueAtTime(120, t + 0.1);
+  g2.gain.setValueAtTime(1e-4, t);
+  g2.gain.exponentialRampToValueAtTime(0.22 * v, t + 5e-3);
+  g2.gain.exponentialRampToValueAtTime(1e-3, t + 0.14);
+  o2.connect(g2);
+  g2.connect(actx.destination);
+  o2.start(t);
+  o2.stop(t + 0.16);
 }
 function sfxEat() {
   sfx(800, 0.08, "sine", 0.06);
@@ -307,17 +332,54 @@ function sfxEat() {
 function sfxLevelUp() {
   if (!actx) return;
   const t = actx.currentTime;
-  const v = 0.08 * masterVol();
-  [523, 659, 784, 1047].forEach((f, i) => {
-    const o = actx.createOscillator(), g = actx.createGain();
+  const v = 0.32 * masterVol();
+  const arp = [523.25, 659.25, 783.99, 1046.5];
+  const noteDur = 0.09;
+  arp.forEach((f, i) => {
+    const start = t + i * noteDur;
+    const oTri = actx.createOscillator();
+    const oSq = actx.createOscillator();
+    const g = actx.createGain();
+    oTri.type = "triangle";
+    oSq.type = "square";
+    oTri.frequency.value = f;
+    oSq.frequency.value = f;
+    g.gain.setValueAtTime(1e-4, start);
+    g.gain.exponentialRampToValueAtTime(v, start + 0.01);
+    g.gain.exponentialRampToValueAtTime(1e-3, start + noteDur + 0.06);
+    oTri.connect(g);
+    oSq.connect(g);
+    g.connect(actx.destination);
+    oTri.start(start);
+    oSq.start(start);
+    oTri.stop(start + noteDur + 0.08);
+    oSq.stop(start + noteDur + 0.08);
+  });
+  const chordStart = t + arp.length * noteDur;
+  [523.25, 659.25, 783.99].forEach((f) => {
+    const o = actx.createOscillator();
+    const g = actx.createGain();
+    o.type = "sawtooth";
     o.frequency.value = f;
-    g.gain.setValueAtTime(v, t + i * 0.08);
-    g.gain.exponentialRampToValueAtTime(1e-3, t + i * 0.08 + 0.2);
+    g.gain.setValueAtTime(1e-4, chordStart);
+    g.gain.exponentialRampToValueAtTime(v * 0.6, chordStart + 0.02);
+    g.gain.exponentialRampToValueAtTime(1e-3, chordStart + 0.7);
     o.connect(g);
     g.connect(actx.destination);
-    o.start(t + i * 0.08);
-    o.stop(t + i * 0.08 + 0.2);
+    o.start(chordStart);
+    o.stop(chordStart + 0.75);
   });
+  const sh = actx.createOscillator();
+  const shg = actx.createGain();
+  sh.type = "sine";
+  sh.frequency.value = 2093;
+  shg.gain.setValueAtTime(1e-4, chordStart);
+  shg.gain.exponentialRampToValueAtTime(v * 0.4, chordStart + 0.02);
+  shg.gain.exponentialRampToValueAtTime(1e-3, chordStart + 0.6);
+  sh.connect(shg);
+  shg.connect(actx.destination);
+  sh.start(chordStart);
+  sh.stop(chordStart + 0.65);
 }
 function sfxDeath() {
   sfx(400, 0.6, "sawtooth", 0.08);
@@ -3403,7 +3465,27 @@ function interpSamplePlayer(p, nowMs) {
   }
   const renderT = nowMs - INTERP_DELAY_MS;
   const last = hist[hist.length - 1];
-  if (renderT >= last.t) return { x: last.x, y: last.y, z: last.z, aim: last.aim };
+  if (renderT >= last.t) {
+    const overshoot = renderT - last.t;
+    if (overshoot < INTERP_EXTRAPOLATE_MS && hist.length >= 2) {
+      const prev = hist[hist.length - 2];
+      const span = last.t - prev.t;
+      if (span > 0) {
+        const vx = (last.x - prev.x) / span;
+        const vy = (last.y - prev.y) / span;
+        const vz = (last.z - prev.z) / span;
+        return {
+          x: last.x + vx * overshoot,
+          y: last.y + vy * overshoot,
+          z: last.z + vz * overshoot,
+          // Aim doesn't extrapolate well (mouse-look is non-linear) —
+          // freeze on the latest known orientation.
+          aim: last.aim
+        };
+      }
+    }
+    return { x: last.x, y: last.y, z: last.z, aim: last.aim };
+  }
   if (renderT <= hist[0].t) return { x: hist[0].x, y: hist[0].y, z: hist[0].z, aim: hist[0].aim };
   for (let i = 0; i < hist.length - 1; i++) {
     const a = hist[i], b = hist[i + 1];
@@ -3423,11 +3505,12 @@ function interpSamplePlayer(p, nowMs) {
   }
   return { x: last.x, y: last.y, z: last.z, aim: last.aim };
 }
-var INTERP_HIST_CAP, INTERP_DELAY_MS;
+var INTERP_HIST_CAP, INTERP_DELAY_MS, INTERP_EXTRAPOLATE_MS;
 var init_interp = __esm({
   "client/interp.js"() {
-    INTERP_HIST_CAP = 8;
+    INTERP_HIST_CAP = 16;
     INTERP_DELAY_MS = 100;
+    INTERP_EXTRAPOLATE_MS = 300;
   }
 });
 
@@ -3477,7 +3560,7 @@ function autoFireLoop() {
     return;
   }
   const me = state_default.me;
-  if (!me || !me.alive || me.weapon !== "burst") {
+  if (!me || !me.alive || !import_constants7.BURST_FAMILY.has(me.weapon)) {
     stopAutoFire();
     return;
   }
@@ -3560,7 +3643,7 @@ var init_input = __esm({
         return;
       }
       mouseDown = true;
-      if (me.weapon === "burst" && state_default.fireMode === "auto") {
+      if (import_constants7.BURST_FAMILY.has(me.weapon) && state_default.fireMode === "auto") {
         startAutoFire();
       } else {
         doAttack();
@@ -3589,11 +3672,12 @@ var init_input = __esm({
     document.addEventListener("mousedown", (e) => {
       if (e.button === 2 && state_default.locked && state_default.state === "playing") {
         const me = state_default.me;
-        if (me && me.alive && me.weapon === "bolty") {
+        if (me && me.alive && (me.weapon === "bolty" || me.weapon === "aug")) {
           state_default.adsActive = true;
-          cam.fov = 12.5;
+          cam.fov = me.weapon === "aug" ? 37.5 : 12.5;
           cam.updateProjectionMatrix();
-          document.getElementById("scopeOverlay").style.display = "block";
+          const overlayId = me.weapon === "aug" ? "augScopeOverlay" : "scopeOverlay";
+          document.getElementById(overlayId).style.display = "block";
           document.getElementById("crosshair").style.display = "none";
           const vg = vmGroupRef && vmGroupRef();
           if (vg) vg.visible = false;
@@ -3606,6 +3690,7 @@ var init_input = __esm({
         cam.fov = 75;
         cam.updateProjectionMatrix();
         document.getElementById("scopeOverlay").style.display = "none";
+        document.getElementById("augScopeOverlay").style.display = "none";
         document.getElementById("crosshair").style.display = "block";
         const vg = vmGroupRef && vmGroupRef();
         if (vg) vg.visible = true;
@@ -3760,7 +3845,8 @@ var init_input = __esm({
       if (e.code === "KeyR" && state_default.state === "playing") send({ type: "reload" });
       if (e.code === "KeyX" && state_default.state === "playing") {
         state_default.fireMode = state_default.fireMode === "burst" ? "auto" : state_default.fireMode === "auto" ? "semi" : "burst";
-        state_default.killfeed.unshift({ txt: "M16A2: " + state_default.fireMode.toUpperCase() + " mode", t: 2 });
+        state_default.chatLog.push({ name: "", color: "", text: "M16A2: " + state_default.fireMode.toUpperCase() + " mode", t: 2, system: true });
+        if (state_default.chatLog.length > 10) state_default.chatLog.shift();
       }
       if (e.code === "KeyC" && state_default.state === "playing") {
         const meC = state_default.me;
@@ -3919,14 +4005,17 @@ var init_ui = __esm({
       });
     }
     document.getElementById("joinBtn").addEventListener("click", () => {
-      const n = document.getElementById("nameIn").value.trim() || COW_NAMES[Math.floor(Math.random() * COW_NAMES.length)];
-      document.getElementById("nameIn").value = n;
-      try {
-        localStorage.setItem("cowName3d", n);
-      } catch (e) {
+      if (!state_default.myId) {
+        const n = document.getElementById("nameIn").value.trim() || COW_NAMES[Math.floor(Math.random() * COW_NAMES.length)];
+        document.getElementById("nameIn").value = n;
+        try {
+          localStorage.setItem("cowName3d", n);
+        } catch (e) {
+        }
+        send({ type: "join", name: n });
+        return;
       }
-      send({ type: "join", name: n });
-      document.getElementById("joinBtn").style.display = "none";
+      send({ type: "ready" });
     });
     document.getElementById("nameIn").addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
@@ -4369,33 +4458,38 @@ function updateCows(time, dt) {
     if (!state_default.cowMeshes[pid]) {
       const m = buildCow(p.color, p.personality);
       scene.add(m);
+      const colHex = { pink: "#ff88aa", blue: "#88aaff", green: "#88ff88", gold: "#ffdd44", purple: "#cc88ff", red: "#ff4444", orange: "#ff8844", cyan: "#44ffdd" };
+      const nameStr = p.name || "Cow";
+      if (!_nameMeasureCtx) _nameMeasureCtx = document.createElement("canvas").getContext("2d");
+      _nameMeasureCtx.font = "bold 32px Segoe UI";
+      const nameW = _nameMeasureCtx.measureText(nameStr).width;
+      const padding = 60;
+      const cw = Math.min(512, Math.max(256, Math.ceil(nameW + padding)));
       const nc = document.createElement("canvas");
-      nc.width = 256;
+      nc.width = cw;
       nc.height = 64;
       const nctx = nc.getContext("2d");
       nctx.font = "bold 32px Segoe UI";
       nctx.textAlign = "center";
-      const colHex = { pink: "#ff88aa", blue: "#88aaff", green: "#88ff88", gold: "#ffdd44", purple: "#cc88ff", red: "#ff4444", orange: "#ff8844", cyan: "#44ffdd" };
-      const nameW = nctx.measureText(p.name || "Cow").width;
-      const circleX = 128 - nameW / 2 - 16;
+      const circleX = cw / 2 - nameW / 2 - 16;
       nctx.beginPath();
       nctx.arc(circleX, 34, 10, 0, Math.PI * 2);
       nctx.fillStyle = colHex[p.color] || "#aaa";
       nctx.fill();
       nctx.fillStyle = "rgba(0,0,0,0.5)";
-      nctx.fillText(p.name || "Cow", 137, 39);
+      nctx.fillText(nameStr, cw / 2 + 9, 39);
       nctx.fillStyle = "#ffffff";
-      nctx.fillText(p.name || "Cow", 136, 38);
+      nctx.fillText(nameStr, cw / 2 + 8, 38);
       const ntex = new THREE6.CanvasTexture(nc);
       ntex.minFilter = THREE6.LinearFilter;
       const nmat = new THREE6.SpriteMaterial({ map: ntex, transparent: true, depthTest: false });
       const nsprite = new THREE6.Sprite(nmat);
       nsprite.position.set(0, 50, 0);
-      nsprite.scale.set(40, 10, 1);
+      nsprite.scale.set(40 * (cw / 256), 10, 1);
       m.add(nsprite);
       const hatType = ["cowboy", "wizard", "party", "crown", "cap"][Math.abs(p.id || 0) % 5];
       m.add(cloneHat(hatType));
-      state_default.cowMeshes[pid] = { mesh: m };
+      state_default.cowMeshes[pid] = { mesh: m, nameSprite: nsprite };
     }
     const cowObj = state_default.cowMeshes[pid];
     const cm = cowObj.mesh;
@@ -4413,6 +4507,15 @@ function updateCows(time, dt) {
       cowObj.isDead = true;
       cm.rotation.z = Math.PI / 2;
       cm.position.y = (smooth.z !== void 0 ? smooth.z : getTerrainHeight(smooth.x, smooth.y)) + 5;
+      if (cowObj.nameSprite) cowObj.nameSprite.visible = false;
+      if (cowObj.hpSprite) cowObj.hpSprite.sprite.visible = false;
+      if (cowObj.chatBubble) {
+        cm.remove(cowObj.chatBubble.sprite);
+        if (cowObj.chatBubble.timer) clearTimeout(cowObj.chatBubble.timer);
+        cowObj.chatBubble.tex.dispose();
+        cowObj.chatBubble.mat.dispose();
+        cowObj.chatBubble = null;
+      }
       if (cowObj.shieldBubble) {
         cm.remove(cowObj.shieldBubble);
         cowObj.shieldBubble.material.dispose();
@@ -4423,17 +4526,6 @@ function updateCows(time, dt) {
         cowObj.spawnBubble.material.dispose();
         cowObj.spawnBubble = null;
       }
-      cm.traverse((c) => {
-        if (!c.isMesh || !c.material) return;
-        const fresh = c.material.clone();
-        if (!fresh.transparent) {
-          fresh.transparent = true;
-          fresh.opacity = 0.5;
-        } else {
-          fresh.opacity *= 0.5;
-        }
-        c.material = fresh;
-      });
     }
     if (smooth.aim !== void 0) {
       cm.rotation.y = smooth.aim;
@@ -4506,7 +4598,8 @@ function updateCows(time, dt) {
     if (p.alive && armorVal > 0 && !cowObj.shieldBubble) {
       const shieldMat = new THREE6.MeshBasicMaterial({ color: 5605631, transparent: true, opacity: 0.55, side: THREE6.DoubleSide });
       const shield = new THREE6.Mesh(SHIELD_BUBBLE_GEO, shieldMat);
-      shield.position.set(0, 14, 0);
+      shield.position.set(0, 26, 0);
+      shield.scale.set(0.95, 1.55, 0.95);
       cm.add(shield);
       cowObj.shieldBubble = shield;
     }
@@ -4522,7 +4615,8 @@ function updateCows(time, dt) {
     if (p.spawnProt && !cowObj.spawnBubble) {
       const spMat = new THREE6.MeshBasicMaterial({ color: 16772676, transparent: true, opacity: 0.2, side: THREE6.DoubleSide });
       const sp = new THREE6.Mesh(SPAWN_BUBBLE_GEO, spMat);
-      sp.position.set(0, 14, 0);
+      sp.position.set(0, 26, 0);
+      sp.scale.set(0.95, 1.55, 0.95);
       cm.add(sp);
       cowObj.spawnBubble = sp;
     }
@@ -4551,11 +4645,84 @@ function updateCows(time, dt) {
       if (obj.hpSprite) obj.hpSprite.tex.dispose();
       if (obj.shieldBubble) obj.shieldBubble.material.dispose();
       if (obj.spawnBubble) obj.spawnBubble.material.dispose();
+      if (obj.chatBubble) {
+        if (obj.chatBubble.timer) clearTimeout(obj.chatBubble.timer);
+        obj.chatBubble.tex.dispose();
+        obj.chatBubble.mat.dispose();
+      }
       delete state_default.cowMeshes[id];
     }
   }
 }
-var _wispTmpPos, COW_GEO, COW_SPOT_MAT, COW_UDDER_MAT, COW_HOOF_MAT, COW_EYE_MAT, COW_PUPIL_MAT, COW_MOUTH_MAT, COW_CIG_BODY_MAT, COW_CIG_FILTER_MAT, COW_CIG_EMBER_MAT, COW_CIG_EMBER_GLOW_MAT, _cowBodyMats, _HAT_TEMPLATES, SHIELD_BUBBLE_GEO, SPAWN_BUBBLE_GEO, DEBUG_BODY_GEO, DEBUG_HEAD_GEO, DEBUG_ARROW_SHAFT_GEO, DEBUG_ARROW_HEAD_GEO, DEBUG_BODY_MAT, DEBUG_HEAD_MAT, DEBUG_ARROW_MAT, _eatGeo;
+function showChatBubble(playerId, text) {
+  const pid = String(playerId);
+  const cowObj = state_default.cowMeshes[pid];
+  if (!cowObj || cowObj.isDead) return;
+  if (cowObj.chatBubble) {
+    cowObj.mesh.remove(cowObj.chatBubble.sprite);
+    if (cowObj.chatBubble.timer) clearTimeout(cowObj.chatBubble.timer);
+    cowObj.chatBubble.tex.dispose();
+    cowObj.chatBubble.mat.dispose();
+    cowObj.chatBubble = null;
+  }
+  const truncated = text.length > CHAT_BUBBLE_MAX_CHARS ? text.slice(0, CHAT_BUBBLE_MAX_CHARS - 1) + "\u2026" : text;
+  if (!_measureCtx) _measureCtx = document.createElement("canvas").getContext("2d");
+  _measureCtx.font = "bold " + CHAT_BUBBLE_FONT_PX + "px Segoe UI";
+  const textPxW = _measureCtx.measureText(truncated).width;
+  const bodyW = Math.ceil(textPxW + CHAT_BUBBLE_PAD_X * 2);
+  const bodyH = Math.ceil(CHAT_BUBBLE_FONT_PX + CHAT_BUBBLE_PAD_Y * 2);
+  const margin = 16;
+  const W = bodyW + margin * 2;
+  const H2 = bodyH + margin * 2 + CHAT_BUBBLE_TAIL;
+  const cv = document.createElement("canvas");
+  cv.width = W;
+  cv.height = H2;
+  const ctx = cv.getContext("2d");
+  ctx.font = "bold " + CHAT_BUBBLE_FONT_PX + "px Segoe UI";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const bx = margin, by = margin, r = 18;
+  ctx.fillStyle = CHAT_BUBBLE_BG_RGBA;
+  ctx.beginPath();
+  ctx.moveTo(bx + r, by);
+  ctx.lineTo(bx + bodyW - r, by);
+  ctx.quadraticCurveTo(bx + bodyW, by, bx + bodyW, by + r);
+  ctx.lineTo(bx + bodyW, by + bodyH - r);
+  ctx.quadraticCurveTo(bx + bodyW, by + bodyH, bx + bodyW - r, by + bodyH);
+  ctx.lineTo(bx + r, by + bodyH);
+  ctx.quadraticCurveTo(bx, by + bodyH, bx, by + bodyH - r);
+  ctx.lineTo(bx, by + r);
+  ctx.quadraticCurveTo(bx, by, bx + r, by);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(W / 2 - 14, by + bodyH - 1);
+  ctx.lineTo(W / 2 + 14, by + bodyH - 1);
+  ctx.lineTo(W / 2, by + bodyH + CHAT_BUBBLE_TAIL);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = CHAT_BUBBLE_FG_RGBA;
+  ctx.fillText(truncated, W / 2, by + bodyH / 2);
+  const tex = new THREE6.CanvasTexture(cv);
+  tex.minFilter = THREE6.LinearFilter;
+  const mat = new THREE6.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE6.Sprite(mat);
+  const worldW = W * CHAT_BUBBLE_WORLD_PER_PX;
+  const worldH = H2 * CHAT_BUBBLE_WORLD_PER_PX;
+  sprite.position.set(0, 60 + worldH / 2, 0);
+  sprite.scale.set(worldW, worldH, 1);
+  cowObj.mesh.add(sprite);
+  const bubble = { sprite, tex, mat, timer: null };
+  bubble.timer = setTimeout(() => {
+    if (cowObj.chatBubble !== bubble) return;
+    cowObj.mesh.remove(sprite);
+    tex.dispose();
+    mat.dispose();
+    cowObj.chatBubble = null;
+  }, CHAT_BUBBLE_MS);
+  cowObj.chatBubble = bubble;
+}
+var _wispTmpPos, COW_GEO, COW_SPOT_MAT, COW_UDDER_MAT, COW_HOOF_MAT, COW_EYE_MAT, COW_PUPIL_MAT, COW_MOUTH_MAT, COW_CIG_BODY_MAT, COW_CIG_FILTER_MAT, COW_CIG_EMBER_MAT, COW_CIG_EMBER_GLOW_MAT, _cowBodyMats, _HAT_TEMPLATES, SHIELD_BUBBLE_GEO, SPAWN_BUBBLE_GEO, DEBUG_BODY_GEO, DEBUG_HEAD_GEO, DEBUG_ARROW_SHAFT_GEO, DEBUG_ARROW_HEAD_GEO, DEBUG_BODY_MAT, DEBUG_HEAD_MAT, DEBUG_ARROW_MAT, _eatGeo, CHAT_BUBBLE_MS, CHAT_BUBBLE_MAX_CHARS, CHAT_BUBBLE_FONT_PX, _measureCtx, _nameMeasureCtx, CHAT_BUBBLE_PAD_X, CHAT_BUBBLE_PAD_Y, CHAT_BUBBLE_TAIL, CHAT_BUBBLE_BG_RGBA, CHAT_BUBBLE_FG_RGBA, CHAT_BUBBLE_WORLD_PER_PX;
 var init_entities = __esm({
   "client/entities.js"() {
     init_config();
@@ -4620,14 +4787,25 @@ var init_entities = __esm({
     };
     SHIELD_BUBBLE_GEO = markSharedGeometry(new THREE6.SphereGeometry(24, 12, 12));
     SPAWN_BUBBLE_GEO = markSharedGeometry(new THREE6.SphereGeometry(25, 12, 12));
-    DEBUG_BODY_GEO = markSharedGeometry(new THREE6.CylinderGeometry(18, 18, 1, 12));
-    DEBUG_HEAD_GEO = markSharedGeometry(new THREE6.CylinderGeometry(12, 12, 20, 12));
+    DEBUG_BODY_GEO = markSharedGeometry(new THREE6.CylinderGeometry(14, 14, 1, 12));
+    DEBUG_HEAD_GEO = markSharedGeometry(new THREE6.CylinderGeometry(10, 10, 20, 12));
     DEBUG_ARROW_SHAFT_GEO = markSharedGeometry(new THREE6.CylinderGeometry(0.8, 0.8, 30, 6));
     DEBUG_ARROW_HEAD_GEO = markSharedGeometry(new THREE6.ConeGeometry(2.5, 5, 6));
-    DEBUG_BODY_MAT = markSharedMaterial(new THREE6.MeshBasicMaterial({ color: 65280, wireframe: true, transparent: true, opacity: 0.3 }));
-    DEBUG_HEAD_MAT = markSharedMaterial(new THREE6.MeshBasicMaterial({ color: 16729156, wireframe: true, transparent: true, opacity: 0.3 }));
-    DEBUG_ARROW_MAT = markSharedMaterial(new THREE6.MeshBasicMaterial({ color: 16768256, wireframe: true, transparent: true, opacity: 0.7 }));
+    DEBUG_BODY_MAT = markSharedMaterial(new THREE6.MeshBasicMaterial({ color: 65280, wireframe: true }));
+    DEBUG_HEAD_MAT = markSharedMaterial(new THREE6.MeshBasicMaterial({ color: 16729156, wireframe: true }));
+    DEBUG_ARROW_MAT = markSharedMaterial(new THREE6.MeshBasicMaterial({ color: 16768256, wireframe: true }));
     _eatGeo = null;
+    CHAT_BUBBLE_MS = 5e3;
+    CHAT_BUBBLE_MAX_CHARS = 80;
+    CHAT_BUBBLE_FONT_PX = 38;
+    _measureCtx = null;
+    _nameMeasureCtx = null;
+    CHAT_BUBBLE_PAD_X = 60;
+    CHAT_BUBBLE_PAD_Y = 28;
+    CHAT_BUBBLE_TAIL = 22;
+    CHAT_BUBBLE_BG_RGBA = "rgba(255,255,255,0.62)";
+    CHAT_BUBBLE_FG_RGBA = "rgba(0,0,0,0.78)";
+    CHAT_BUBBLE_WORLD_PER_PX = 0.32;
   }
 });
 
@@ -5346,6 +5524,44 @@ function buildViewmodel(type, dual) {
     hoof.userData.reloadStyle = "magswap";
     vmGroup.add(hoof);
     vmGroup.userData.hoof = hoof;
+  } else if (type === "aug") {
+    const bodyMat = new THREE8.MeshBasicMaterial({ color: 4874296 });
+    const stock = new THREE8.Mesh(new THREE8.BoxGeometry(2.4, 2.4, 12), bodyMat);
+    stock.position.set(0, -0.1, -1);
+    vmGroup.add(stock);
+    const fore = new THREE8.Mesh(new THREE8.BoxGeometry(1.6, 1.4, 5), bodyMat);
+    fore.position.set(0, -0.4, -8);
+    vmGroup.add(fore);
+    const barrel = new THREE8.Mesh(new THREE8.CylinderGeometry(0.32, 0.32, 6, 6), black);
+    barrel.rotation.x = Math.PI / 2;
+    barrel.position.set(0, 0.1, -13);
+    vmGroup.add(barrel);
+    const scope = new THREE8.Mesh(new THREE8.CylinderGeometry(0.55, 0.55, 5, 8), black);
+    scope.rotation.x = Math.PI / 2;
+    scope.position.set(0, 1.55, -3);
+    vmGroup.add(scope);
+    const ringA = new THREE8.Mesh(new THREE8.CylinderGeometry(0.7, 0.7, 0.4, 8), metal);
+    ringA.rotation.x = Math.PI / 2;
+    ringA.position.set(0, 1.55, -1);
+    vmGroup.add(ringA);
+    const ringB = new THREE8.Mesh(new THREE8.CylinderGeometry(0.7, 0.7, 0.4, 8), metal);
+    ringB.rotation.x = Math.PI / 2;
+    ringB.position.set(0, 1.55, -5);
+    vmGroup.add(ringB);
+    const grip = new THREE8.Mesh(new THREE8.BoxGeometry(0.8, 1.8, 0.9), black);
+    grip.position.set(0, -1.9, -8);
+    vmGroup.add(grip);
+    const trig = new THREE8.Mesh(new THREE8.BoxGeometry(0.5, 1, 0.7), metal);
+    trig.position.set(0, -1.6, -5);
+    vmGroup.add(trig);
+    const hoof = buildHoof();
+    hoof.position.set(-0.3, -0.5, -10);
+    hoof.rotation.set(-0.2, 0.1, 0.5);
+    hoof.userData.restPos = hoof.position.clone();
+    hoof.userData.restRot = hoof.rotation.clone();
+    hoof.userData.reloadStyle = "magswap";
+    vmGroup.add(hoof);
+    vmGroup.userData.hoof = hoof;
   } else if (type === "cowtank") {
     const outerTube = new THREE8.Mesh(new THREE8.CylinderGeometry(2.2, 2.2, 16, 10), olive);
     outerTube.rotation.x = Math.PI / 2;
@@ -5555,6 +5771,38 @@ function _buildWeaponPickupModel(type) {
     band.rotation.z = Math.PI / 2;
     band.position.x = -2;
     g.add(band);
+  } else if (type === "aug") {
+    const augBody = new THREE9.MeshLambertMaterial({ color: 4874296 });
+    const augBlk = new THREE9.MeshLambertMaterial({ color: 2236962 });
+    const augMet = new THREE9.MeshLambertMaterial({ color: 7829367 });
+    const stock = new THREE9.Mesh(new THREE9.BoxGeometry(7, 2.6, 1.6), augBody);
+    stock.position.set(-3, 0, 0);
+    g.add(stock);
+    const fore = new THREE9.Mesh(new THREE9.BoxGeometry(4, 1.6, 1.4), augBody);
+    fore.position.set(2.5, -0.2, 0);
+    g.add(fore);
+    const barrel = new THREE9.Mesh(new THREE9.CylinderGeometry(0.32, 0.32, 6, 6), augBlk);
+    barrel.rotation.z = Math.PI / 2;
+    barrel.position.set(5.5, 0.1, 0);
+    g.add(barrel);
+    const scope = new THREE9.Mesh(new THREE9.CylinderGeometry(0.55, 0.55, 4.2, 8), augBlk);
+    scope.rotation.z = Math.PI / 2;
+    scope.position.set(-1.4, 1.55, 0);
+    g.add(scope);
+    const ringA = new THREE9.Mesh(new THREE9.CylinderGeometry(0.7, 0.7, 0.4, 8), augMet);
+    ringA.rotation.z = Math.PI / 2;
+    ringA.position.set(0.5, 1.55, 0);
+    g.add(ringA);
+    const ringB = new THREE9.Mesh(new THREE9.CylinderGeometry(0.7, 0.7, 0.4, 8), augMet);
+    ringB.rotation.z = Math.PI / 2;
+    ringB.position.set(-3.3, 1.55, 0);
+    g.add(ringB);
+    const grip = new THREE9.Mesh(new THREE9.BoxGeometry(0.7, 1.6, 0.9), augBlk);
+    grip.position.set(2.2, -1.6, 0);
+    g.add(grip);
+    const trig = new THREE9.Mesh(new THREE9.BoxGeometry(0.4, 1, 0.6), augMet);
+    trig.position.set(0.6, -1.5, 0);
+    g.add(trig);
   }
   return g;
 }
@@ -5679,16 +5927,32 @@ function updatePickups(time) {
   }
   _reconcileMap(_armorMeshes, seenArmor);
   const seenWp = /* @__PURE__ */ new Set();
+  const nowMs = Date.now();
+  const WEAPON_LIFETIME = 15e3;
+  const WEAPON_BLINK_START = WEAPON_LIFETIME - 4e3;
+  const BLINK_CYCLE = 0.33;
   for (const w of state_default.clientWeapons) {
     const wid = String(w.id);
     seenWp.add(wid);
     if (!_weaponMeshes[wid]) {
-      const g = _buildWeaponPickupGroup(w);
-      scene.add(g);
-      _weaponMeshes[wid] = g;
+      const g2 = _buildWeaponPickupGroup(w);
+      scene.add(g2);
+      _weaponMeshes[wid] = g2;
     }
-    _weaponMeshes[wid].children[0].rotation.y = time * 2;
-    _weaponMeshes[wid].children[0].position.y = 15 + Math.sin(time * 3 + w.x) * 3;
+    const g = _weaponMeshes[wid];
+    g.children[0].rotation.y = time * 2;
+    g.children[0].position.y = 15 + Math.sin(time * 3 + w.x) * 3;
+    const age = w.spawnTime ? nowMs - w.spawnTime : 0;
+    if (age > WEAPON_BLINK_START) {
+      const warningElapsed = age - WEAPON_BLINK_START;
+      const t01 = Math.min(1, warningElapsed / 4e3);
+      const visibleFrac = 0.85 - t01 * 0.75;
+      const cyclePos = time % BLINK_CYCLE / BLINK_CYCLE;
+      const v = cyclePos < visibleFrac;
+      if (g.visible !== v) g.visible = v;
+    } else if (!g.visible) {
+      g.visible = true;
+    }
   }
   _reconcileMap(_weaponMeshes, seenWp);
   const seenFood = /* @__PURE__ */ new Set();
@@ -5748,7 +6012,7 @@ var init_pickups = __esm({
     _weaponMeshes = {};
     _foodMeshes = {};
     _armorSpawns = [];
-    _WP_LABELS = { shotgun: "BENELLI", burst: "M16A2", bolty: "L96", cowtank: "M72 LAW" };
+    _WP_LABELS = { shotgun: "BENELLI", burst: "M16A2", bolty: "L96", cowtank: "M72 LAW", aug: "AUG" };
   }
 });
 
@@ -6021,10 +6285,8 @@ function initHudRefs() {
     barricadeBar: document.getElementById("barricadeBar"),
     barricadeFill: document.getElementById("barricadeFill"),
     barricadeLabel: document.getElementById("barricadeLabel"),
-    score: document.getElementById("score"),
     spectateMsg: document.getElementById("spectateMsg"),
     playerCount: document.getElementById("playerCount"),
-    killfeed: document.getElementById("killfeed"),
     chatLog: document.getElementById("chatLog"),
     minimap: document.getElementById("minimap"),
     lowHealthOverlay: document.getElementById("lowHealthOverlay"),
@@ -6060,14 +6322,14 @@ function updateHud(me, time, dt) {
   H.hungerFill.style.background = hPct > 0.5 ? "#ffffff" : hPct > 0.25 ? "#dddddd" : "#ff4444";
   H.hungerTxt.textContent = "MILK " + Math.ceil(me.hunger) + "%";
   const wep = me.weapon || "normal";
-  const wepNames = { shotgun: "Benelli", burst: "M16A2", bolty: "L96", cowtank: "M72 LAW", normal: "M92 Pistol" };
+  const wepNames = { shotgun: "Benelli", burst: "M16A2", bolty: "L96", cowtank: "M72 LAW", normal: "M92 Pistol", aug: "AUG" };
   let ammoTxt = "";
   let reloadBlock = "";
   if (wep === "cowtank") {
     ammoTxt = " 1/1";
   } else if (me.ammo >= 0) {
-    const BASE_MAG = { normal: 15, burst: 20, shotgun: 6, bolty: 5 };
-    const EXT_MAG = { normal: 19, burst: 25, shotgun: 8, bolty: 7 };
+    const BASE_MAG = { normal: 15, burst: 20, shotgun: 6, bolty: 5, aug: 30 };
+    const EXT_MAG = { normal: 19, burst: 25, shotgun: 8, bolty: 7, aug: 38 };
     const hasExt = (me.extMagMult || 1) > 1;
     const baseMag = (hasExt ? EXT_MAG[wep] : BASE_MAG[wep]) || 0;
     const dualMult = me.dualWield && (wep === "burst" || wep === "shotgun") ? 2 : 1;
@@ -6090,7 +6352,7 @@ function updateHud(me, time, dt) {
     }
   }
   let fireModeBlock = "";
-  if (wep === "burst") {
+  if (import_constants8.BURST_FAMILY.has(wep)) {
     const modeLabel = state_default.fireMode === "auto" ? "AUTO" : state_default.fireMode === "semi" ? "SEMI" : "BURST";
     fireModeBlock = "<div>" + modeLabel + "</div>";
   }
@@ -6129,7 +6391,8 @@ function updateHud(me, time, dt) {
   H.atkFill.style.width = 100 - atkPct + "%";
   H.atkFill.style.background = atkPct > 0 ? "#882222" : "#ff6644";
   if (H.chN && aliveHud) {
-    const baseSpread = { normal: 8, shotgun: 42, bolty: 5, cowtank: 10, burst: state_default.fireMode === "auto" ? 18 : 8 }[wep] || 8;
+    const augBase = (state_default.fireMode === "auto" ? 18 : 8) * 1.5;
+    const baseSpread = { normal: 8, shotgun: 42, bolty: 5, cowtank: 10, burst: state_default.fireMode === "auto" ? 18 : 8, aug: augBase }[wep] || 8;
     const crouchMult = state_default.crouching ? 0.35 : 1;
     const movingMult = state_default.keys["KeyW"] || state_default.keys["KeyS"] || state_default.keys["KeyA"] || state_default.keys["KeyD"] ? 2.2 : 1;
     const reloadMult = me.reloading ? 2.6 : 1;
@@ -6139,7 +6402,6 @@ function updateHud(me, time, dt) {
     H.chE.style.marginLeft = spread + "px";
     H.chW.style.marginLeft = -spread - 8 + "px";
   }
-  H.score.textContent = me && me.alive ? "Score: " + (me.score || 0) + " | Kills: " + (me.kills || 0) + " | Lv" + (me.level || 0) : "Waiting for next round...";
   const specEl = H.spectateMsg;
   if (me && me.alive) {
     if (specEl.style.display !== "none") specEl.style.display = "none";
@@ -6167,28 +6429,29 @@ function updateHud(me, time, dt) {
     state_default._pcSig = pcSig;
     H.playerCount.textContent = "\u{1F404} " + pcSig;
   }
-  for (let i = state_default.killfeed.length - 1; i >= 0; i--) {
-    state_default.killfeed[i].t -= dt;
-    if (state_default.killfeed[i].t <= 0) state_default.killfeed.splice(i, 1);
-  }
   if (!state_default._hudTick) state_default._hudTick = 0;
   state_default._hudTick += dt;
   if (state_default._hudTick >= 0.1) {
+    const tickDt = state_default._hudTick;
     state_default._hudTick = 0;
-    H.killfeed.innerHTML = state_default.killfeed.map((k) => '<div style="margin-bottom:3px;opacity:' + Math.min(1, k.t) + '">' + k.txt + "</div>").join("");
-    state_default.chatLog.forEach((c) => c.t -= dt * 1);
+    for (let i = state_default.chatLog.length - 1; i >= 0; i--) {
+      state_default.chatLog[i].t -= tickDt;
+      if (state_default.chatLog[i].t <= 0) state_default.chatLog.splice(i, 1);
+    }
     const chatEl = H.chatLog;
     if (chatEl) {
       const colHex = { pink: "#ff88aa", blue: "#88aaff", green: "#88ff88", gold: "#ffdd44", purple: "#cc88ff", red: "#ff4444", orange: "#ff8844", cyan: "#44ffdd" };
       const escapeHtml = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
       chatEl.innerHTML = state_default.chatLog.map((c) => {
-        const col = colHex[c.color] || "#ff88aa";
         const opacity = Math.min(1, c.t / 3);
+        if (c.system) {
+          return '<div style="margin-bottom:2px;opacity:' + opacity + ';color:#ddd">' + c.text + "</div>";
+        }
+        const col = colHex[c.color] || "#ff88aa";
         return '<div style="margin-bottom:2px;opacity:' + opacity + '"><span style="color:' + col + ';font-weight:bold">' + escapeHtml(c.name) + ":</span> " + escapeHtml(c.text) + "</div>";
       }).join("");
     }
   }
-  state_default.chatLog = state_default.chatLog.filter((c) => c.t > 0);
   let dbg = document.getElementById("debugOverlay");
   if (!dbg && state_default.debugMode) {
     dbg = document.createElement("div");
@@ -6236,18 +6499,19 @@ function updateHud(me, time, dt) {
     }
   }
 }
-var H;
+var import_constants8, H;
 var init_hud = __esm({
   "client/hud.js"() {
     init_config();
     init_state();
+    import_constants8 = __toESM(require_constants());
     H = null;
   }
 });
 
 // client/bullet-holes.js
 import * as THREE12 from "three";
-function spawnBulletHole(gameX, gameY, gameZ) {
+function spawnBulletHole(gameX, gameY, gameZ, surfaceKey) {
   if (typeof gameX !== "number" || typeof gameY !== "number" || typeof gameZ !== "number") return;
   if (_holes.length >= MAX_HOLES) {
     const old = _holes.shift();
@@ -6263,7 +6527,17 @@ function spawnBulletHole(gameX, gameY, gameZ) {
   const mesh = new THREE12.Mesh(_geo, mat);
   mesh.position.set(gameX, gameZ, gameY);
   scene.add(mesh);
-  _holes.push({ mesh, mat, life: HOLE_LIFE });
+  _holes.push({ mesh, mat, life: HOLE_LIFE, surfaceKey: surfaceKey || null });
+}
+function removeBulletHolesBySurfaceKey(surfaceKey) {
+  if (!surfaceKey) return;
+  for (let i = _holes.length - 1; i >= 0; i--) {
+    if (_holes[i].surfaceKey === surfaceKey) {
+      scene.remove(_holes[i].mesh);
+      _holes[i].mat.dispose();
+      _holes.splice(i, 1);
+    }
+  }
 }
 function updateBulletHoles(dt) {
   for (let i = _holes.length - 1; i >= 0; i--) {
@@ -6295,8 +6569,8 @@ var init_bullet_holes = __esm({
     HOLE_LIFE = 30;
     HOLE_FADE = 4;
     MAX_HOLES = 200;
-    HOLE_RADIUS = 1.6;
-    HOLE_PEAK_OPACITY = 0.85;
+    HOLE_RADIUS = 2.5;
+    HOLE_PEAK_OPACITY = 0.9;
     _geo = markSharedGeometry(new THREE12.SphereGeometry(HOLE_RADIUS, 6, 4));
     _holes = [];
   }
@@ -6532,10 +6806,11 @@ function decayRenderOffset(frameDt) {
   errZ -= errZ * f;
   errRemainTime -= frameDt;
 }
-function setCurrentInput(dx, dy, walking) {
+function setCurrentInput(dx, dy, walking, aim) {
   currentInput.dx = dx;
   currentInput.dy = dy;
   currentInput.walking = walking;
+  if (typeof aim === "number") currentInput.aim = aim;
 }
 function buildPredictedPerks(p) {
   return {
@@ -6570,45 +6845,53 @@ function initPrediction() {
   state_default.mePredicted = snapshotPlayer(state_default.me);
   predictRing.length = 0;
   accumulator = 0;
-  _prevPredicted = null;
+  _prevPredicted._set = false;
   errX = 0;
   errY = 0;
   errZ = 0;
   _predictErrorLogged = false;
 }
-function buildWorld() {
-  return {
-    walls: state_default.mapFeatures.walls || [],
-    barricades: state_default.barricades || [],
-    mudPatches: state_default.mapFeatures.mud || [],
-    portals: state_default.mapFeatures.portals || [],
-    zone: state_default.serverZone
-  };
+function refreshWorld() {
+  _world.walls = state_default.mapFeatures.walls || [];
+  _world.barricades = state_default.barricades || [];
+  _world.mudPatches = state_default.mapFeatures.mud || [];
+  _world.portals = state_default.mapFeatures.portals || [];
+  _world.zone = state_default.serverZone;
+  return _world;
 }
 function getRenderedPredicted() {
   if (!state_default.mePredicted) return null;
   const f = Math.max(0, Math.min(1, accumulator / TICK_DT));
-  if (!_prevPredicted) return { x: state_default.mePredicted.x, y: state_default.mePredicted.y, z: state_default.mePredicted.z };
-  return {
-    x: _prevPredicted.x + (state_default.mePredicted.x - _prevPredicted.x) * f,
-    y: _prevPredicted.y + (state_default.mePredicted.y - _prevPredicted.y) * f,
-    z: _prevPredicted.z + (state_default.mePredicted.z - _prevPredicted.z) * f
-  };
+  if (!_prevPredicted._set) {
+    _renderedOut.x = state_default.mePredicted.x;
+    _renderedOut.y = state_default.mePredicted.y;
+    _renderedOut.z = state_default.mePredicted.z;
+    return _renderedOut;
+  }
+  _renderedOut.x = _prevPredicted.x + (state_default.mePredicted.x - _prevPredicted.x) * f;
+  _renderedOut.y = _prevPredicted.y + (state_default.mePredicted.y - _prevPredicted.y) * f;
+  _renderedOut.z = _prevPredicted.z + (state_default.mePredicted.z - _prevPredicted.z) * f;
+  return _renderedOut;
 }
 function predictStep(frameDt) {
   if (!state_default.mePredicted || !state_default.me) return;
   accumulator += frameDt;
   if (accumulator > 0.25) accumulator = 0.25;
-  const world = buildWorld();
+  const world = refreshWorld();
   while (accumulator >= TICK_DT) {
     accumulator -= TICK_DT;
-    _prevPredicted = { x: state_default.mePredicted.x, y: state_default.mePredicted.y, z: state_default.mePredicted.z };
-    const stepInput = { dx: currentInput.dx, dy: currentInput.dy, walking: !!currentInput.walking };
-    send({ type: "move", dx: stepInput.dx, dy: stepInput.dy, walking: stepInput.walking });
+    _prevPredicted.x = state_default.mePredicted.x;
+    _prevPredicted.y = state_default.mePredicted.y;
+    _prevPredicted.z = state_default.mePredicted.z;
+    _prevPredicted._set = true;
+    _stepInput.dx = currentInput.dx;
+    _stepInput.dy = currentInput.dy;
+    _stepInput.walking = !!currentInput.walking;
+    send({ type: "move", dx: _stepInput.dx, dy: _stepInput.dy, walking: _stepInput.walking, aim: currentInput.aim });
     if (state_default.pingLast === 0) state_default.pingLast = performance.now();
     const seqAtStep = state_default.inputSeq;
     try {
-      (0, import_movement.stepPlayerMovement)(state_default.mePredicted, TICK_DT, world, stepInput, terrain);
+      (0, import_movement.stepPlayerMovement)(state_default.mePredicted, TICK_DT, world, _stepInput, terrain);
     } catch (e) {
       if (!_predictErrorLogged) {
         _predictErrorLogged = true;
@@ -6617,7 +6900,7 @@ function predictStep(frameDt) {
       accumulator = 0;
       return;
     }
-    predictRing.push({ seq: seqAtStep, state: snapshotPlayer(state_default.mePredicted), input: stepInput });
+    predictRing.push({ seq: seqAtStep, state: snapshotPlayer(state_default.mePredicted), input: { dx: _stepInput.dx, dy: _stepInput.dy, walking: _stepInput.walking } });
     if (predictRing.length > PREDICT_RING_CAP) predictRing.shift();
   }
   decayRenderOffset(frameDt);
@@ -6664,7 +6947,7 @@ function reconcilePrediction(ackedState) {
   state_default.mePredicted.vz = serverVz;
   state_default.mePredicted.onGround = serverOnGround;
   predictRing.splice(0, ackedIdx + 1);
-  const world = buildWorld();
+  const world = refreshWorld();
   for (const e of predictRing) {
     (0, import_movement.stepPlayerMovement)(state_default.mePredicted, TICK_DT, world, e.input || currentInput, terrain);
     e.state = snapshotPlayer(state_default.mePredicted);
@@ -6696,7 +6979,7 @@ function foldError(dx, dy, dz) {
   errZ = newZ;
   errRemainTime = ERR_LINEAR_TIME;
 }
-var import_movement, TICK_HZ, TICK_DT, RECONCILE_EPSILON, PREDICT_RING_CAP, terrain, accumulator, errX, errY, errZ, errRemainTime, ERR_LINEAR_TIME, ERR_INSTANT_SNAP, ERR_DEAD_ZONE, predictRing, currentInput, _predictErrorLogged, _prevPredicted;
+var import_movement, TICK_HZ, TICK_DT, RECONCILE_EPSILON, PREDICT_RING_CAP, terrain, accumulator, errX, errY, errZ, errRemainTime, ERR_LINEAR_TIME, ERR_INSTANT_SNAP, ERR_DEAD_ZONE, predictRing, currentInput, _world, _stepInput, _predictErrorLogged, _prevPredicted, _renderedOut;
 var init_prediction = __esm({
   "client/prediction.js"() {
     init_state();
@@ -6720,9 +7003,12 @@ var init_prediction = __esm({
     ERR_INSTANT_SNAP = 40;
     ERR_DEAD_ZONE = 0.05;
     predictRing = [];
-    currentInput = { dx: 0, dy: 0, walking: false };
+    currentInput = { dx: 0, dy: 0, walking: false, aim: 0 };
+    _world = { walls: null, barricades: null, mudPatches: null, portals: null, zone: null };
+    _stepInput = { dx: 0, dy: 0, walking: false };
     _predictErrorLogged = false;
-    _prevPredicted = null;
+    _prevPredicted = { x: 0, y: 0, z: 0, _set: false };
+    _renderedOut = { x: 0, y: 0, z: 0 };
   }
 });
 
@@ -6741,9 +7027,18 @@ function flashHit(opacity, duration, bg) {
     if (bg) el.style.background = "rgba(255,0,0,0.3)";
   }, duration);
 }
+function flashEdge(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.style.transition = "none";
+  el.style.opacity = "1";
+  void el.offsetHeight;
+  el.style.transition = "";
+  el.style.opacity = "0";
+}
 function addKillFeed(txt, t) {
-  state_default.killfeed.unshift({ txt, t });
-  if (state_default.killfeed.length > 5) state_default.killfeed.pop();
+  state_default.chatLog.push({ name: "", color: "", text: txt, t, system: true });
+  if (state_default.chatLog.length > 10) state_default.chatLog.shift();
 }
 function updateHostControls() {
   const hc = document.getElementById("hostControls");
@@ -6751,7 +7046,7 @@ function updateHostControls() {
   const inLobby = state_default.state === "lobby" && state_default.hostId && state_default.myId === state_default.hostId;
   hc.style.display = inLobby ? "block" : "none";
 }
-var import_messages, _tmpDir, _hitFlash, handlers;
+var import_messages, import_constants9, _tmpDir, _hitFlash, handlers;
 var init_message_handlers = __esm({
   "client/message-handlers.js"() {
     init_state();
@@ -6767,6 +7062,7 @@ var init_message_handlers = __esm({
     init_pickups();
     init_three_utils();
     import_messages = __toESM(require_messages());
+    import_constants9 = __toESM(require_constants());
     init_interp();
     init_prediction();
     init_bullet_holes();
@@ -6788,6 +7084,10 @@ var init_message_handlers = __esm({
           } else {
             el.textContent = "";
           }
+        }
+        const jb = document.getElementById("joinBtn");
+        if (jb && !state_default.myId) {
+          jb.textContent = msg.gameState === "playing" ? "SPECTATE MEADOW" : "QUEUE FOR MEADOW";
         }
       },
       joined(msg) {
@@ -6839,26 +7139,18 @@ var init_message_handlers = __esm({
           return '<div style="color:' + (p.ready ? "#88ff88" : "#ff8888") + ';padding:2px 0">' + dot + (p.name || "?") + crown + (p.isBot ? " \u{1F916}" : p.ready ? " \u2714" : " ...") + kickBtn + "</div>";
         }).join("");
         document.getElementById("joinScreen").querySelector("h2").innerHTML = readyTxt + '<div style="margin-top:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(204,136,255,0.3);border-radius:8px;padding:8px 16px;font-size:13px;max-height:200px;overflow-y:auto;width:260px;text-align:left">' + pList + "</div>";
-        if (!document.getElementById("readyBtn")) {
-          const rb = document.createElement("button");
-          rb.id = "readyBtn";
-          rb.textContent = "READY TO GRAZE";
-          rb.style.cssText = "padding:8px 30px;font-size:18px;border:none;border-radius:8px;background:#44ff44;color:#000;cursor:pointer;font-weight:bold;margin-top:10px;width:220px";
-          rb.onclick = () => {
-            send({ type: "ready" });
-          };
-          document.getElementById("joinScreen").appendChild(rb);
-        }
-        const rb2 = document.getElementById("readyBtn");
-        if (rb2 && state_default.myId) {
+        const jb = document.getElementById("joinBtn");
+        if (jb && state_default.myId) {
           const myLobby = msg.players.find((p) => p.id === state_default.myId);
           if (myLobby) {
             if (myLobby.ready) {
-              rb2.textContent = "UNREADY \u2714";
-              rb2.style.background = "#88ff88";
+              jb.textContent = "UNREADY \u2714";
+              jb.style.background = "#88ff88";
+              jb.style.color = "#000";
             } else {
-              rb2.textContent = "READY TO GRAZE";
-              rb2.style.background = "#44ff44";
+              jb.textContent = "READY TO GRAZE";
+              jb.style.background = "#44ff44";
+              jb.style.color = "#000";
             }
           }
         }
@@ -6902,7 +7194,7 @@ var init_message_handlers = __esm({
           state_default.mapBuilt = false;
         }
         if (msg.weapons) state_default.clientWeapons = msg.weapons;
-        state_default.killfeed = [];
+        state_default.chatLog = [];
         stopMenuMusic();
         resetMusic();
         setMusicPlaying(true);
@@ -6971,7 +7263,8 @@ var init_message_handlers = __esm({
           const existing = state_default.serverPlayers.find((sp) => sp.id === t.id);
           if (!existing) continue;
           if (existing.id === state_default.myId) {
-            Object.assign(existing, t);
+            const { aimAngle, dir, ...rest } = t;
+            Object.assign(existing, rest);
             if (state_default.mePredicted) {
               state_default.mePredicted.stunTimer = existing.stunTimer || 0;
               state_default.mePredicted.spawnProtection = existing.spawnProt ? 1 : 0;
@@ -7097,7 +7390,7 @@ var init_message_handlers = __esm({
           else if (myWep === "cowtank" || msg.cowtank) sfxRocket(0.12);
           else if (msg.shotgun === true) sfxShotgun(0.1);
           else if (myWep === "shotgun") sfxShotgun(0.1);
-          else if (myWep === "burst" || msg.burst !== void 0) sfxLR(0.1);
+          else if (import_constants9.BURST_FAMILY.has(myWep) || msg.burst !== void 0) sfxLR(0.1);
           else sfxShoot();
           const wep = myWep;
           const recoilPatterns = {
@@ -7158,6 +7451,27 @@ var init_message_handlers = __esm({
             normal: [
               // Spit: small kick
               { p: 8e-3, y: (Math.random() - 0.5) * 4e-3 }
+            ],
+            // AUG — vertical-dominant kick with a slow rightward drift, very
+            // different from the M16 snake. Bullpup centerline = predictable
+            // pitch ramp, then a small lateral creep that the player has to
+            // pull against.
+            aug: [
+              { p: 0.014, y: 1e-3 },
+              { p: 0.013, y: 2e-3 },
+              { p: 0.012, y: 3e-3 },
+              { p: 0.012, y: 4e-3 },
+              { p: 0.011, y: 4e-3 },
+              { p: 0.011, y: 5e-3 },
+              { p: 0.01, y: 5e-3 },
+              { p: 0.01, y: 6e-3 },
+              { p: 9e-3, y: 6e-3 },
+              { p: 9e-3, y: -2e-3 },
+              { p: 8e-3, y: -3e-3 },
+              { p: 8e-3, y: -4e-3 },
+              { p: 9e-3, y: -1e-3 },
+              { p: 0.01, y: 1e-3 },
+              { p: 0.011, y: 3e-3 }
             ]
           };
           const pattern = recoilPatterns[wep];
@@ -7166,11 +7480,12 @@ var init_message_handlers = __esm({
             if (now - state_default.recoilTimer > 500) state_default.recoilIndex = 0;
             state_default.recoilTimer = now;
             const r = pattern[state_default.recoilIndex % pattern.length];
-            const burstMod = wep === "burst" && state_default.fireMode === "burst" ? 0.65 : 1;
+            const burstMod = import_constants9.BURST_FAMILY.has(wep) && state_default.fireMode === "burst" ? 0.65 : 1;
             const tacticowMod = state_default.me.recoilMult || 1;
             const walkingMod = state_default.crouching ? 0.73 : 1;
             const dualMod = state_default.me.dualWield ? wep === "shotgun" ? 1.1 : 1.3 : 1;
-            const recoilMult = burstMod * tacticowMod * walkingMod * dualMod;
+            const augHipMod = wep === "aug" && !state_default.adsActive ? 1.5 : 1;
+            const recoilMult = burstMod * tacticowMod * walkingMod * dualMod * augHipMod;
             state_default.pitch += r.p * recoilMult;
             state_default.yaw += r.y * recoilMult;
             state_default.pitch = Math.max(-1.2, Math.min(1.2, state_default.pitch));
@@ -7196,7 +7511,8 @@ var init_message_handlers = __esm({
             vz: (Math.random() - 0.5) * 40
           });
         }
-        spawnBulletHole(msg.x, msg.y, impactZ);
+        const wallKey = msg.wallId != null ? "wall:" + msg.wallId : null;
+        spawnBulletHole(msg.x, msg.y, impactZ, wallKey);
       },
       projectileHit(msg) {
         state_default.projData = state_default.projData.filter((p) => p.id !== msg.projectileId);
@@ -7207,10 +7523,49 @@ var init_message_handlers = __esm({
         if (msg.targetId === state_default.myId) {
           sfxHit();
           flashHit(0.5, 150);
+          flashEdge("damageEdgeFlash");
+          if (state_default.mePredicted) state_default.mePredicted.stunTimer = 0.5;
         }
         if (msg.wall && typeof msg.x === "number" && typeof msg.y === "number") {
-          const z = typeof msg.z === "number" ? msg.z : getTerrainHeight(msg.x, msg.y) + 5;
-          spawnBulletHole(msg.x, msg.y, z);
+          const terrainH = getTerrainHeight(msg.x, msg.y);
+          const z = typeof msg.z === "number" ? msg.z : terrainH + 5;
+          const surfaceKey = msg.wallId != null ? "wall:" + msg.wallId : msg.barricadeId != null ? "barricade:" + msg.barricadeId : null;
+          spawnBulletHole(msg.x, msg.y, z, surfaceKey);
+          const onGround = Math.abs(z - terrainH) < 1.5;
+          const sparkColor = onGround ? 5622835 : 16768324;
+          const sparkCount = onGround ? 7 : 4;
+          const sparkSpread = onGround ? 60 : 40;
+          const sparkScale = onGround ? 0.6 : 0.7;
+          for (let i = 0; i < sparkCount; i++) {
+            spawnParticle({
+              geo: PGEO_SPHERE_LO,
+              color: sparkColor,
+              x: msg.x + (Math.random() - 0.5) * 4,
+              y: z + (Math.random() - 0.5) * 4 + (onGround ? 1 : 0),
+              z: msg.y + (Math.random() - 0.5) * 4,
+              sx: sparkScale,
+              life: onGround ? 0.55 : 0.35,
+              peakOpacity: 1,
+              vx: (Math.random() - 0.5) * sparkSpread,
+              vy: onGround ? 8 + Math.random() * 22 : (Math.random() - 0.5) * sparkSpread,
+              vz: (Math.random() - 0.5) * sparkSpread,
+              gy: onGround ? 60 : 0
+            });
+          }
+          if (!onGround) {
+            spawnParticle({
+              geo: PGEO_SPHERE_LO,
+              color: 12303291,
+              x: msg.x,
+              y: z,
+              z: msg.y,
+              sx: 2,
+              life: 0.5,
+              peakOpacity: 0.5,
+              growth: 4,
+              vy: 12
+            });
+          }
         }
         if (msg.targetId && msg.ownerId === state_default.myId && msg.targetId !== state_default.myId) {
           sfx(600, 0.06, "square", 0.07);
@@ -7261,7 +7616,7 @@ var init_message_handlers = __esm({
           if (target) {
             const dmg = msg.dmg;
             const hasShield = target.armor > 0;
-            const color = msg.headshot ? "#ff2222" : hasShield ? "#44aaff" : dmg >= 25 ? "#ff4444" : dmg >= 10 ? "#ffaa44" : "#ffffff";
+            const color = msg.headshot ? "#ff2222" : hasShield ? dmg >= 25 ? "#1144aa" : dmg >= 10 ? "#3377cc" : "#88bbff" : dmg >= 25 ? "#ff4444" : dmg >= 10 ? "#ffaa44" : "#ffffff";
             const prefix = hasShield ? "\u{1F6E1}\uFE0F " : "";
             const label = prefix + dmg;
             const nc = document.createElement("canvas");
@@ -7392,6 +7747,7 @@ var init_message_handlers = __esm({
       chat(msg) {
         state_default.chatLog.push({ name: msg.name, color: msg.color, text: msg.text, t: 10 });
         if (state_default.chatLog.length > 6) state_default.chatLog.shift();
+        if (msg.playerId != null) showChatBubble(msg.playerId, msg.text);
       },
       barricadePlaced(msg) {
         addBarricade({ id: msg.id, cx: msg.cx, cy: msg.cy, w: msg.w, h: msg.h, angle: msg.angle });
@@ -7403,6 +7759,7 @@ var init_message_handlers = __esm({
       },
       barricadeDestroyed(msg) {
         removeBarricade(msg.id);
+        removeBulletHolesBySurfaceKey("barricade:" + msg.id);
         sfx(300, 0.08, "square", 0.05);
         sfx(150, 0.15, "sawtooth", 0.04);
       },
@@ -7453,6 +7810,7 @@ var init_message_handlers = __esm({
       },
       wallDestroyed(msg) {
         destroyWall(msg.id);
+        removeBulletHolesBySurfaceKey("wall:" + msg.id);
         if (state_default.mapFeatures && state_default.mapFeatures.walls) {
           state_default.mapFeatures.walls = state_default.mapFeatures.walls.filter((w) => w.id !== msg.id);
         }
@@ -7469,7 +7827,6 @@ var init_message_handlers = __esm({
       },
       kill(msg) {
         addKillFeed("\u{1F480} " + (msg.killerName || "?") + " \u2192 " + (msg.victimName || "?"), 5);
-        if (state_default.killfeed.length > 5) state_default.killfeed.pop();
         if (msg.victimId === state_default.myId) {
           state_default.killerId = msg.killerId;
           state_default.killerName = msg.killerName;
@@ -7486,7 +7843,7 @@ var init_message_handlers = __esm({
         document.getElementById("winRestart").textContent = "Next round starting soon...";
         if (getAudioCtx()) {
           const t = getAudioCtx().currentTime;
-          const v = 0.08 * (typeof state_default.masterVol !== "undefined" ? state_default.masterVol : 0.5);
+          const v = 0.32 * (typeof state_default.masterVol !== "undefined" ? state_default.masterVol : 0.5);
           const chords = [[82.4, 164.8], [98, 196], [110, 220], [82.4, 164.8], [110, 220], [130.8, 261.6], [164.8, 329.6]];
           chords.forEach((notes, i) => {
             notes.forEach((freq) => {
@@ -7577,7 +7934,7 @@ var init_message_handlers = __esm({
         state_default.me = null;
         state_default.serverFoods = [];
         state_default.clientWeapons = [];
-        state_default.killfeed = [];
+        state_default.chatLog = [];
         state_default.mapBuilt = false;
         state_default.pendingLevelUps = 0;
         state_default.perkMenuOpen = false;
@@ -7588,13 +7945,19 @@ var init_message_handlers = __esm({
         clearBarricades();
         state_default._botRevealTime = null;
         document.getElementById("perkMenu").style.display = "none";
-        const oldRb = document.getElementById("readyBtn");
-        if (oldRb) oldRb.remove();
+        const jbReset = document.getElementById("joinBtn");
+        if (jbReset) {
+          jbReset.textContent = "QUEUE FOR MEADOW";
+          jbReset.style.background = "";
+          jbReset.style.color = "";
+          jbReset.style.display = "";
+        }
         startMenuMusic();
       },
       levelup(msg) {
         if (!state_default.me || !state_default.me.alive) return;
         sfxLevelUp();
+        flashEdge("levelupEdgeFlash");
         state_default.pendingLevelUps = (state_default.pendingLevelUps || 0) + 1;
         if (!state_default.perkMenuOpen) showPerkMenu();
       },
@@ -7755,15 +8118,15 @@ var init_message_handlers = __esm({
       },
       weaponPickup(msg) {
         state_default.clientWeapons = state_default.clientWeapons.filter((w) => w.id !== msg.pickupId);
-        const _wn = { shotgun: "Benelli", burst: "M16A2", bolty: "L96", cowtank: "M72 LAW" };
+        const _wn = { shotgun: "Benelli", burst: "M16A2", bolty: "L96", cowtank: "M72 LAW", aug: "AUG" };
         const wpName = _wn[msg.weapon] || msg.weapon || "weapon";
         if (msg.playerId === state_default.myId) {
           addKillFeed("Picked up " + wpName + "!", 3);
-          if (msg.weapon === "burst") state_default.fireMode = "auto";
+          if (import_constants9.BURST_FAMILY.has(msg.weapon)) state_default.fireMode = "auto";
         } else addKillFeed((msg.name || "?") + " picked up " + wpName, 3);
       },
       weaponSpawn(msg) {
-        state_default.clientWeapons.push({ id: msg.id, x: msg.x, y: msg.y, weapon: msg.weapon });
+        state_default.clientWeapons.push({ id: msg.id, x: msg.x, y: msg.y, weapon: msg.weapon, spawnTime: msg.spawnTime || Date.now() });
       },
       weaponDespawn(msg) {
         state_default.clientWeapons = state_default.clientWeapons.filter((w) => w.id !== msg.id);
@@ -7775,7 +8138,7 @@ var init_message_handlers = __esm({
       reloaded(msg) {
         if (msg.playerId !== state_default.myId) return;
         addKillFeed("Reloaded!", 1.5);
-        if (msg.weapon === "burst") sfxReloadLR();
+        if (import_constants9.BURST_FAMILY.has(msg.weapon)) sfxReloadLR();
         else if (msg.weapon === "bolty") sfxReloadBolty();
         else if (msg.weapon === "shotgun") sfxShellLoad();
       },
@@ -7936,6 +8299,7 @@ var require_index = __commonJS({
         }
       }
       let curMx = 0, curMz = 0;
+      let curAim = 0;
       const curWalking = !!state_default.crouching;
       if (me && me.alive) {
         _tmpFwd.set(0, 0, -1).applyQuaternion(cam.quaternion);
@@ -7943,6 +8307,7 @@ var require_index = __commonJS({
         if (_tmpFwd.length() > 0.01) _tmpFwd.normalize();
         else _tmpFwd.set(0, 0, -1);
         _tmpRight.set(-_tmpFwd.z, 0, _tmpFwd.x);
+        curAim = Math.atan2(_tmpFwd.x, _tmpFwd.z);
         if (state_default.keys["KeyW"] || state_default.keys["ArrowUp"]) {
           curMx += _tmpFwd.x;
           curMz += _tmpFwd.z;
@@ -7966,7 +8331,7 @@ var require_index = __commonJS({
         }
       }
       if (me && me.alive) {
-        setCurrentInput(curMx, curMz, curWalking);
+        setCurrentInput(curMx, curMz, curWalking, curAim);
         if (!state_default.mePredicted) initPrediction();
         predictStep(dt);
       } else {
@@ -8083,6 +8448,13 @@ var require_index = __commonJS({
     setMessageHandler((msg) => {
       const h = handlers[msg.type];
       if (h) h(msg);
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) return;
+      for (const p of state_default.serverPlayers) {
+        if (p._histBuf) p._histBuf.length = 0;
+      }
+      last = performance.now();
     });
     connect3();
     requestAnimationFrame(loop);

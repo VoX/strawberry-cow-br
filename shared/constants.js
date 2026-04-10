@@ -17,6 +17,12 @@ const GRAVITY = 800;                    // z-axis gravity units/s^2
 const BARRICADE_HEIGHT = 55;            // barricades are 55 units tall
 const PLAYER_WALL_INFLATE = 15;         // AABB inflation matching capsule radius
 
+// Burst-family weapons share the burst-fire pipeline, ADS-irrelevant
+// recoil ramp shape, fire-mode selector, and reload sound. Used in
+// hud.js, input.js, message-handlers.js, and weapon-fire.js to avoid
+// scattered string OR-checks.
+const BURST_FAMILY = new Set(['burst', 'aug']);
+
 // Client input types that carry a monotonic seq number for CSP reconciliation.
 // The client stamps seq on every stateful send; the server tracks the highest
 // seen per player and echoes it back via `inputAck`. Each seq MUST correspond
@@ -41,12 +47,12 @@ const FOOD_TYPES = [
   {name:'cupcake',hunger:22,pts:18},
   {name:'cookie',hunger:12,pts:8},
 ];
-const WEAPON_TYPES = ['shotgun','burst','bolty','shotgun','burst','bolty','cowtank'];
+const WEAPON_TYPES = ['shotgun','burst','bolty','shotgun','burst','bolty','cowtank','aug'];
 
 module.exports = {
   MAP_W, MAP_H, TICK_RATE,
   PLAYER_BASE_SPEED, PLAYER_WALK_MULT, MUD_SPEED_MULT, GRAVITY,
   BARRICADE_HEIGHT, PLAYER_WALL_INFLATE,
-  STATEFUL_INPUT_TYPES,
+  STATEFUL_INPUT_TYPES, BURST_FAMILY,
   COLORS, FOOD_TYPES, WEAPON_TYPES,
 };

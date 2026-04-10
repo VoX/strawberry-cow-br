@@ -4,7 +4,7 @@ import { cam, ren } from './renderer.js';
 import { initAudio } from './audio.js';
 import { send } from './network.js';
 import { INTERP_DELAY_MS } from './interp.js';
-import { TICK_RATE } from '../shared/constants.js';
+import { TICK_RATE, BURST_FAMILY } from '../shared/constants.js';
 
 // Jump prediction: server applies vz=200 + onGround=false on receipt of
 // the jump message ONLY IF player.onGround was true. Mirror that gate
@@ -70,7 +70,7 @@ function autoFireLoop() {
   if (!autoFireActive) return;
   if (!mouseDown || S.state !== 'playing' || !S.locked) { stopAutoFire(); return; }
   const me = S.me;
-  if (!me || !me.alive || me.weapon !== 'burst') { stopAutoFire(); return; }
+  if (!me || !me.alive || !BURST_FAMILY.has(me.weapon)) { stopAutoFire(); return; }
   const now = performance.now();
   if (now >= nextFireTime) {
     doAttack();
@@ -111,7 +111,7 @@ ren.domElement.addEventListener('mousedown', e => {
   }
   if (!S.locked) { ren.domElement.requestPointerLock(); return; }
   mouseDown = true;
-  if (me.weapon === 'burst' && S.fireMode === 'auto') {
+  if (BURST_FAMILY.has(me.weapon) && S.fireMode === 'auto') {
     startAutoFire();
   } else {
     doAttack();
@@ -129,14 +129,19 @@ document.addEventListener('mousemove', e => {
   S.yaw -= e.movementX * sens; S.pitch -= e.movementY * sens;
   S.pitch = Math.max(-1.2, Math.min(1.2, S.pitch));
 });
-// Right click for ADS (bolty only)
+// Right click for ADS — bolty (L96 scope) and aug (2x integrated optic).
+// L96 uses the cross+circle scope overlay; the AUG uses a simpler donut
+// reticle overlay (no crosshairs, no scope increments) since its 2x
+// optic is closer to a red-dot than a sniper scope.
 document.addEventListener('mousedown', e => {
   if (e.button === 2 && S.locked && S.state === 'playing') {
     const me = S.me;
-    if (me && me.alive && me.weapon === 'bolty') {
+    if (me && me.alive && (me.weapon === 'bolty' || me.weapon === 'aug')) {
       S.adsActive = true;
-      cam.fov = 12.5; cam.updateProjectionMatrix();
-      document.getElementById('scopeOverlay').style.display = 'block';
+      cam.fov = me.weapon === 'aug' ? 37.5 : 12.5;
+      cam.updateProjectionMatrix();
+      const overlayId = me.weapon === 'aug' ? 'augScopeOverlay' : 'scopeOverlay';
+      document.getElementById(overlayId).style.display = 'block';
       document.getElementById('crosshair').style.display = 'none';
       const vg = vmGroupRef && vmGroupRef();
       if (vg) vg.visible = false;
@@ -148,6 +153,7 @@ document.addEventListener('mouseup', e => {
     S.adsActive = false;
     cam.fov = 75; cam.updateProjectionMatrix();
     document.getElementById('scopeOverlay').style.display = 'none';
+    document.getElementById('augScopeOverlay').style.display = 'none';
     document.getElementById('crosshair').style.display = 'block';
     const vg = vmGroupRef && vmGroupRef();
     if (vg) vg.visible = true;
@@ -255,7 +261,8 @@ addEventListener('keydown', e => {
     S.fireMode = S.fireMode === 'burst' ? 'auto'
                : S.fireMode === 'auto'  ? 'semi'
                : 'burst';
-    S.killfeed.unshift({ txt: 'M16A2: ' + S.fireMode.toUpperCase() + ' mode', t: 2 });
+    S.chatLog.push({ name: '', color: '', text: 'M16A2: ' + S.fireMode.toUpperCase() + ' mode', t: 2, system: true });
+    if (S.chatLog.length > 10) S.chatLog.shift();
   }
   if (e.code === 'KeyC' && S.state === 'playing') {
     const meC = S.me;

@@ -19,6 +19,10 @@ body{background:#1a0a2e;overflow:hidden;font-family:'Segoe UI',sans-serif}
 #joinScreen .mode{font-size:13px;color:#88ff88;letter-spacing:3px;margin-bottom:20px}
 #joinScreen input[type=text]{padding:10px 20px;font-size:18px;border:2px solid #cc88ff;border-radius:8px;background:rgba(255,255,255,0.1);color:#fff;text-align:center;width:260px;outline:none;margin-bottom:12px}
 #joinScreen button{padding:10px 40px;font-size:20px;border:none;border-radius:8px;background:linear-gradient(135deg,#ff88aa,#cc88ff);color:#fff;cursor:pointer;font-weight:bold}
+#hotkeyGuide{position:absolute;top:50%;right:24px;transform:translateY(-50%);background:rgba(0,0,0,0.55);border:1px solid rgba(204,136,255,0.4);border-radius:10px;padding:14px 18px;color:#cc88ff;font-size:13px;line-height:1.55;z-index:101;pointer-events:none;min-width:200px}
+#hotkeyGuide h3{font-size:14px;color:#88ff88;margin:0 0 8px 0;letter-spacing:2px;text-align:center}
+#hotkeyGuide kbd{display:inline-block;min-width:18px;padding:1px 6px;background:#2d1b69;border:1px solid #cc88ff;border-radius:4px;font-family:monospace;color:#fff;text-align:center;font-size:12px}
+#hotkeyGuide div{margin:3px 0}
 #hud{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;display:none;z-index:10;color:#fff;font-size:13px}
 #crosshair{position:absolute;top:50%;left:50%;width:0;height:0;pointer-events:none}
 #chDot{position:absolute;left:0;top:0;width:3px;height:3px;background:#ffffff;margin:-1.5px 0 0 -1.5px;border-radius:50%;box-shadow:0 0 3px rgba(0,0,0,0.9)}
@@ -27,9 +31,7 @@ body{background:#1a0a2e;overflow:hidden;font-family:'Segoe UI',sans-serif}
 #hunger{position:absolute;bottom:30px;left:50%;transform:translateX(-50%);width:400px;height:36px;background:rgba(0,0,0,0.6);border-radius:5px}
 #hungerFill{height:100%;border-radius:4px;background:#ffffff;transition:width 0.15s}
 #hungerTxt{position:absolute;width:100%;text-align:center;top:7px;font-size:14px;font-weight:bold;text-shadow:1px 1px #000}
-#score{position:absolute;bottom:60px;left:15px;font-size:14px;color:#ffdd44;text-shadow:1px 1px #000}
 #weapon{position:absolute;bottom:60px;right:15px;font-size:56px;color:#aaa;text-shadow:2px 2px #000;text-align:right}
-#killfeed{position:absolute;top:10px;left:10px;font-size:15px;text-shadow:1px 1px #000;max-width:400px}
 #headshotMarker{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:18px;color:#ff2222;font-weight:bold;text-shadow:0 0 8px #ff0000;pointer-events:none;display:none;z-index:12}
 #playerCount{position:absolute;top:10px;right:10px;font-size:16px;font-weight:bold;color:#ff88aa;text-shadow:1px 1px #000}
 #lockMsg{display:none!important}
@@ -39,13 +41,30 @@ body{background:#1a0a2e;overflow:hidden;font-family:'Segoe UI',sans-serif}
 <body>
 <div id="joinScreen">
 <canvas id="confettiCanvas"></canvas>
+<div id="hotkeyGuide">
+<h3>HOTKEYS</h3>
+<div><kbd>WASD</kbd> move</div>
+<div><kbd>Mouse</kbd> look</div>
+<div><kbd>LMB</kbd> fire</div>
+<div><kbd>RMB</kbd> ADS (L96)</div>
+<div><kbd>Space</kbd> jump</div>
+<div><kbd>Shift</kbd> dash</div>
+<div><kbd>C</kbd> crouch</div>
+<div><kbd>R</kbd> reload</div>
+<div><kbd>B</kbd> barricade</div>
+<div><kbd>Q</kbd> drop weapon</div>
+<div><kbd>X</kbd> M16 fire mode</div>
+<div><kbd>T</kbd> chat</div>
+<div><kbd>P</kbd> debug overlay</div>
+<div><kbd>O</kbd> fullscreen</div>
+</div>
 <div id="titleWrap"></div>
+<button id="joinBtn" style="margin-bottom:14px;width:260px">QUEUE FOR MEADOW</button>
 <h2 style="margin-bottom:8px">Enter Cow Name:</h2>
 <div style="display:flex;gap:6px;align-items:center;margin-bottom:12px">
 <input type="text" id="nameIn" placeholder="your name" maxlength="12" style="margin-bottom:0">
 <button id="randomNameBtn" style="padding:10px 14px;font-size:14px;border:none;border-radius:8px;background:linear-gradient(135deg,#cc88ff,#88aaff);color:#fff;cursor:pointer;font-weight:bold">Random</button>
 </div>
-<button id="joinBtn">QUEUE FOR MEADOW</button>
 <button id="fullscreenBtn" style="margin-top:8px;padding:6px 20px;font-size:14px;background:rgba(204,136,255,0.25);border:1px solid #cc88ff;color:#eee;border-radius:6px;cursor:pointer">Fullscreen [O]</button>
 <div style="margin-top:12px;color:#cc88ff;font-size:13px"><label><input type="checkbox" id="botsCheck" checked style="vertical-align:middle"> Include Artificial Bovine Intelligence</label></div>
 <div style="margin-top:4px;color:#cc88ff;font-size:13px"><label><input type="checkbox" id="botsFreeWillCheck" checked style="vertical-align:middle"> Replicate Artificial Bovine Intelligence Free Will</label></div>
@@ -61,7 +80,6 @@ body{background:#1a0a2e;overflow:hidden;font-family:'Segoe UI',sans-serif}
 <div id="fpsCounter" style="position:absolute;bottom:80px;left:50%;transform:translateX(-50%);font-size:10px;color:rgba(255,255,255,0.5);text-shadow:1px 1px #000"></div>
 <div id="armorBar" style="position:absolute;bottom:92px;left:50%;transform:translateX(-50%);width:400px;height:18px;background:rgba(0,0,0,0.6);border-radius:4px;display:none"><div id="armorFill" style="height:100%;border-radius:4px;background:#5588ff;width:0%"></div><div id="armorTxt" style="position:absolute;width:100%;text-align:center;top:1px;font-size:11px;text-shadow:1px 1px #000"></div></div>
 <div id="hunger"><div id="hungerFill"></div><div id="hungerTxt"></div></div>
-<div id="score"></div>
 <div id="xpBar" style="position:absolute;bottom:70px;left:50%;transform:translateX(-50%);width:400px;height:18px;background:rgba(0,0,0,0.6);border-radius:4px"><div id="xpFill" style="height:100%;border-radius:4px;background:#cc88ff;width:0%"></div><div id="xpTxt" style="position:absolute;width:100%;text-align:center;top:1px;font-size:11px;text-shadow:1px 1px #000"></div></div>
 <div id="weapon"></div>
 <div id="dashBar" style="position:absolute;bottom:15px;right:15px;width:160px;height:16px;background:rgba(0,0,0,0.5);border-radius:3px"><div id="dashFill" style="height:100%;border-radius:3px;background:#44aaff;width:0%"></div></div>
@@ -72,7 +90,6 @@ body{background:#1a0a2e;overflow:hidden;font-family:'Segoe UI',sans-serif}
 <div id="atkLabel" style="position:absolute;bottom:32px;right:185px;font-size:12px;color:#ff6644;text-shadow:1px 1px #000">FIRE</div>
 <div id="chatLog" style="position:absolute;bottom:130px;left:15px;max-width:620px;font-size:19px;color:#fff;text-shadow:1px 1px #000,0 0 3px #000;z-index:40;pointer-events:none"></div>
 <div id="chatInputWrap" style="position:absolute;bottom:95px;left:15px;display:none;z-index:45"><input id="chatInput" type="text" maxlength="120" placeholder="press enter to send, esc to cancel" style="width:620px;padding:10px 14px;background:rgba(0,0,0,0.6);border:2px solid #ff88aa;border-radius:6px;color:#fff;font-size:19px;font-family:'Segoe UI',sans-serif"></div>
-<div id="killfeed"></div>
 <div id="playerCount"></div>
 <canvas id="minimap" width="120" height="90"></canvas>
 </div>
@@ -85,9 +102,12 @@ body{background:#1a0a2e;overflow:hidden;font-family:'Segoe UI',sans-serif}
 .perkCard{background:rgba(26,10,46,0.85);border:2px solid #cc88ff;border-radius:8px;padding:10px 14px;width:180px;text-align:center;cursor:pointer;pointer-events:auto}
 </style>
 <div id="scopeOverlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:8;display:none"><div style="position:absolute;top:0;left:0;width:100%;height:100%;background:radial-gradient(circle at center,transparent 35%,rgba(0,0,0,0.95) 36%);"></div><div style="position:absolute;top:50%;left:0;width:100%;height:1px;background:rgba(255,100,100,0.5)"></div><div style="position:absolute;top:0;left:50%;width:1px;height:100%;background:rgba(255,100,100,0.5)"></div><div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:8px;height:8px;border:1px solid rgba(255,100,100,0.6);border-radius:50%"></div></div>
+<div id="augScopeOverlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:8;display:none"><div style="position:absolute;top:0;left:0;width:100%;height:100%;background:radial-gradient(circle at center,transparent 35%,rgba(0,0,0,0.95) 36%);"></div><div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:26px;height:26px;border:6px solid #000;border-radius:50%;background:transparent;box-shadow:0 0 0 1px rgba(0,0,0,0.6)"></div><div style="position:absolute;top:50%;left:0;width:calc(50% - 24px);height:1px;background:#000"></div><div style="position:absolute;top:50%;left:calc(50% + 24px);width:calc(50% - 24px);height:1px;background:#000"></div><div style="position:absolute;left:50%;top:0;width:1px;height:calc(50% - 24px);background:#000"></div><div style="position:absolute;left:50%;top:calc(50% + 24px);width:1px;height:calc(50% - 24px);background:#000"></div></div>
 <div id="lowHealthOverlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:6;display:none;background:radial-gradient(ellipse at center,transparent 50%,rgba(255,0,0,0.4) 100%)"></div>
 <div id="spawnProtOverlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:5;display:none;background:radial-gradient(ellipse at center,transparent 60%,rgba(255,238,68,0.4) 100%);border:3px solid rgba(255,238,68,0.3);box-sizing:border-box"></div>
 <div id="hitFlash" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:7;opacity:0;background:rgba(255,0,0,0.3)"></div>
+<div id="damageEdgeFlash" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:7;opacity:0;background:radial-gradient(ellipse at center,transparent 45%,rgba(255,30,30,0.55) 100%);transition:opacity 0.45s ease-out"></div>
+<div id="levelupEdgeFlash" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:7;opacity:0;background:radial-gradient(ellipse at center,transparent 40%,rgba(255,210,40,0.5) 100%);transition:opacity 0.7s ease-out"></div>
 <div id="winScreen" style="position:absolute;top:0;left:0;width:100%;height:100%;display:none;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,0.75);z-index:90">
 <div id="winCrown" style="font-size:80px;animation:winBounce 1s ease-in-out infinite">&#x1F451;</div>
 <div id="winName" style="font-size:52px;font-weight:bold;color:#ffee55;text-shadow:0 0 30px rgba(255,238,85,0.6);margin:10px 0"></div>

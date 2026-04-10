@@ -11,19 +11,24 @@
 // without introducing a circular dependency between message-handlers.js
 // and entities.js.
 
-// Ring depth — 8 entries ≈ 267 ms at 30 Hz, enough to still have
-// bracketing snapshots after a dropped tick or two.
-export const INTERP_HIST_CAP = 8;
-// Display offset from "now" — the renderer looks INTERP_DELAY_MS into the
-// past so it can lerp between two received snapshots instead of rendering
-// the latest raw tick.
+// Ring depth: 16 entries ≈ 533 ms at 30 Hz. Sized to absorb >5-tick UDP
+// loss bursts without freezing remote cows.
+export const INTERP_HIST_CAP = 16;
+// Render lerps INTERP_DELAY_MS in the past so it always has bracketing
+// snapshots instead of rendering the latest raw tick.
 export const INTERP_DELAY_MS = 100;
+// Bounded extrapolation cap when renderT outruns the newest sample.
+// Beyond this we freeze — extrapolating indefinitely would walk a stalled
+// cow into a wall during a long disconnect.
+const INTERP_EXTRAPOLATE_MS = 300;
 
 // Sample a player's interpolation history at (nowMs - INTERP_DELAY_MS).
 // Finds the two bracketing snapshots and returns lerped {x, y, z, aim}.
 // Fall-through behavior:
 //   - Empty history (player just appeared)  → return current p.x/y/z/aim
-//   - renderT past the newest snapshot      → freeze on newest (never extrapolate)
+//   - renderT past the newest snapshot      → bounded linear extrapolation
+//                                              (cap at INTERP_EXTRAPOLATE_MS,
+//                                              then freeze on newest)
 //   - renderT before the oldest snapshot    → clamp to oldest
 // Aim angle lerps take the shortest arc to avoid the -π/+π wraparound jump.
 export function interpSamplePlayer(p, nowMs) {
@@ -33,7 +38,32 @@ export function interpSamplePlayer(p, nowMs) {
   }
   const renderT = nowMs - INTERP_DELAY_MS;
   const last = hist[hist.length - 1];
-  if (renderT >= last.t) return { x: last.x, y: last.y, z: last.z, aim: last.aim };
+  if (renderT >= last.t) {
+    // Past the newest sample — bounded linear extrapolation. Without
+    // this, a single dropped tick at the spectator camera produces a
+    // hard freeze (the original `freeze, never extrapolate` policy).
+    // Extrapolating up to ~300 ms covers the realistic UDP-loss / WS-
+    // backpressure window without overshooting into nonsense.
+    const overshoot = renderT - last.t;
+    if (overshoot < INTERP_EXTRAPOLATE_MS && hist.length >= 2) {
+      const prev = hist[hist.length - 2];
+      const span = last.t - prev.t;
+      if (span > 0) {
+        const vx = (last.x - prev.x) / span;
+        const vy = (last.y - prev.y) / span;
+        const vz = (last.z - prev.z) / span;
+        return {
+          x: last.x + vx * overshoot,
+          y: last.y + vy * overshoot,
+          z: last.z + vz * overshoot,
+          // Aim doesn't extrapolate well (mouse-look is non-linear) —
+          // freeze on the latest known orientation.
+          aim: last.aim,
+        };
+      }
+    }
+    return { x: last.x, y: last.y, z: last.z, aim: last.aim };
+  }
   if (renderT <= hist[0].t) return { x: hist[0].x, y: hist[0].y, z: hist[0].z, aim: hist[0].aim };
   for (let i = 0; i < hist.length - 1; i++) {
     const a = hist[i], b = hist[i + 1];

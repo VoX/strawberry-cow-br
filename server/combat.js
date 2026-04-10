@@ -8,7 +8,7 @@ const { applyHungerDelta, applyArmorDelta, broadcastPlayerSnapshot } = require('
 
 const MAG_SIZES = weaponFire.MAG_SIZES;
 // Extended-mag perk values — specific per weapon (dual-wield multiplies these by 2)
-const EXT_MAG_SIZES = { normal: 19, burst: 25, shotgun: 8, bolty: 7 };
+const EXT_MAG_SIZES = { normal: 19, burst: 25, shotgun: 8, bolty: 7, aug: 38 };
 
 const BASE_EYE_HEIGHT = 35;
 function eyeHeight(p) {
@@ -141,6 +141,7 @@ function _buildRewoundPlayers(snapshot, livePlayers) {
       alive: true,
       stunTimer: entry.stunTimer,
       spawnProtection: entry.spawnProtection,
+      armor: entry.armor || 0,  // shield ellipsoid hit test reads this
       perks: rewoundPerks,
       _rewound: true,    // diagnostic flag
     });
@@ -202,9 +203,10 @@ function updateProjectiles(dt) {
       // snapshot. Mutations (damage, armor, volley hit tracking, stun) must
       // apply to the LIVE player, not the rewound copy — otherwise damage
       // would vanish when the lite object goes out of scope. Preserve
-      // `_wasHeadshot` since it was set on whichever object went through
-      // findPlayerHit (rewound or live).
+      // `_wasHeadshot` and `_shieldOnly` since they were set on whichever
+      // object went through findPlayerHit (rewound or live).
       const headshot = !!hitPlayer._wasHeadshot;
+      const shieldOnly = !!hitPlayer._shieldOnly;
       const p = hitPlayer._rewound ? players.get(hitPlayer.id) : hitPlayer;
       if (!p || !p.alive) { gameState.removeProjectileAt(i); continue; }
         let dmg = pr.dmg;
@@ -218,6 +220,16 @@ function updateProjectiles(dt) {
         let armor = 1;
         if (p.perks && p.perks.damageReduction) armor *= (1 - p.perks.damageReduction);
         let actualDmg = dmg * armor;
+        if (shieldOnly) {
+          // Bullet clipped the egg-shaped shield bubble but missed the
+          // body capsule. Damage stays on the shield, no hunger hit, no
+          // stun, no overflow. Shield breaks at zero like normal.
+          const absorbed = Math.min(p.armor, actualDmg);
+          applyArmorDelta(p, -absorbed);
+          broadcast({ type: 'shieldHit', playerId: p.id, x: p.x, y: p.y });
+          broadcast({ type: 'projectileHit', projectileId: pr.id, targetId: p.id, ownerId: pr.ownerId, dmg: Math.round(absorbed), headshot: false });
+          gameState.removeProjectileAt(i); continue;
+        }
         if (pr.explosive && p.armor > 0) {
           // Explosive fully strips the shield; helper emits the break visual.
           applyArmorDelta(p, -(p.armor || 0));
@@ -244,30 +256,65 @@ function updateProjectiles(dt) {
     // Terrain collision
     if (pr.z < getTerrainHeight(pr.x, pr.y)) {
       if (pr.explosive) applyExplosion(pr, null);
-      broadcast({ type: 'projectileHit', projectileId: pr.id, targetId: null, ownerId: pr.ownerId, wall: true, x: pr.x, y: pr.y, z: pr.z });
+      // Bisect along the prev→cur segment to find where the bullet path
+      // actually crossed the curved terrain surface; pr.x/pr.y is the
+      // over-shoot position one tick past the crossing.
+      let lo = 0, hi = 1;
+      for (let iter = 0; iter < 6; iter++) {
+        const tMid = (lo + hi) / 2;
+        const xMid = prevX + segDx * tMid;
+        const yMid = prevY + segDy * tMid;
+        const zMid = prevZ + (pr.z - prevZ) * tMid;
+        if (zMid > getTerrainHeight(xMid, yMid)) lo = tMid;
+        else hi = tMid;
+      }
+      const tImpact = (lo + hi) / 2;
+      const groundX = prevX + segDx * tImpact;
+      const groundY = prevY + segDy * tImpact;
+      broadcast({ type: 'projectileHit', projectileId: pr.id, targetId: null, ownerId: pr.ownerId, wall: true, x: groundX, y: groundY, z: getTerrainHeight(groundX, groundY) });
       gameState.removeProjectileAt(i); continue;
     }
-    // Bounds / lifetime
+    // Bounds / lifetime — silent despawn. The map "edge" isn't a real
+    // surface (it's just the X/Y AABB of the playable area), so flagging
+    // these as wall hits would litter the boundary with bullet holes
+    // floating in mid-air. Send a projectileHit WITHOUT `wall: true` so
+    // the client disposes the mesh but doesn't spawn a decal. Explosive
+    // projectiles still detonate at the bounds (rocket fired into the
+    // sky should still go off when it expires).
     if (pr.life <= 0 || pr.x < 0 || pr.x > MAP_W || pr.y < 0 || pr.y > MAP_H) {
       if (pr.explosive) applyExplosion(pr, null);
-      broadcast({ type: 'projectileHit', projectileId: pr.id, targetId: null, ownerId: pr.ownerId, wall: true, x: pr.x, y: pr.y, z: pr.z });
+      broadcast({ type: 'projectileHit', projectileId: pr.id, targetId: null, ownerId: pr.ownerId });
       gameState.removeProjectileAt(i); continue;
     }
     // Use the analytical pre-scan result — no second stepped scan needed
     if (hitWallObj && pr.wallPiercing) {
-      const impactX = prevX + segDx * blockT;
-      const impactY = prevY + segDy * blockT;
+      let impactX = prevX + segDx * blockT;
+      let impactY = prevY + segDy * blockT;
       const impactZ = prevZ + (pr.z - prevZ) * blockT;
-      broadcast({ type: 'wallImpact', x: impactX, y: impactY, z: impactZ });
+      // segVsWalls inflates the AABB by PROJECTILE_RADIUS for collision;
+      // clamp back to the un-inflated surface so the decal sits flush.
+      const wxR = hitWallObj.x + Math.max(hitWallObj.w, 20);
+      const wyB = hitWallObj.y + Math.max(hitWallObj.h, 20);
+      impactX = Math.max(hitWallObj.x, Math.min(wxR, impactX));
+      impactY = Math.max(hitWallObj.y, Math.min(wyB, impactY));
+      broadcast({ type: 'wallImpact', x: impactX, y: impactY, z: impactZ, wallId: hitWallObj.id });
       pr._wallHits = (pr._wallHits || 0) + 1;
       if (pr._wallHits >= 2) {
-        broadcast({ type: 'projectileHit', projectileId: pr.id, targetId: null, ownerId: pr.ownerId, wall: true, x: impactX, y: impactY, z: impactZ });
+        broadcast({ type: 'projectileHit', projectileId: pr.id, targetId: null, ownerId: pr.ownerId, wall: true, x: impactX, y: impactY, z: impactZ, wallId: hitWallObj.id });
         gameState.removeProjectileAt(i); continue;
       }
     } else if (hitWallObj || hitBarricade) {
-      const impactX = prevX + segDx * blockT;
-      const impactY = prevY + segDy * blockT;
+      let impactX = prevX + segDx * blockT;
+      let impactY = prevY + segDy * blockT;
       const impactZ = prevZ + (pr.z - prevZ) * blockT;
+      if (hitWallObj) {
+        // Same un-inflate clamp as the wallpierce path. Barricades use a
+        // tight OBB so they don't need clamping.
+        const wxR = hitWallObj.x + Math.max(hitWallObj.w, 20);
+        const wyB = hitWallObj.y + Math.max(hitWallObj.h, 20);
+        impactX = Math.max(hitWallObj.x, Math.min(wxR, impactX));
+        impactY = Math.max(hitWallObj.y, Math.min(wyB, impactY));
+      }
       if (hitBarricade) {
         const dmgDealt = Math.round(pr.dmg);
         hitBarricade.hp -= dmgDealt;
@@ -278,7 +325,8 @@ function updateProjectiles(dt) {
         }
       }
       if (pr.explosive) applyExplosion(pr, null);
-      broadcast({ type: 'projectileHit', projectileId: pr.id, targetId: null, ownerId: pr.ownerId, wall: true, x: impactX, y: impactY, z: impactZ });
+      const surfaceTag = hitWallObj ? { wallId: hitWallObj.id } : { barricadeId: hitBarricade.id };
+      broadcast({ type: 'projectileHit', projectileId: pr.id, targetId: null, ownerId: pr.ownerId, wall: true, x: impactX, y: impactY, z: impactZ, ...surfaceTag });
       gameState.removeProjectileAt(i); continue;
     }
   }

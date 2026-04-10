@@ -6,7 +6,7 @@
 // `decideBotTurn(bot, world)` for each alive bot. The returned `intent` is
 // applied to the bot (mutations + side-effect calls).
 
-const { MAP_W, MAP_H, BOT_NAMES, BOT_CHAT_LINES } = require('./config');
+const { MAP_W, MAP_H, BOT_NAMES, BOT_PROFILES, pickBotChatLine } = require('./config');
 const { rand } = require('./utils');
 const { broadcast } = require('./network');
 const lobbyState = require('./lobby-state');
@@ -22,8 +22,9 @@ function botMaybeChat(bot) {
   bot._lastChatT++;
   if (bot._lastChatT < 18) return;
   if (Math.random() < 0.08) {
-    const line = BOT_CHAT_LINES[Math.floor(Math.random() * BOT_CHAT_LINES.length)];
-    broadcast({ type: 'chat', name: bot.name, color: bot.color, text: line });
+    const line = pickBotChatLine(bot);
+    if (!line) return;
+    broadcast({ type: 'chat', playerId: bot.id, name: bot.name, color: bot.color, text: line });
     bot._lastChatT = 0;
   }
 }
@@ -38,9 +39,13 @@ function spawnBots() {
   const availNames = (shuffled.length ? shuffled : BOT_NAMES).filter(n => !humanNames.has(n.toLowerCase()));
   for (let i = 0; i < botsNeeded; i++) {
     const botId = gameState.nextPlayerId();
-    const personality = PERSONALITIES[Math.floor(Math.random() * PERSONALITIES.length)];
+    const name = availNames[i % availNames.length] || ('Bot' + botId);
+    // Permanent personality from BOT_PROFILES if the name is in the
+    // table; otherwise random across the three personalities.
+    const profile = BOT_PROFILES[name];
+    const personality = (profile && profile.personality) || PERSONALITIES[Math.floor(Math.random() * PERSONALITIES.length)];
     const bot = {
-      id: botId, ws: null, name: availNames[i % availNames.length] || ('Bot' + botId), color: assignColor(),
+      id: botId, ws: null, name, color: assignColor(),
       x: rand(200, MAP_W - 200), y: rand(200, MAP_H - 200), z: 0, vz: 0, onGround: true, dx: 0, dy: 0, dir: 'south',
       hunger: 100, score: 0, alive: true, inLobby: false,
       eating: false, eatTimer: 0, foodEaten: 0,

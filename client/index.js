@@ -87,11 +87,20 @@ function loop(ts) {
   // there's no separate throttled-send path here, send/predict cadences
   // are inherently synchronized at TICK_RATE.
   let curMx = 0, curMz = 0;
+  let curAim = 0;
   const curWalking = !!(S.crouching);
   if (me && me.alive) {
     _tmpFwd.set(0, 0, -1).applyQuaternion(cam.quaternion);
     _tmpFwd.y = 0; if (_tmpFwd.length() > 0.01) _tmpFwd.normalize(); else _tmpFwd.set(0, 0, -1);
     _tmpRight.set(-_tmpFwd.z, 0, _tmpFwd.x);
+    // Camera-forward aim. The cow's default front (rotation.y=0) is the
+    // local +Z direction; three.js Y-rotation is left-handed (positive Y
+    // rotation takes +Z → +X), so the angle that rotates +Z to point at
+    // (cam_fwd.x, cam_fwd.z) is `atan2(cam_fwd.x, cam_fwd.z)`. The bot
+    // formula in shared/movement.js uses `atan2(-nx, ny)` which is the
+    // OPPOSITE sign — that's a long-standing bot bug, but humans get
+    // the correct sign here so they face where they look.
+    curAim = Math.atan2(_tmpFwd.x, _tmpFwd.z);
     if (S.keys['KeyW'] || S.keys['ArrowUp']) { curMx += _tmpFwd.x; curMz += _tmpFwd.z; }
     if (S.keys['KeyS'] || S.keys['ArrowDown']) { curMx -= _tmpFwd.x; curMz -= _tmpFwd.z; }
     if (S.keys['KeyA'] || S.keys['ArrowLeft']) { curMx -= _tmpRight.x; curMz -= _tmpRight.z; }
@@ -106,7 +115,7 @@ function loop(ts) {
   // integration so the server and client never see different inputs
   // for the same seq.
   if (me && me.alive) {
-    setCurrentInput(curMx, curMz, curWalking);
+    setCurrentInput(curMx, curMz, curWalking, curAim);
     if (!S.mePredicted) initPrediction();
     predictStep(dt);
   } else {
@@ -233,5 +242,24 @@ setMessageHandler(msg => {
   const h = handlers[msg.type];
   if (h) h(msg);
 });
+
+// When the tab regains focus, clear stale interpolation buffers and the
+// CSP frame timing so the first frame after un-throttling doesn't try to
+// lerp between samples that are seconds old. Browsers throttle RAF +
+// network event handlers when a tab is hidden, so on tab return the
+// histBuf is frozen at pre-tab-out state and renderT (now-100ms) is way
+// past the latest sample — interpSamplePlayer would freeze remote cows
+// until fresh ticks arrive. Dropping the buffers forces a clean
+// repopulate from the next few ticks.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  for (const p of S.serverPlayers) {
+    if (p._histBuf) p._histBuf.length = 0;
+  }
+  // Reset the render-loop frame clock so dt isn't a multi-second value
+  // on the first un-throttled frame.
+  last = performance.now();
+});
+
 connect();
 requestAnimationFrame(loop);

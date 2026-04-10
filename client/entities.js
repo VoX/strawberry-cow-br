@@ -201,13 +201,15 @@ const SHIELD_BUBBLE_GEO = markSharedGeometry(new THREE.SphereGeometry(24, 12, 12
 const SPAWN_BUBBLE_GEO  = markSharedGeometry(new THREE.SphereGeometry(25, 12, 12));
 // Debug hitbox primitives — one per cow when debug mode is on, shared so that
 // toggling debug off and on again doesn't leak the old geometries.
-const DEBUG_BODY_GEO  = markSharedGeometry(new THREE.CylinderGeometry(18, 18, 1, 12)); // scaled per-cow in Y
-const DEBUG_HEAD_GEO  = markSharedGeometry(new THREE.CylinderGeometry(12, 12, 20, 12));
+// Debug hitbox radii must match server/ballistics.js PLAYER_BODY_RADIUS
+// (14) and PLAYER_HEAD_RADIUS (10).
+const DEBUG_BODY_GEO  = markSharedGeometry(new THREE.CylinderGeometry(14, 14, 1, 12)); // scaled per-cow in Y
+const DEBUG_HEAD_GEO  = markSharedGeometry(new THREE.CylinderGeometry(10, 10, 20, 12));
 const DEBUG_ARROW_SHAFT_GEO = markSharedGeometry(new THREE.CylinderGeometry(0.8, 0.8, 30, 6));
 const DEBUG_ARROW_HEAD_GEO  = markSharedGeometry(new THREE.ConeGeometry(2.5, 5, 6));
-const DEBUG_BODY_MAT  = markSharedMaterial(new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: true, transparent: true, opacity: 0.3 }));
-const DEBUG_HEAD_MAT  = markSharedMaterial(new THREE.MeshBasicMaterial({ color: 0xff4444, wireframe: true, transparent: true, opacity: 0.3 }));
-const DEBUG_ARROW_MAT = markSharedMaterial(new THREE.MeshBasicMaterial({ color: 0xffdd00, wireframe: true, transparent: true, opacity: 0.7 }));
+const DEBUG_BODY_MAT  = markSharedMaterial(new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: true }));
+const DEBUG_HEAD_MAT  = markSharedMaterial(new THREE.MeshBasicMaterial({ color: 0xff4444, wireframe: true }));
+const DEBUG_ARROW_MAT = markSharedMaterial(new THREE.MeshBasicMaterial({ color: 0xffdd00, wireframe: true }));
 
 export function buildCow(color, personality) {
   const c = COL[color] || 0xff88aa;
@@ -310,24 +312,33 @@ export function updateCows(time, dt) {
     const pid = String(p.id);
     if (!S.cowMeshes[pid]) {
       const m = buildCow(p.color, p.personality); scene.add(m);
-      const nc = document.createElement('canvas'); nc.width = 256; nc.height = 64;
-      const nctx = nc.getContext('2d'); nctx.font = 'bold 32px Segoe UI'; nctx.textAlign = 'center';
-      // Color circle
       const colHex = {pink:'#ff88aa',blue:'#88aaff',green:'#88ff88',gold:'#ffdd44',purple:'#cc88ff',red:'#ff4444',orange:'#ff8844',cyan:'#44ffdd'};
-      const nameW = nctx.measureText(p.name || 'Cow').width;
-      const circleX = 128 - nameW / 2 - 16;
+      const nameStr = p.name || 'Cow';
+      // Auto-fit the name canvas to the actual text width so long names
+      // (e.g. "Inchworm Survivor") aren't truncated. Canvas width grows
+      // with the text + circle + padding, capped at 512 px; the world
+      // sprite width scales proportionally so the on-screen size tracks.
+      if (!_nameMeasureCtx) _nameMeasureCtx = document.createElement('canvas').getContext('2d');
+      _nameMeasureCtx.font = 'bold 32px Segoe UI';
+      const nameW = _nameMeasureCtx.measureText(nameStr).width;
+      const padding = 60; // circle + horizontal space + breathing room
+      const cw = Math.min(512, Math.max(256, Math.ceil(nameW + padding)));
+      const nc = document.createElement('canvas'); nc.width = cw; nc.height = 64;
+      const nctx = nc.getContext('2d'); nctx.font = 'bold 32px Segoe UI'; nctx.textAlign = 'center';
+      const circleX = cw / 2 - nameW / 2 - 16;
       nctx.beginPath(); nctx.arc(circleX, 34, 10, 0, Math.PI * 2);
       nctx.fillStyle = colHex[p.color] || '#aaa'; nctx.fill();
-      nctx.fillStyle = 'rgba(0,0,0,0.5)'; nctx.fillText(p.name || 'Cow', 137, 39);
-      nctx.fillStyle = '#ffffff'; nctx.fillText(p.name || 'Cow', 136, 38);
+      nctx.fillStyle = 'rgba(0,0,0,0.5)'; nctx.fillText(nameStr, cw / 2 + 9, 39);
+      nctx.fillStyle = '#ffffff'; nctx.fillText(nameStr, cw / 2 + 8, 38);
       const ntex = new THREE.CanvasTexture(nc); ntex.minFilter = THREE.LinearFilter;
       const nmat = new THREE.SpriteMaterial({ map: ntex, transparent: true, depthTest: false });
-      const nsprite = new THREE.Sprite(nmat); nsprite.position.set(0, 50, 0); nsprite.scale.set(40, 10, 1);
+      const nsprite = new THREE.Sprite(nmat); nsprite.position.set(0, 50, 0);
+      nsprite.scale.set(40 * (cw / 256), 10, 1);
       m.add(nsprite);
       // 3D hat — pick stably from player id, clone the shared template
       const hatType = ['cowboy', 'wizard', 'party', 'crown', 'cap'][Math.abs(p.id || 0) % 5];
       m.add(cloneHat(hatType));
-      S.cowMeshes[pid] = { mesh: m };
+      S.cowMeshes[pid] = { mesh: m, nameSprite: nsprite };
     }
     const cowObj = S.cowMeshes[pid];
     const cm = cowObj.mesh;
@@ -348,21 +359,20 @@ export function updateCows(time, dt) {
       cowObj.isDead = true;
       cm.rotation.z = Math.PI / 2;
       cm.position.y = (smooth.z !== undefined ? smooth.z : getTerrainHeight(smooth.x, smooth.y)) + 5;
+      // Nametag + hp bar are living-cows-only; leave them parented so
+      // disposeMeshTree on round end still cleans them up.
+      if (cowObj.nameSprite) cowObj.nameSprite.visible = false;
+      if (cowObj.hpSprite) cowObj.hpSprite.sprite.visible = false;
+      if (cowObj.chatBubble) {
+        cm.remove(cowObj.chatBubble.sprite);
+        if (cowObj.chatBubble.timer) clearTimeout(cowObj.chatBubble.timer);
+        cowObj.chatBubble.tex.dispose();
+        cowObj.chatBubble.mat.dispose();
+        cowObj.chatBubble = null;
+      }
       // Remove shield and spawn protection bubbles. Geos are shared singletons — only the per-instance material gets disposed.
       if (cowObj.shieldBubble) { cm.remove(cowObj.shieldBubble); cowObj.shieldBubble.material.dispose(); cowObj.shieldBubble = null; }
       if (cowObj.spawnBubble) { cm.remove(cowObj.spawnBubble); cowObj.spawnBubble.material.dispose(); cowObj.spawnBubble = null; }
-      // Clone each mesh's material before fading. The body/spot/hat materials
-      // are now shared across every cow; mutating them in-place would fade
-      // every living cow too. clone() gives us a fresh per-mesh material that
-      // we own — disposeMeshTree will free these clones via the normal path
-      // (they aren't in the shared-material set).
-      cm.traverse(c => {
-        if (!c.isMesh || !c.material) return;
-        const fresh = c.material.clone();
-        if (!fresh.transparent) { fresh.transparent = true; fresh.opacity = 0.5; }
-        else { fresh.opacity *= 0.5; }
-        c.material = fresh;
-      });
     }
     if (smooth.aim !== undefined) {
       // Snap directly to the interpolated aim — the sampler already handles
@@ -436,7 +446,9 @@ export function updateCows(time, dt) {
     if (p.alive && armorVal > 0 && !cowObj.shieldBubble) {
       const shieldMat = new THREE.MeshBasicMaterial({ color: 0x5588ff, transparent: true, opacity: 0.55, side: THREE.DoubleSide });
       const shield = new THREE.Mesh(SHIELD_BUBBLE_GEO, shieldMat);
-      shield.position.set(0, 14, 0);
+      // Egg shape — taller than wide so the bubble encloses the hat too.
+      shield.position.set(0, 26, 0);
+      shield.scale.set(0.95, 1.55, 0.95);
       cm.add(shield);
       cowObj.shieldBubble = shield;
     }
@@ -450,11 +462,14 @@ export function updateCows(time, dt) {
       }
     }
 
-    // Spawn protection bubble (golden, separate from shield). Shared geo, per-instance mat.
+    // Spawn protection bubble (golden, separate from shield). Same egg
+    // shape as the blue armor shield so both bubbles enclose the cow's
+    // hat and read the same way at a glance.
     if (p.spawnProt && !cowObj.spawnBubble) {
       const spMat = new THREE.MeshBasicMaterial({ color: 0xffee44, transparent: true, opacity: 0.2, side: THREE.DoubleSide });
       const sp = new THREE.Mesh(SPAWN_BUBBLE_GEO, spMat);
-      sp.position.set(0, 14, 0);
+      sp.position.set(0, 26, 0);
+      sp.scale.set(0.95, 1.55, 0.95);
       cm.add(sp);
       cowObj.spawnBubble = sp;
     }
@@ -483,7 +498,110 @@ export function updateCows(time, dt) {
       if (obj.hpSprite) obj.hpSprite.tex.dispose();
       if (obj.shieldBubble) obj.shieldBubble.material.dispose();
       if (obj.spawnBubble) obj.spawnBubble.material.dispose();
+      if (obj.chatBubble) {
+        if (obj.chatBubble.timer) clearTimeout(obj.chatBubble.timer);
+        obj.chatBubble.tex.dispose();
+        obj.chatBubble.mat.dispose();
+      }
       delete S.cowMeshes[id];
     }
   }
+}
+
+// Show a 5-second chat bubble above a cow's head when it speaks. Replaces
+// any existing bubble on the same cow so a chatty bot can't stack them.
+// The bubble sprite is parented to the cow mesh so it follows the cow
+// through movement / interpolation without any per-frame work. The
+// canvas is sized to the text (no truncation) so long messages get a
+// wider bubble instead of an ellipsis, and the world-space sprite scale
+// expands proportionally so the in-world width matches what the canvas
+// is showing.
+const CHAT_BUBBLE_MS = 5000;
+const CHAT_BUBBLE_MAX_CHARS = 80;
+const CHAT_BUBBLE_FONT_PX = 38;
+let _measureCtx = null;
+let _nameMeasureCtx = null;
+const CHAT_BUBBLE_PAD_X = 60;
+const CHAT_BUBBLE_PAD_Y = 28;
+const CHAT_BUBBLE_TAIL = 22;
+const CHAT_BUBBLE_BG_RGBA = 'rgba(255,255,255,0.62)';
+const CHAT_BUBBLE_FG_RGBA = 'rgba(0,0,0,0.78)';
+const CHAT_BUBBLE_WORLD_PER_PX = 0.32; // sprite world units per canvas px
+export function showChatBubble(playerId, text) {
+  const pid = String(playerId);
+  const cowObj = S.cowMeshes[pid];
+  if (!cowObj || cowObj.isDead) return;
+  // Tear down any prior bubble on this cow first.
+  if (cowObj.chatBubble) {
+    cowObj.mesh.remove(cowObj.chatBubble.sprite);
+    if (cowObj.chatBubble.timer) clearTimeout(cowObj.chatBubble.timer);
+    cowObj.chatBubble.tex.dispose();
+    cowObj.chatBubble.mat.dispose();
+    cowObj.chatBubble = null;
+  }
+  const truncated = text.length > CHAT_BUBBLE_MAX_CHARS
+    ? text.slice(0, CHAT_BUBBLE_MAX_CHARS - 1) + '\u2026'
+    : text;
+  // Measure first via a module-level scratch context (no per-message canvas alloc).
+  if (!_measureCtx) _measureCtx = document.createElement('canvas').getContext('2d');
+  _measureCtx.font = 'bold ' + CHAT_BUBBLE_FONT_PX + 'px Segoe UI';
+  const textPxW = _measureCtx.measureText(truncated).width;
+  // Bubble body dimensions = text + padding. Canvas adds a margin on
+  // every side so the rounded corners and tail don't clip.
+  const bodyW = Math.ceil(textPxW + CHAT_BUBBLE_PAD_X * 2);
+  const bodyH = Math.ceil(CHAT_BUBBLE_FONT_PX + CHAT_BUBBLE_PAD_Y * 2);
+  const margin = 16;
+  const W = bodyW + margin * 2;
+  const H = bodyH + margin * 2 + CHAT_BUBBLE_TAIL;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  ctx.font = 'bold ' + CHAT_BUBBLE_FONT_PX + 'px Segoe UI';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  // Body rounded-rect, centered horizontally.
+  const bx = margin, by = margin, r = 18;
+  ctx.fillStyle = CHAT_BUBBLE_BG_RGBA;
+  ctx.beginPath();
+  ctx.moveTo(bx + r, by);
+  ctx.lineTo(bx + bodyW - r, by);
+  ctx.quadraticCurveTo(bx + bodyW, by, bx + bodyW, by + r);
+  ctx.lineTo(bx + bodyW, by + bodyH - r);
+  ctx.quadraticCurveTo(bx + bodyW, by + bodyH, bx + bodyW - r, by + bodyH);
+  ctx.lineTo(bx + r, by + bodyH);
+  ctx.quadraticCurveTo(bx, by + bodyH, bx, by + bodyH - r);
+  ctx.lineTo(bx, by + r);
+  ctx.quadraticCurveTo(bx, by, bx + r, by);
+  ctx.closePath();
+  ctx.fill();
+  // Tail triangle pointing down toward the cow's head.
+  ctx.beginPath();
+  ctx.moveTo(W / 2 - 14, by + bodyH - 1);
+  ctx.lineTo(W / 2 + 14, by + bodyH - 1);
+  ctx.lineTo(W / 2, by + bodyH + CHAT_BUBBLE_TAIL);
+  ctx.closePath();
+  ctx.fill();
+  // Text on top — translucent black to match the bubble's softness.
+  ctx.fillStyle = CHAT_BUBBLE_FG_RGBA;
+  ctx.fillText(truncated, W / 2, by + bodyH / 2);
+  const tex = new THREE.CanvasTexture(cv); tex.minFilter = THREE.LinearFilter;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(mat);
+  // World-space scale proportional to canvas pixels so the bubble keeps
+  // its on-screen size as text grows. Vertical anchor sits the tail tip
+  // just above the cow's nametag.
+  const worldW = W * CHAT_BUBBLE_WORLD_PER_PX;
+  const worldH = H * CHAT_BUBBLE_WORLD_PER_PX;
+  sprite.position.set(0, 60 + worldH / 2, 0);
+  sprite.scale.set(worldW, worldH, 1);
+  cowObj.mesh.add(sprite);
+  const bubble = { sprite, tex, mat, timer: null };
+  bubble.timer = setTimeout(() => {
+    if (cowObj.chatBubble !== bubble) return; // already replaced
+    cowObj.mesh.remove(sprite);
+    tex.dispose();
+    mat.dispose();
+    cowObj.chatBubble = null;
+  }, CHAT_BUBBLE_MS);
+  cowObj.chatBubble = bubble;
 }

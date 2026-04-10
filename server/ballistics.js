@@ -21,9 +21,18 @@ const { pushOutOfWalls } = require('../shared/collision');
 // exports so combat.js / bots.js can reuse the same values instead of hardcoding them.
 const PROJECTILE_RADIUS = 10;   // AABB inflate amount for wall collisions
 const WALL_MIN_SIZE = 20;       // walls thinner than this still collide at 20 units wide
-const PLAYER_BODY_RADIUS = 18;  // capsule body radius
-const PLAYER_HEAD_RADIUS = 12;  // capsule head radius
+const PLAYER_BODY_RADIUS = 14;  // capsule body radius (was 18, -22%)
+const PLAYER_HEAD_RADIUS = 10;  // capsule head radius (was 12, -17%)
 const PLAYER_HEAD_SPAN = 20;    // head extends HEAD_SPAN above the head base
+// Shield bubble — egg-shaped ellipsoid mirroring the visual in
+// client/entities.js (sphere r=24 scaled (0.95, 1.55, 0.95) with the
+// 1.55 on the vertical axis, centered at +26 above the ground). Used
+// as a SECOND hitbox for armored players: bullets that miss the body
+// capsule but clip the bubble damage the shield without reaching the
+// player's hunger.
+const SHIELD_RADIUS_HORIZ = 24 * 0.95;
+const SHIELD_RADIUS_VERT  = 24 * 1.55;
+const SHIELD_OFFSET_Z     = 26;
 const BULLET_GRAVITY = 50;      // tiny drop for bullets
 const EXPLOSIVE_GRAVITY = 400;  // full gravity for cowtank rockets
 const DEFAULT_BLAST_RADIUS = 120;
@@ -147,13 +156,20 @@ function findPlayerHit(prevX, prevY, prevZ, curX, curY, curZ, players, ownerId, 
   let hitT = Infinity;
   for (const [, p] of players) {
     if (!p.alive || p.id === ownerId || p.spawnProtection > 0) continue;
+    p._shieldOnly = false; // reset per-player so stale state doesn't leak
     const eh = eyeHeightFn(p);
     const headBase = p.z + eh * 0.75;
+    // Tiny-cow perk shrinks the visual mesh by sizeMult; shrink the
+    // hit cylinders + head span the same way so the hitbox tracks the
+    // model. eyeHeightFn already includes sizeMult.
+    const sm = (p.perks && p.perks.sizeMult) || 1;
+    const headSpan = PLAYER_HEAD_SPAN * sm;
+    let bodyHit = false;
     // Body cylinder first, then head
     for (let hbIdx = 0; hbIdx < 2; hbIdx++) {
-      const r = hbIdx === 0 ? PLAYER_BODY_RADIUS : PLAYER_HEAD_RADIUS;
+      const r = (hbIdx === 0 ? PLAYER_BODY_RADIUS : PLAYER_HEAD_RADIUS) * sm;
       const zMin = hbIdx === 0 ? p.z - 3 : headBase;
-      const zMax = hbIdx === 0 ? headBase : headBase + PLAYER_HEAD_SPAN;
+      const zMax = hbIdx === 0 ? headBase : headBase + headSpan;
       const head = hbIdx === 1;
       const ox = prevX - p.x, oy = prevY - p.y;
       const a = dx * dx + dy * dy;
@@ -162,8 +178,6 @@ function findPlayerHit(prevX, prevY, prevZ, curX, curY, curZ, players, ownerId, 
       const disc = bq * bq - 4 * a * c;
       if (disc < 0) continue;
       const sqrtDisc = Math.sqrt(disc);
-      // Two candidate intersections (entry & exit of the cylinder). We take whichever
-      // is smallest-but-valid; the loop mirrors the original inlined code.
       for (let sign = -1; sign <= 1; sign += 2) {
         const t = (-bq + sign * sqrtDisc) / (2 * a);
         if (t < 0 || t > 1) continue;
@@ -173,6 +187,42 @@ function findPlayerHit(prevX, prevY, prevZ, curX, curY, curZ, players, ownerId, 
           hitT = t;
           hitPlayer = p;
           p._wasHeadshot = head;
+          bodyHit = true;
+        }
+      }
+    }
+    // Shield bubble — only tested for armored players, only matters if
+    // the body wasn't already hit (a body hit naturally absorbs through
+    // armor in combat.js). Solves the case where a bullet clips the
+    // visual bubble but misses the cow's tighter body capsule. Scales
+    // with sizeMult so tiny cows have a tiny shield.
+    if (!bodyHit && (p.armor || 0) > 0) {
+      const cz = p.z + SHIELD_OFFSET_Z * sm;
+      const sxz = SHIELD_RADIUS_HORIZ * sm;
+      const sy = SHIELD_RADIUS_VERT * sm;
+      const ox = (prevX - p.x) / sxz;
+      const oy = (prevY - p.y) / sxz;
+      const oz = (prevZ - cz)  / sy;
+      const mx = dx / sxz;
+      const my = dy / sxz;
+      const mz = dz / sy;
+      const A = mx*mx + my*my + mz*mz;
+      const B = 2 * (ox*mx + oy*my + oz*mz);
+      const C = ox*ox + oy*oy + oz*oz - 1;
+      const disc = B*B - 4*A*C;
+      if (disc >= 0 && A > 0) {
+        const sqrtDisc = Math.sqrt(disc);
+        // Earliest valid t (entry) within [0, 1) and earlier than any prior hit.
+        const t1 = (-B - sqrtDisc) / (2 * A);
+        const t2 = (-B + sqrtDisc) / (2 * A);
+        let t = -1;
+        if (t1 >= 0 && t1 < 1 && t1 < blockT) t = t1;
+        else if (t2 >= 0 && t2 < 1 && t2 < blockT) t = t2;
+        if (t >= 0 && t < hitT) {
+          hitT = t;
+          hitPlayer = p;
+          p._wasHeadshot = false;
+          p._shieldOnly = true;
         }
       }
     }

@@ -19,7 +19,6 @@ const S = {
   fpsDisplay: 0,
   pingVal: 0,
   pingLast: 0,
-  killfeed: [],
   projData: [],
   projMeshes: {},
   cowMeshes: {},

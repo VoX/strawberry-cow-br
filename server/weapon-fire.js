@@ -19,9 +19,10 @@
 const gameState = require('./game-state');
 const { broadcast } = require('./network');
 const { applyHungerDelta } = require('./player');
+const { BURST_FAMILY } = require('../shared/constants');
 
 // Shared mag sizes — re-exported so combat.js reload logic can reference them.
-const MAG_SIZES = { normal: 15, burst: 20, shotgun: 6, bolty: 5 };
+const MAG_SIZES = { normal: 15, burst: 20, shotgun: 6, bolty: 5, aug: 30 };
 
 // --- Player base stats ----------------------------------------------------
 // Every cost/gate has the shape (minFloor, base) so `Math.max(minFloor, base - hungerDiscount)`
@@ -62,6 +63,19 @@ const PLAYER_STATS_BASE = {
     hungerGate: [2, 6], hungerCost: [2, 5],
     cooldown: 1.0, dmg: 38, speed: 2000, spreadBase: 0, pellets: 1, spawnOffset: 40,
     explosive: true, blastRadius: 180, broadcastTag: 'cowtank',
+  },
+  // AUG — bullpup rifle with integrated 2x optic. Solo only (the
+  // weapons.js dual-wield gate doesn't include 'aug'). Auto = 450 RPM
+  // (slower than the M16's 500), burst = +30% cycle rate vs auto. Same
+  // per-shot damage as the M16 family but tighter spread because of
+  // the optic; client multiplies hipfire spread/recoil by 1.5x when
+  // not scoped.
+  aug: {
+    hungerGate: [2, 6], hungerCost: [2, 5],
+    cooldown: 0.615, dmg: 6, speed: 1760, spreadBase: 0, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
+    burstStepMs: 92,
+    auto: { hungerCost: [1, 2], cooldown: 0.133, dmg: 3, speed: 1600, spreadBase: 0.022, pellets: 1, dualPelletMult: 1 },
+    semi: { hungerCost: [1, 2], cooldown: 0.266, dmg: 3, speed: 1760, spreadBase: 0, pellets: 1, dualPelletMult: 1 },
   },
 };
 
@@ -213,8 +227,9 @@ function fireWeapon(shooter, weapon, aim, stats, opts = {}) {
     return true;
   }
 
-  // --- Burst weapon: burst, auto, or semi fire mode ---
-  if (weapon === 'burst') {
+  // --- Burst-family weapons (M16A2, AUG): same fire pipeline, per-weapon
+  // stats picked up via PLAYER_STATS_BASE/BOT_STATS. ---
+  if (BURST_FAMILY.has(weapon)) {
     // Full-auto: continuous fire, 500 RPM (0.12s cooldown). Dual wield
     // doubles the projectiles per trigger tick via dualPelletMult.
     if (fireMode === 'auto' && stats.auto) {

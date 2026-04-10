@@ -83,11 +83,40 @@ function _buildWeaponPickupModel(type) {
     sight.position.set(5, 2, 0); g.add(sight);
     const band = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.7, 0.5, 8), new THREE.MeshLambertMaterial({ color: 0xffdd00 }));
     band.rotation.z = Math.PI / 2; band.position.x = -2; g.add(band);
+  } else if (type === 'aug') {
+    // Steyr AUG silhouette — bullpup layout (mag behind trigger), integrated
+    // 1.5x optic, forward grip, olive plastic body. The +X axis is the
+    // barrel direction (matching the other procedural pickup builders).
+    const augBody = new THREE.MeshLambertMaterial({ color: 0x4a6038 });
+    const augBlk  = new THREE.MeshLambertMaterial({ color: 0x222222 });
+    const augMet  = new THREE.MeshLambertMaterial({ color: 0x777777 });
+    // Rear stock + receiver — chunky bullpup body
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(7, 2.6, 1.6), augBody);
+    stock.position.set(-3, 0, 0); g.add(stock);
+    // Front handguard — slimmer, ahead of the trigger
+    const fore = new THREE.Mesh(new THREE.BoxGeometry(4, 1.6, 1.4), augBody);
+    fore.position.set(2.5, -0.2, 0); g.add(fore);
+    // Barrel
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 6, 6), augBlk);
+    barrel.rotation.z = Math.PI / 2; barrel.position.set(5.5, 0.1, 0); g.add(barrel);
+    // Integrated optic — scope tube on top of receiver, with a ring at each end
+    const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 4.2, 8), augBlk);
+    scope.rotation.z = Math.PI / 2; scope.position.set(-1.4, 1.55, 0); g.add(scope);
+    const ringA = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 0.4, 8), augMet);
+    ringA.rotation.z = Math.PI / 2; ringA.position.set(0.5, 1.55, 0); g.add(ringA);
+    const ringB = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 0.4, 8), augMet);
+    ringB.rotation.z = Math.PI / 2; ringB.position.set(-3.3, 1.55, 0); g.add(ringB);
+    // Forward vertical grip
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.6, 0.9), augBlk);
+    grip.position.set(2.2, -1.6, 0); g.add(grip);
+    // Trigger guard — small underslung loop just behind the forward grip
+    const trig = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.0, 0.6), augMet);
+    trig.position.set(0.6, -1.5, 0); g.add(trig);
   }
   return g;
 }
 
-const _WP_LABELS = { shotgun: 'BENELLI', burst: 'M16A2', bolty: 'L96', cowtank: 'M72 LAW' };
+const _WP_LABELS = { shotgun: 'BENELLI', burst: 'M16A2', bolty: 'L96', cowtank: 'M72 LAW', aug: 'AUG' };
 
 function _buildWeaponPickupGroup(w) {
   const g = new THREE.Group();
@@ -180,8 +209,14 @@ export function updatePickups(time) {
   }
   _reconcileMap(_armorMeshes, seenArmor);
 
-  // Weapons
+  // Weapons. Constant 0.33s blink cycle in the last 4 s of life;
+  // visible fraction shrinks 0.85 → 0.10 over the warning so urgency
+  // ramps without strobe-light feel.
   const seenWp = new Set();
+  const nowMs = Date.now();
+  const WEAPON_LIFETIME = 15000;
+  const WEAPON_BLINK_START = WEAPON_LIFETIME - 4000;
+  const BLINK_CYCLE = 0.33; // seconds per full visible+invisible cycle
   for (const w of S.clientWeapons) {
     const wid = String(w.id); seenWp.add(wid);
     if (!_weaponMeshes[wid]) {
@@ -189,8 +224,21 @@ export function updatePickups(time) {
       scene.add(g);
       _weaponMeshes[wid] = g;
     }
-    _weaponMeshes[wid].children[0].rotation.y = time * 2;
-    _weaponMeshes[wid].children[0].position.y = 15 + Math.sin(time * 3 + w.x) * 3;
+    const g = _weaponMeshes[wid];
+    g.children[0].rotation.y = time * 2;
+    g.children[0].position.y = 15 + Math.sin(time * 3 + w.x) * 3;
+    const age = w.spawnTime ? nowMs - w.spawnTime : 0;
+    if (age > WEAPON_BLINK_START) {
+      const warningElapsed = age - WEAPON_BLINK_START;
+      // visibleFrac: 0.85 at warning start → 0.10 at despawn
+      const t01 = Math.min(1, warningElapsed / 4000);
+      const visibleFrac = 0.85 - t01 * 0.75;
+      const cyclePos = (time % BLINK_CYCLE) / BLINK_CYCLE;
+      const v = cyclePos < visibleFrac;
+      if (g.visible !== v) g.visible = v;
+    } else if (!g.visible) {
+      g.visible = true;
+    }
   }
   _reconcileMap(_weaponMeshes, seenWp);
 

@@ -130,6 +130,7 @@ class GameState {
         sizeMult: (p.perks && p.perks.sizeMult) || 1,
         stunTimer: p.stunTimer || 0,
         spawnProtection: p.spawnProtection || 0,
+        armor: p.armor || 0,
       });
     }
     this._positionHistory.push(snap);

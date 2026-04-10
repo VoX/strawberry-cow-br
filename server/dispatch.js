@@ -108,7 +108,7 @@ function dispatchMessage(player, msg) {
           shelters: gameState.getShelters(), houses: gameState.getHouses(),
         },
         barricades: gameState.getBarricades(),
-        weapons: gameState.getWeaponPickups().map(w => ({ id: w.id, x: w.x, y: w.y, weapon: w.weapon })),
+        weapons: gameState.getWeaponPickups().map(w => ({ id: w.id, x: w.x, y: w.y, weapon: w.weapon, spawnTime: w.spawnTime })),
         armorPickups: gameState.getArmorPickups().map(a => ({ id: a.id, x: a.x, y: a.y })),
       });
     }
@@ -163,9 +163,14 @@ function dispatchMessage(player, msg) {
   }
   if (msg.type === 'move' && player._joined && player.alive) {
     player.dx = Math.max(-1, Math.min(1, msg.dx || 0));
-    if (Math.abs(msg.dx || 0) + Math.abs(msg.dy || 0) > 0.1) player.aimAngle = Math.atan2(-(msg.dx || 0), msg.dy || 0);
     player.dy = Math.max(-1, Math.min(1, msg.dy || 0));
     player.walking = !!msg.walking;
+    // Camera-derived aim from the client. Humans send this every move so
+    // their cow faces where they're LOOKING (camera yaw), not where
+    // they're moving — those diverge whenever the player strafes. Bots
+    // are server-side and never reach this handler; they set their own
+    // aimAngle in shared/movement.js based on their move direction.
+    if (typeof msg.aim === 'number') player.aimAngle = msg.aim;
   }
   if (msg.type === 'attack') {
     handleAttack(player, msg);
@@ -189,7 +194,7 @@ function dispatchMessage(player, msg) {
   }
   if (msg.type === 'chat' && player._joined) {
     const txt = String(msg.text || '').slice(0, 120).trim();
-    if (txt) broadcast({ type: 'chat', name: player.name, color: player.color, text: txt });
+    if (txt) broadcast({ type: 'chat', playerId: player.id, name: player.name, color: player.color, text: txt });
   }
 }
 

@@ -78,11 +78,22 @@ if (randomBtn) {
 }
 
 document.getElementById('joinBtn').addEventListener('click', () => {
-  const n = document.getElementById('nameIn').value.trim() || COW_NAMES[Math.floor(Math.random() * COW_NAMES.length)];
-  document.getElementById('nameIn').value = n;
-  try { localStorage.setItem('cowName3d', n); } catch (e) {}
-  send({ type: 'join', name: n });
-  document.getElementById('joinBtn').style.display = 'none';
+  // Single button: pre-join → sends `join`, then transitions to a `ready`
+  // toggle once the lobby snapshot arrives. Stays at the same screen
+  // position the whole time so the player can click twice without moving
+  // the mouse. The lobby handler in message-handlers.js owns the
+  // text/color updates after join.
+  if (!S.myId) {
+    const n = document.getElementById('nameIn').value.trim() || COW_NAMES[Math.floor(Math.random() * COW_NAMES.length)];
+    document.getElementById('nameIn').value = n;
+    try { localStorage.setItem('cowName3d', n); } catch (e) {}
+    send({ type: 'join', name: n });
+    return;
+  }
+  // Already joined — toggle ready state. The server echoes the new
+  // ready value via the next lobby broadcast which updates the button
+  // text/color.
+  send({ type: 'ready' });
 });
 // In-lobby name updates — blur or enter commits the new name
 function commitLobbyName() {

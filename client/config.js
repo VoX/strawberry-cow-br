@@ -2,7 +2,7 @@ import { MAP_W, MAP_H } from '../shared/constants.js';
 
 export const MW=MAP_W,MH=MAP_H,CH=35;
 export const COL={pink:0xff88aa,blue:0x88aaff,green:0x88ff88,gold:0xffdd44,purple:0xcc88ff,red:0xff4444,orange:0xff8844,cyan:0x44ffdd};
-export const WPCOL={shotgun:0xff4444,burst:0x44aaff,bolty:0xffaa00,cowtank:0x44ff44};
+export const WPCOL={shotgun:0xff4444,burst:0x44aaff,bolty:0xffaa00,cowtank:0x44ff44,aug:0xaa44ff};
 export const PERKS=[
   {id:'speed',name:'Swift Hooves',desc:'+15% speed'},
   {id:'extrahunger',name:'Big Udders',desc:'+40 max milk'},

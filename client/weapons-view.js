@@ -150,6 +150,43 @@ export function buildViewmodel(type, dual) {
     hoof.userData.reloadStyle = 'magswap';
     vmGroup.add(hoof);
     vmGroup.userData.hoof = hoof;
+  } else if (type === 'aug') {
+    // Steyr AUG viewmodel — bullpup body, integrated optic, forward grip.
+    // Single-wield only (the dual-wield gate in server/weapons.js excludes
+    // 'aug') so there's no duplicate-mesh branch here.
+    const bodyMat = new THREE.MeshBasicMaterial({ color: 0x4a6038 });
+    // Receiver / stock — long box that runs from the buttpad up to past
+    // the trigger. Bullpup means the magazine is BEHIND the trigger, so
+    // the silhouette is short and chunky compared to the M16.
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.4, 12), bodyMat);
+    stock.position.set(0, -0.1, -1); vmGroup.add(stock);
+    // Front handguard — slimmer, ahead of the trigger
+    const fore = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.4, 5), bodyMat);
+    fore.position.set(0, -0.4, -8); vmGroup.add(fore);
+    // Barrel
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 6, 6), black);
+    barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.1, -13); vmGroup.add(barrel);
+    // Integrated 1.5x optic — scope tube on top of receiver
+    const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 5, 8), black);
+    scope.rotation.x = Math.PI / 2; scope.position.set(0, 1.55, -3); vmGroup.add(scope);
+    const ringA = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 0.4, 8), metal);
+    ringA.rotation.x = Math.PI / 2; ringA.position.set(0, 1.55, -1); vmGroup.add(ringA);
+    const ringB = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 0.4, 8), metal);
+    ringB.rotation.x = Math.PI / 2; ringB.position.set(0, 1.55, -5); vmGroup.add(ringB);
+    // Forward vertical grip
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.8, 0.9), black);
+    grip.position.set(0, -1.9, -8); vmGroup.add(grip);
+    // Trigger guard — small underslung loop
+    const trig = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.0, 0.7), metal);
+    trig.position.set(0, -1.6, -5); vmGroup.add(trig);
+    const hoof = buildHoof();
+    hoof.position.set(-0.3, -0.5, -10);
+    hoof.rotation.set(-0.2, 0.1, 0.5);
+    hoof.userData.restPos = hoof.position.clone();
+    hoof.userData.restRot = hoof.rotation.clone();
+    hoof.userData.reloadStyle = 'magswap';
+    vmGroup.add(hoof);
+    vmGroup.userData.hoof = hoof;
   } else if (type === 'cowtank') {
     const outerTube = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 16, 10), olive);
     outerTube.rotation.x = Math.PI / 2; outerTube.position.set(0, 0, -8); vmGroup.add(outerTube);

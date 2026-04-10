@@ -114,17 +114,84 @@ export function sfxBolty() {
     }
   }, 500);
 }
-export function sfxHit() { sfx(200, 0.15, 'sawtooth', 0.08); }
+export function sfxHit() {
+  // Punchy "ow" hit on the LOCAL player taking damage. Layered impact
+  // (low thump for body, mid bite for sting) so it cuts through gunfire
+  // and the player feels the hit. Roughly 3× louder than the old
+  // single-osc sawtooth that nobody noticed.
+  if (!actx) return;
+  const t = actx.currentTime;
+  const v = masterVol();
+  // Body thump — fast pitch drop on a sine
+  const o1 = actx.createOscillator(), g1 = actx.createGain();
+  o1.type = 'sine';
+  o1.frequency.setValueAtTime(380, t);
+  o1.frequency.exponentialRampToValueAtTime(60, t + 0.18);
+  g1.gain.setValueAtTime(0.0001, t);
+  g1.gain.exponentialRampToValueAtTime(0.32 * v, t + 0.005);
+  g1.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+  o1.connect(g1); g1.connect(actx.destination);
+  o1.start(t); o1.stop(t + 0.24);
+  // Bite — short sawtooth burst on top
+  const o2 = actx.createOscillator(), g2 = actx.createGain();
+  o2.type = 'sawtooth';
+  o2.frequency.setValueAtTime(220, t);
+  o2.frequency.exponentialRampToValueAtTime(120, t + 0.1);
+  g2.gain.setValueAtTime(0.0001, t);
+  g2.gain.exponentialRampToValueAtTime(0.22 * v, t + 0.005);
+  g2.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+  o2.connect(g2); g2.connect(actx.destination);
+  o2.start(t); o2.stop(t + 0.16);
+}
 export function sfxEat() { sfx(800, 0.08, 'sine', 0.06); sfx(1200, 0.08, 'sine', 0.04); }
 export function sfxLevelUp() {
   if (!actx) return; const t = actx.currentTime;
-  const v = 0.08 * masterVol();
-  [523, 659, 784, 1047].forEach((f, i) => {
-    const o = actx.createOscillator(), g = actx.createGain();
-    o.frequency.value = f; g.gain.setValueAtTime(v, t + i * 0.08);
-    g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.08 + 0.2);
-    o.connect(g); g.connect(actx.destination); o.start(t + i * 0.08); o.stop(t + i * 0.08 + 0.2);
+  const v = 0.32 * masterVol();
+  // Triumphant fanfare — fast ascending arpeggio (C5 → C6) followed by a
+  // sustained C-major chord. Each note rides a triangle+square layer for
+  // a fuller, more "exciting" tone than the original sine arp. Roughly
+  // 4× the volume of the old version, with a final swell that decays
+  // over ~700 ms instead of 200 ms.
+  const arp = [523.25, 659.25, 783.99, 1046.5]; // C5 E5 G5 C6
+  const noteDur = 0.09;
+  arp.forEach((f, i) => {
+    const start = t + i * noteDur;
+    const oTri = actx.createOscillator();
+    const oSq = actx.createOscillator();
+    const g = actx.createGain();
+    oTri.type = 'triangle'; oSq.type = 'square';
+    oTri.frequency.value = f;
+    oSq.frequency.value = f;
+    g.gain.setValueAtTime(0.0001, start);
+    g.gain.exponentialRampToValueAtTime(v, start + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, start + noteDur + 0.06);
+    oTri.connect(g); oSq.connect(g); g.connect(actx.destination);
+    oTri.start(start); oSq.start(start);
+    oTri.stop(start + noteDur + 0.08); oSq.stop(start + noteDur + 0.08);
   });
+  // Final chord — C major triad held for ~0.6 s after the arp lands.
+  const chordStart = t + arp.length * noteDur;
+  [523.25, 659.25, 783.99].forEach(f => {
+    const o = actx.createOscillator();
+    const g = actx.createGain();
+    o.type = 'sawtooth';
+    o.frequency.value = f;
+    g.gain.setValueAtTime(0.0001, chordStart);
+    g.gain.exponentialRampToValueAtTime(v * 0.6, chordStart + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.001, chordStart + 0.7);
+    o.connect(g); g.connect(actx.destination);
+    o.start(chordStart); o.stop(chordStart + 0.75);
+  });
+  // Bright shimmer — high octave on top of the chord for sparkle.
+  const sh = actx.createOscillator();
+  const shg = actx.createGain();
+  sh.type = 'sine';
+  sh.frequency.value = 2093; // C7
+  shg.gain.setValueAtTime(0.0001, chordStart);
+  shg.gain.exponentialRampToValueAtTime(v * 0.4, chordStart + 0.02);
+  shg.gain.exponentialRampToValueAtTime(0.001, chordStart + 0.6);
+  sh.connect(shg); shg.connect(actx.destination);
+  sh.start(chordStart); sh.stop(chordStart + 0.65);
 }
 export function sfxDeath() { sfx(400, 0.6, 'sawtooth', 0.08); }
 export function sfxBump() { sfx(100, 0.1, 'sine', 0.05); }

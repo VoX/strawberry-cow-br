@@ -1,5 +1,6 @@
 import { MW, MH } from './config.js';
 import S from './state.js';
+import { BURST_FAMILY } from '../shared/constants.js';
 
 // Cache all HUD element refs at first invocation instead of calling getElementById every frame
 let H = null;
@@ -28,10 +29,8 @@ function initHudRefs() {
     barricadeBar: document.getElementById('barricadeBar'),
     barricadeFill: document.getElementById('barricadeFill'),
     barricadeLabel: document.getElementById('barricadeLabel'),
-    score: document.getElementById('score'),
     spectateMsg: document.getElementById('spectateMsg'),
     playerCount: document.getElementById('playerCount'),
-    killfeed: document.getElementById('killfeed'),
     chatLog: document.getElementById('chatLog'),
     minimap: document.getElementById('minimap'),
     lowHealthOverlay: document.getElementById('lowHealthOverlay'),
@@ -68,15 +67,15 @@ export function updateHud(me, time, dt) {
   H.hungerFill.style.background = hPct > 0.5 ? '#ffffff' : hPct > 0.25 ? '#dddddd' : '#ff4444';
   H.hungerTxt.textContent = 'MILK ' + Math.ceil(me.hunger) + '%';
   const wep = me.weapon || 'normal';
-  const wepNames = { shotgun: 'Benelli', burst: 'M16A2', bolty: 'L96', cowtank: 'M72 LAW', normal: 'M92 Pistol' };
+  const wepNames = { shotgun: 'Benelli', burst: 'M16A2', bolty: 'L96', cowtank: 'M72 LAW', normal: 'M92 Pistol', aug: 'AUG' };
   let ammoTxt = '';
   let reloadBlock = '';
   if (wep === 'cowtank') {
     // M72 LAW is a single-shot disposable weapon
     ammoTxt = ' 1/1';
   } else if (me.ammo >= 0) {
-    const BASE_MAG = {normal: 15, burst: 20, shotgun: 6, bolty: 5};
-    const EXT_MAG = {normal: 19, burst: 25, shotgun: 8, bolty: 7};
+    const BASE_MAG = {normal: 15, burst: 20, shotgun: 6, bolty: 5, aug: 30};
+    const EXT_MAG = {normal: 19, burst: 25, shotgun: 8, bolty: 7, aug: 38};
     const hasExt = (me.extMagMult || 1) > 1;
     const baseMag = (hasExt ? EXT_MAG[wep] : BASE_MAG[wep]) || 0;
     const dualMult = (me.dualWield && (wep === 'burst' || wep === 'shotgun')) ? 2 : 1;
@@ -103,9 +102,9 @@ export function updateHud(me, time, dt) {
       S._reloadDuration = null;
     }
   }
-  // Fire mode indicator — only shown for weapons that have modes (M16A2 right now)
+  // Fire mode indicator — shown for weapons with selector switches
   let fireModeBlock = '';
-  if (wep === 'burst') {
+  if (BURST_FAMILY.has(wep)) {
     const modeLabel = S.fireMode === 'auto' ? 'AUTO' : S.fireMode === 'semi' ? 'SEMI' : 'BURST';
     fireModeBlock = '<div>' + modeLabel + '</div>';
   }
@@ -150,7 +149,10 @@ export function updateHud(me, time, dt) {
 
   // Dynamic crosshair — spread per weapon, tightens when crouched, widens on movement/reload
   if (H.chN && aliveHud) {
-    const baseSpread = { normal: 8, shotgun: 42, bolty: 5, cowtank: 10, burst: S.fireMode === 'auto' ? 18 : 8 }[wep] || 8;
+    // AUG hipfire spread is 1.5x the M16 equivalent; the optic + ADS
+    // gate brings it back to baseline when scoped (the adsMult below).
+    const augBase = (S.fireMode === 'auto' ? 18 : 8) * 1.5;
+    const baseSpread = { normal: 8, shotgun: 42, bolty: 5, cowtank: 10, burst: S.fireMode === 'auto' ? 18 : 8, aug: augBase }[wep] || 8;
     const crouchMult = S.crouching ? 0.35 : 1;
     const movingMult = (S.keys['KeyW'] || S.keys['KeyS'] || S.keys['KeyA'] || S.keys['KeyD']) ? 2.2 : 1;
     const reloadMult = me.reloading ? 2.6 : 1;
@@ -160,7 +162,6 @@ export function updateHud(me, time, dt) {
     H.chE.style.marginLeft = spread + 'px';
     H.chW.style.marginLeft = (-spread - 8) + 'px';
   }
-  H.score.textContent = (me && me.alive ? 'Score: ' + (me.score || 0) + ' | Kills: ' + (me.kills || 0) + ' | Lv' + (me.level || 0) : 'Waiting for next round...');
   const specEl = H.spectateMsg;
   if (me && me.alive) {
     if (specEl.style.display !== 'none') specEl.style.display = 'none';
@@ -188,28 +189,32 @@ export function updateHud(me, time, dt) {
   const pcSig = _aliveCount + '/' + S.serverPlayers.length;
   if (S._pcSig !== pcSig) { S._pcSig = pcSig; H.playerCount.textContent = '\u{1F404} ' + pcSig; }
 
-  // Killfeed — decrement per frame, in-place filter to avoid array alloc
-  for (let i = S.killfeed.length - 1; i >= 0; i--) { S.killfeed[i].t -= dt; if (S.killfeed[i].t <= 0) S.killfeed.splice(i, 1); }
+  // Chat log — kill notifications, weapon pickups, mode changes, and
+  // actual player chat all share this surface. Decrement + DOM rebuild
+  // throttled to 10 Hz; in-place prune avoids the per-frame array realloc.
   if (!S._hudTick) S._hudTick = 0;
   S._hudTick += dt;
   if (S._hudTick >= 0.1) {
+    const tickDt = S._hudTick;
     S._hudTick = 0;
-    H.killfeed.innerHTML = S.killfeed.map(k => '<div style="margin-bottom:3px;opacity:' + Math.min(1, k.t) + '">' + k.txt + '</div>').join('');
-
-    // Chat log — fades out after 10 seconds, same 10 Hz refresh
-    S.chatLog.forEach(c => c.t -= dt * 1);
+    for (let i = S.chatLog.length - 1; i >= 0; i--) {
+      S.chatLog[i].t -= tickDt;
+      if (S.chatLog[i].t <= 0) S.chatLog.splice(i, 1);
+    }
     const chatEl = H.chatLog;
     if (chatEl) {
       const colHex = { pink: '#ff88aa', blue: '#88aaff', green: '#88ff88', gold: '#ffdd44', purple: '#cc88ff', red: '#ff4444', orange: '#ff8844', cyan: '#44ffdd' };
       const escapeHtml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       chatEl.innerHTML = S.chatLog.map(c => {
-        const col = colHex[c.color] || '#ff88aa';
         const opacity = Math.min(1, c.t / 3);
+        if (c.system) {
+          return '<div style="margin-bottom:2px;opacity:' + opacity + ';color:#ddd">' + c.text + '</div>';
+        }
+        const col = colHex[c.color] || '#ff88aa';
         return '<div style="margin-bottom:2px;opacity:' + opacity + '"><span style="color:' + col + ';font-weight:bold">' + escapeHtml(c.name) + ':</span> ' + escapeHtml(c.text) + '</div>';
       }).join('');
     }
   }
-  S.chatLog = S.chatLog.filter(c => c.t > 0);
 
   // Debug overlay
   let dbg = document.getElementById('debugOverlay');

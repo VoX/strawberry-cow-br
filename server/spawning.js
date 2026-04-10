@@ -37,6 +37,7 @@ function spawnWeaponPickup() {
     x: rand(zone.x + 100, zone.x + zone.w - 100),
     y: rand(zone.y + 100, zone.y + zone.h - 100),
     weapon: WEAPON_TYPES[Math.floor(Math.random() * WEAPON_TYPES.length)],
+    spawnTime: Date.now(),
   };
   gameState.addWeaponPickup(w);
   return w;
