@@ -25,7 +25,16 @@ const transport = require('./transport');
 // player so it can apply the per-client stride gate. This set is here
 // for future droppable types and for any tick emit that IS routed through
 // broadcast() (none today, but keeping the check is cheap).
-const UNRELIABLE_TYPES = new Set(['tick']);
+// Unreliable types: tick (30Hz state) + temp entities (cosmetic visuals).
+// If a packet carrying any of these is lost, the game state is unaffected —
+// the next tick supersedes state, and missing a visual effect is acceptable.
+const UNRELIABLE_TYPES = new Set([
+  'tick',
+  // Temp entities — fire-and-forget visuals/audio:
+  'projectileHit', 'wallImpact', 'explosion',
+  'meleeSwing', 'meleeHit', 'shieldHit',
+  'mooTaunt', 'cowstrikeWarning', 'cowstrike',
+]);
 
 function broadcast(data) {
   const droppable = UNRELIABLE_TYPES.has(data && data.type);
