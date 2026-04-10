@@ -8,6 +8,7 @@
 // honors it as fire-and-forget UDP.
 
 import { encode, decode } from '@msgpack/msgpack';
+import { decodeTick } from '../../shared/snapshot-schema.js';
 
 let _ws = null;
 let _onMessage = null;
@@ -25,8 +26,15 @@ function connect(opts) {
   _ws.onmessage = e => {
     if (!_onMessage) return;
     try {
-      const msg = e.data instanceof ArrayBuffer ? decode(new Uint8Array(e.data)) : JSON.parse(e.data);
-      _onMessage(msg);
+      if (e.data instanceof ArrayBuffer) {
+        // First byte 0x23 (#) = typed-array-buffer-schema tick buffer.
+        // Anything else = msgpack-encoded message.
+        const view = new Uint8Array(e.data);
+        const msg = view[0] === 0x23 ? decodeTick(e.data) : decode(view);
+        _onMessage(msg);
+      } else {
+        _onMessage(JSON.parse(e.data));
+      }
     } catch (err) { /* drop garbage */ }
   };
   _ws.onclose = () => { if (_onClose) _onClose(); };

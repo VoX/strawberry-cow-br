@@ -128,6 +128,8 @@ function sendReliable(ws, msg) {
 function sendUnreliable(ws, msg) {
   if (!ws || ws.readyState !== 1) return;
   if (ws.bufferedAmount > BACKPRESSURE_BYTES) return;
+  // ArrayBuffer from typed-array-buffer-schema — send directly as binary.
+  if (msg instanceof ArrayBuffer) { ws.send(msg); return; }
   ws.send(encodeMsg(msg));
 }
 

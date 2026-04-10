@@ -96,10 +96,9 @@ function sendReliable(channel, msg) {
   try { channel.emit(MSG_EVENT, msg, RELIABLE_OPTS); } catch (e) { /* channel closed */ }
 }
 
-// Unreliable sends also pass raw objects — geckos.io's emit API doesn't
-// reliably handle Uint8Array payloads through its broadcast/channel paths.
-// The library serializes internally. msgpack binary encoding is used only
-// on the WS transport where we control the wire format directly.
+// Unreliable sends pass data directly. For binary buffers (ArrayBuffer from
+// typed-array-buffer-schema), geckos data channels handle binary natively.
+// For plain objects, geckos serializes internally.
 function sendUnreliable(channel, msg) {
   if (!channel) return;
   try { channel.emit(MSG_EVENT, msg); } catch (e) { /* channel closed */ }
