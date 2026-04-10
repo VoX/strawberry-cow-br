@@ -1,7 +1,9 @@
 // Pure player movement integrator. Extracted from server/game.js::gameTick
-// so the client-side prediction loop (Phase 4) can call the exact same
-// function on the exact same inputs and produce bit-identical outputs —
-// which is the load-bearing invariant for CSP reconciliation.
+// so the client-side prediction loop can call the exact same function on
+// the exact same inputs and produce bit-identical outputs — which is the
+// load-bearing invariant for CSP reconciliation. See client/prediction.js
+// for the full netcode-strategy reference; this file's only job is to
+// behave identically when called from either side.
 //
 // Responsibilities:
 //   - stun timer decrement

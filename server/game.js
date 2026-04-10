@@ -169,13 +169,10 @@ function gameTick() {
     // Snapshot post-integration position the FIRST tick we see a new
     // lastInputSeq. The CSP reconcile pairs "client predicted state at
     // seq=N's first integrated step" against "server position at seq=N's
-    // first integrated tick". Capturing only on advance (not every tick)
-    // freezes the snapshot at that exact moment so the comparison is
-    // symmetric — without this, the server reports its CURRENT position
-    // many ticks past seq=N's processing, the client compares against an
-    // earlier predicted state, drift accumulates linearly with idle ticks
-    // since the last input, and every inputAck snaps. This is the smoking
-    // gun for the rubberband-on-quick-turns regression.
+    // first integrated tick". See client/prediction.js header for the
+    // full netcode-strategy reference; in short, the freeze-on-advance
+    // is the load-bearing symmetry that keeps client and server pointing
+    // at the same simulation moment.
     if (!p.isBot && (p._ackSnapshot == null || p.lastInputSeq > p._ackSnapshot.seq)) {
       p._ackSnapshot = {
         seq: p.lastInputSeq || 0,

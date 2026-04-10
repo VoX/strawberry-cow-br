@@ -1,38 +1,168 @@
-// Client-side movement prediction. Phase 4 of the netcode rewrite.
+// =============================================================================
+// NETCODE STRATEGY — central reference, read this first.
+// =============================================================================
 //
-// Runs `stepPlayerMovement` locally on the latest input at a fixed 30 Hz
-// timestep (matching server TICK_RATE) so the player sees zero-latency
-// response to WASD. The result is kept in `S.mePredicted`; the camera
-// reads from there instead of `S.me` while prediction is active.
+// This file is the heart of the client-side prediction (CSP) loop. The whole
+// netcode strategy spans server/game.js (tick + inputAck), shared/movement.js
+// (the integrator), client/network.js (transport routing), client/index.js
+// (render loop wiring), and the message handlers in client/message-handlers.js
+// — but the load-bearing invariants live HERE. Touch the rest of the netcode
+// without re-reading this comment at your own risk.
 //
-// Reconciliation: every `inputAck` from the server tells us the highest
-// input seq the server has applied. We look up the predicted state we
-// stashed at that seq. If it matches the server's reported position
-// (within RECONCILE_EPSILON units), we discard the stashed entry and
-// continue. If it diverges, we snap `S.mePredicted` to the server
-// position and REPLAY every unacked input through stepPlayerMovement
-// to land at a new "predicted now".
+// ## High-level architecture
 //
-// Load-bearing invariants:
-//   1. Client and server call the same stepPlayerMovement from
-//      shared/movement.js with the same dt (1/TICK_RATE).
-//   2. Client's world state (walls, barricades, mudPatches, portals,
-//      zone) matches the server's at the same tickNum. P0.3 audit
-//      confirmed all mutations have broadcasts; the client ring
-//      matches via existing message handlers.
-//   3. getTerrainHeight is bit-identical on both sides (P0.1 terrain
-//      determinism test guards this).
+// Authoritative server, Source/Counter-Strike-style. Three pieces:
 //
-// What is predicted:
-//   - Local player position (x, y)
-//   - Local player height (z, vz, onGround)
-//   - Local player direction
+//   1. CLIENT-SIDE PREDICTION (CSP) for the local player. The client runs
+//      the exact same movement integrator the server runs, on the exact same
+//      input the server will see, so WASD feels instant — no waiting for the
+//      round-trip to the server before the camera moves.
 //
-// What is NOT predicted:
-//   - Stats (hunger, armor, ammo, score) — ride tick + snapshot
-//   - Weapon state — sticky, ships via playerSnapshot
-//   - Hit detection — server-authoritative
-//   - Other players — interpolated (Phase 1)
+//   2. ENTITY INTERPOLATION for remote players (client/interp.js + the tick
+//      handler in client/message-handlers.js). Remote positions ride a 100 ms
+//      delay buffer so they always lerp between two known snapshots instead
+//      of stepping once per arriving tick. Trades 100 ms of display lag on
+//      remote motion for perfectly smooth motion.
+//
+//   3. SERVER-SIDE LAG COMPENSATION for hit detection (server/combat.js +
+//      gameState position history ring). The shooter's `attack` carries
+//      `displayTick` (the tick the interp buffer was rendering at fire time);
+//      the server rewinds entity positions to that tick before doing the
+//      hitscan. "What you see is what you can hit" — independent of latency.
+//
+// ## Why this combo
+//
+// Standard FPS netcode (Half-Life/Source/CS lineage). It's the only known
+// architecture that gives you (a) zero local input latency, (b) smooth
+// remote motion under packet loss, AND (c) fair hit detection across
+// arbitrary RTTs simultaneously. Anything simpler trades off one of those.
+//
+// ## CSP loop in detail (the part that's easy to get wrong)
+//
+// The accumulator: predictStep() runs at the render frame rate but advances
+// the simulation in fixed 1/TICK_RATE chunks. One animation frame may step
+// prediction 0, 1, or 2 times depending on elapsed wall time. This matters
+// because the server simulates at exactly TICK_RATE — variable client
+// stepping would diverge.
+//
+// Send/predict are LOCKSTEP. predictStep() emits exactly one `move` message
+// per fixed step, immediately before integrating, with the same input that
+// the integration uses. So:
+//
+//   one predict step = one move message = one unique seq
+//
+// This 1:1 mapping is THE load-bearing invariant for reconciliation. If you
+// throttle sends to a different cadence than the predict step (which is
+// what we used to do, with a 50 ms wall-clock throttle), predict steps in
+// the gap between sends inherit the OLD seq while integrating LIVE input —
+// the server gets a different input than the client's ring entry was tagged
+// with, drift accumulates, every reconcile snaps. Don't break this.
+//
+// ## Why move is the only seq-bearing input
+//
+// `STATEFUL_INPUT_TYPES` in shared/constants.js is `{move}` only. Attack,
+// jump, dash, reload, etc. all skip the seq stamp. Reason: every type that
+// increments `S.inputSeq` MUST correspond 1:1 with a predict step, because
+// the predict step right after the increment captures the new seq as its
+// own tag. If shooting bumped the seq, the next predict step would be
+// tagged seq+2 instead of seq+1, and the server (which integrates one tick
+// per move, not per shot) would have NO matching snapshot. Drift on every
+// shot — that was the strafe-fire stutter bug.
+//
+// ## Reconciliation
+//
+// Every ~167 ms (every 5 server ticks) the server sends an `inputAck`
+// containing the snapshot it captured when `lastInputSeq` last advanced —
+// {seq, x, y, z, vz, onGround, stunTimer, spawnProt}. Client looks up the
+// FIRST ring entry tagged with that seq (NOT the last — see below) and
+// compares positions:
+//
+//   - If drift ≤ RECONCILE_EPSILON (1 unit): accept, drop the ring entry,
+//     keep predicting forward.
+//   - If drift > RECONCILE_EPSILON: snap S.mePredicted to the server
+//     position, drop the ring entry plus everything older, REPLAY every
+//     remaining ring entry through stepPlayerMovement using each entry's
+//     STORED input. Bernier's paper is explicit that replay must use the
+//     original cmd, not whatever input is live at replay time, otherwise
+//     mid-turn frames re-run as if the player were turning the whole time.
+//
+// FIRST entry, not LAST: server's snapshot is captured the first tick that
+// integrates each new lastInputSeq — i.e. "one integration step into seq=N".
+// Client's first ring entry with seq=N is "one predict step into seq=N".
+// These two are symmetric. Pairing against the LAST seq=N entry would
+// compare an N-steps-deep prediction against a 1-tick-deep snapshot and
+// snap on every ack.
+//
+// ## Render-time error smoothing
+//
+// Even when reconcile snaps the LOGICAL state (S.mePredicted) to the
+// server, the camera shouldn't teleport — that's visible jerk. We fold
+// the (pre-snap → post-replay) delta into a render-only error accumulator
+// (errX/Y/Z) which decays linearly to zero over ERR_LINEAR_TIME (150 ms).
+// The camera reads (mePredicted + err), so the LOGICAL state is correct
+// immediately while the VISUAL position glides toward it. Source calls
+// this `cl_smooth` / `cl_smoothtime`.
+//
+// Two cutoffs sit on top of the smoother:
+//   - ERR_DEAD_ZONE (0.05 u): sub-dead-zone deltas are dropped entirely
+//     (floating-point noise would otherwise feed micro-corrections every ack
+//     and the smoother would never settle).
+//   - ERR_INSTANT_SNAP (40 u): deltas this large are real teleports
+//     (respawn, portal, explosion knockback), not corrections — bypass the
+//     smoother and let the camera follow the snap.
+//
+// ## Server-only state synced to mePredicted
+//
+// Some fields gate stepPlayerMovement but are server-authoritative — the
+// client has no way to predict them. These are mirrored from the tick
+// broadcast onto S.mePredicted in the message-handlers tick path AND
+// shipped on the inputAck snapshot for cases where the ack arrives between
+// ticks:
+//
+//   - stunTimer (set by combat hits, poisoned food, cowstrike). Skips the
+//     movement integration entirely.
+//   - spawnProtection. Same.
+//
+// Without this sync the client would charge forward through a stun and
+// snap back hard when reconcile finally landed. That was the "rubberband
+// when hit" bug.
+//
+// ## Server-only mutations the client CAN'T predict (deliberate)
+//
+//   - Explosion knockback (server applies a position delta directly). The
+//     client has no way to know the explosion will hit until the broadcast
+//     arrives. Reconcile catches it; for close hits the delta is past
+//     ERR_INSTANT_SNAP so the camera hard-snaps. Arguably correct for
+//     "you got blown up".
+//   - Dash (server teleports up to 120 u in <1 ms). Predicting it would
+//     require mirroring the dashCdMult perk and re-running the wall/
+//     barricade collision loop locally. Left as a delayed teleport.
+//
+// ## Transport
+//
+// The 30 Hz `tick` (S2C) and `move` (C2S) ride the unreliable channel
+// (geckos.io WebRTC data channel by default; falls back to WebSocket).
+// Everything else is reliable. Reason: TCP head-of-line blocking on a
+// dropped packet stalls the entire stream — the player sees a freeze-then-
+// catchup. Unreliable UDP for the high-frequency hot path means a dropped
+// tick is just gone, the next tick supersedes it within 33 ms, and CSP
+// handles the gap naturally. See server/transports/*.js + docs/webrtc-
+// migration-plan.md for the transport details.
+//
+// ## Files involved
+//
+//   - shared/movement.js  — the integrator both sides call
+//   - shared/constants.js — TICK_RATE, STATEFUL_INPUT_TYPES, physics consts
+//   - server/game.js      — gameTick(), inputAck snapshot capture
+//   - server/dispatch.js  — input message handlers, stale-seq drop
+//   - server/combat.js    — applies stunTimer / vz on hit (server-only)
+//   - client/prediction.js (this file) — predictStep, reconcile, smoother
+//   - client/message-handlers.js — tick handler syncs stunTimer/spawnProt;
+//     inputAck handler routes the snapshot into reconcile
+//   - client/index.js     — render loop wiring
+//   - client/interp.js    — entity interpolation buffer for remote players
+//
+// =============================================================================
 
 import S from './state.js';
 import { stepPlayerMovement } from '../shared/movement.js';

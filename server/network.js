@@ -15,7 +15,10 @@ const transport = require('./transport');
 // The `tick` S2C message is the only fan-out broadcast that should ride
 // the unreliable channel — 30 Hz mutable state, next tick supersedes it,
 // and dropping one is invisible to the client merge/interpolation logic.
-// Every other type is sticky or one-shot and must deliver.
+// Every other type is sticky or one-shot and must deliver. See
+// client/prediction.js for the full netcode-strategy reference (why
+// unreliable for the hot path matters: TCP head-of-line blocking on a
+// dropped packet would stall the entire stream and visibly freeze the game).
 //
 // Note: Phase 7's per-client tick loop in server/game.js::gameTick already
 // bypasses broadcast() and calls transport.sendUnreliable directly on each
