@@ -80,20 +80,14 @@ function applyExplosion(pr, excludeId) {
   const sel = ballistics.computeBlastVictims(pr, players, walls, barricades, excludeId, eyeHeight);
   // Destroy barricades caught in the blast (indices are descending-order)
   for (const i of sel.barricadeIdxs) {
-    const b = barricades[i];
-    broadcast({ type: 'barricadeDestroyed', id: b.id });
     gameState.removeBarricadeAt(i);
   }
-  // Damage map walls — each takes `hp` explosions to destroy
+  // Damage map walls — each takes `hp` explosions to destroy.
+  // State changes ride the tick payload (walls/barricades arrays).
   for (const i of sel.wallIdxs) {
     const w = walls[i];
     w.hp = (w.hp || 1) - 1;
-    if (w.hp <= 0) {
-      broadcast({ type: 'wallDestroyed', id: w.id });
-      gameState.removeWallAt(i);
-    } else {
-      broadcast({ type: 'wallDamaged', id: w.id, hp: w.hp });
-    }
+    if (w.hp <= 0) gameState.removeWallAt(i);
   }
   // Damage players in blast
   for (const v of sel.playerVictims) {
@@ -311,10 +305,9 @@ function updateProjectiles(dt) {
       if (hitBarricade) {
         const dmgDealt = Math.round(pr.dmg);
         hitBarricade.hp -= dmgDealt;
-        broadcast({ type: 'barricadeHit', id: hitBarricade.id, dmg: dmgDealt, x: hitBarricade.cx, y: hitBarricade.cy });
+        // HP change rides the tick payload. Client detects HP drop / removal.
         if (hitBarricade.hp <= 0) {
           gameState.removeBarricade(hitBarricade.id);
-          broadcast({ type: 'barricadeDestroyed', id: hitBarricade.id });
         }
       }
       if (pr.explosive) applyExplosion(pr, null);
@@ -431,7 +424,7 @@ function placeBarricadeForPlayer(player, aimX, aimY) {
   });
   const cdMs = player.isBot ? gameState.BOT_BARRICADE_COOLDOWN_MS : gameState.BARRICADE_COOLDOWN_MS;
   player.barricadeReadyAt = nowMs + cdMs;
-  broadcast({ type: 'barricadePlaced', id: bid, cx, cy, w: W, h: H, angle, ownerId: player.id });
+  // No broadcast — barricade appears in the next tick's barricadeState array.
   return true;
 }
 

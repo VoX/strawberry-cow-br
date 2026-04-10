@@ -107,7 +107,6 @@ function gameTick() {
   for (let i = barricades.length - 1; i >= 0; i--) {
     const b = barricades[i];
     if (nowMs - b.placedAt > 30000) {
-      broadcast({ type: 'barricadeDestroyed', id: b.id });
       gameState.removeBarricadeAt(i);
     }
   }
@@ -309,6 +308,13 @@ function gameTick() {
   const snapshot = SI.snapshot.create(players);
   SI.vault.add(snapshot);
 
+  // World entity state — included in every tick (not delta'd, small enough).
+  // Client diffs against cached state to detect changes and trigger visuals.
+  const tickWalls = gameState.getWalls();
+  const tickBarricades = gameState.getBarricades();
+  const wallState = tickWalls.map(w => ({ id: w.id, hp: w.hp }));
+  const barricadeState = tickBarricades.map(b => ({ id: b.id, hp: b.hp, cx: b.cx, cy: b.cy, w: b.w, h: b.h, angle: b.angle, ownerId: b.ownerId }));
+
   // Per-client delta-compressed tick broadcast. Each client gets a delta
   // against the last snapshot they acked, or a full keyframe if no ack.
   const SNAP_RING_SIZE = 32;
@@ -338,6 +344,7 @@ function gameTick() {
         type: 'tick', tickNum: currentTick, snapSeq: seq,
         snapshot: { id: snapshot.id, time: snapshot.time, state: players },
         zone: tickZone, gameTime, keyframe: true,
+        walls: wallState, barricades: barricadeState,
       };
     } else {
       // Compute delta against baseline.
@@ -369,6 +376,7 @@ function gameTick() {
         type: 'tick', tickNum: currentTick, snapSeq: seq,
         snapshot: { id: snapshot.id, time: snapshot.time, state: delta },
         zone: tickZone, gameTime,
+        walls: wallState, barricades: barricadeState,
       };
       if (removedIds.length) tickPayload.removedIds = removedIds;
     }

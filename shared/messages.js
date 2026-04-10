@@ -26,11 +26,8 @@ const S2C = Object.freeze({
   wallImpact: 'wallImpact',
   explosion: 'explosion',
   chat: 'chat',
-  barricadePlaced: 'barricadePlaced',
-  barricadeDestroyed: 'barricadeDestroyed',
-  barricadeHit: 'barricadeHit',
-  wallDestroyed: 'wallDestroyed',
-  wallDamaged: 'wallDamaged',
+  // barricadePlaced, barricadeDestroyed, barricadeHit, wallDestroyed, wallDamaged
+  // — removed, state rides the tick payload (walls/barricades arrays).
   kill: 'kill',
   winner: 'winner',
   restart: 'restart',

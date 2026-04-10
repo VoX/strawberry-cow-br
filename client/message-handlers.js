@@ -386,6 +386,53 @@ export const handlers = {
       addSnapshot({ id: msg.snapshot.id, time: msg.snapshot.time, state: fullState });
     }
 
+    // Diff wall state — detect HP changes and removals.
+    if (msg.walls) {
+      const wallById = new Map();
+      for (const w of msg.walls) wallById.set(w.id, w);
+      if (S.mapFeatures && S.mapFeatures.walls) {
+        for (let i = S.mapFeatures.walls.length - 1; i >= 0; i--) {
+          const cached = S.mapFeatures.walls[i];
+          if (!wallById.has(cached.id)) {
+            destroyWall(cached.id);
+            onHouseWallDestroyed(cached.id);
+            removeBulletHolesBySurfaceKey('wall:' + cached.id);
+            S.mapFeatures.walls.splice(i, 1);
+          }
+        }
+        for (const w of S.mapFeatures.walls) {
+          const svr = wallById.get(w.id);
+          if (svr) w.hp = svr.hp;
+        }
+      }
+    }
+
+    // Diff barricade state — detect additions, removals.
+    if (msg.barricades) {
+      const bById = new Map();
+      for (const b of msg.barricades) bById.set(b.id, b);
+      for (let i = S.barricades.length - 1; i >= 0; i--) {
+        const cached = S.barricades[i];
+        if (!bById.has(cached.id)) {
+          const pos = { x: cached.cx, y: getTerrainHeight(cached.cx, cached.cy) + 20, z: cached.cy };
+          removeBarricade(cached.id);
+          removeBulletHolesBySurfaceKey('barricade:' + cached.id);
+          sfx(300, 0.08, 'square', 0.05, pos);
+          sfx(150, 0.15, 'sawtooth', 0.04, pos);
+        }
+      }
+      const existingIds = new Set(S.barricades.map(b => b.id));
+      for (const b of msg.barricades) {
+        if (!existingIds.has(b.id)) {
+          addBarricade({ id: b.id, cx: b.cx, cy: b.cy, w: b.w, h: b.h, angle: b.angle });
+          if (b.ownerId === S.myId) {
+            S.barricadeReadyAt = performance.now() + 5000;
+            sfx(200, 0.08, 'square', 0.08); sfx(150, 0.12, 'triangle', 0.06);
+          }
+        }
+      }
+    }
+
     S.me = S.serverPlayers.find(p => p.id === S.myId) || null;
     if (S.me) {
       const dx = S.me.x - iw.lastMeX, dy = S.me.y - iw.lastMeY;
@@ -913,69 +960,10 @@ export const handlers = {
     }
   },
 
-  barricadePlaced(msg) {
-    addBarricade({ id: msg.id, cx: msg.cx, cy: msg.cy, w: msg.w, h: msg.h, angle: msg.angle });
-    if (msg.ownerId === S.myId) {
-      S.barricadeReadyAt = performance.now() + 5000;
-      sfx(200, 0.08, 'square', 0.08); sfx(150, 0.12, 'triangle', 0.06);
-    }
-  },
+  // barricadePlaced — now detected via tick barricade state diff.
 
-  barricadeDestroyed(msg) {
-    const b = S.barricades.find(b => b.id === msg.id);
-    const pos = b ? { x: b.cx, y: getTerrainHeight(b.cx, b.cy) + 20, z: b.cy } : null;
-    removeBarricade(msg.id);
-    removeBulletHolesBySurfaceKey('barricade:' + msg.id);
-    sfx(300, 0.08, 'square', 0.05, pos);
-    sfx(150, 0.15, 'sawtooth', 0.04, pos);
-  },
-
-  barricadeHit(msg) {
-    const label = '\u{1FAB5} ' + msg.dmg;
-    const nc = document.createElement('canvas'); nc.width = 160; nc.height = 48;
-    const ctx = nc.getContext('2d');
-    ctx.font = 'bold 26px Segoe UI';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(label, 81, 35);
-    ctx.fillStyle = '#8b5a2b'; ctx.fillText(label, 80, 34);
-    const tex = new THREE.CanvasTexture(nc); tex.minFilter = THREE.LinearFilter;
-    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
-    const sprite = new THREE.Sprite(mat);
-    const th = getTerrainHeight(msg.x, msg.y);
-    sprite.position.set(msg.x + (Math.random()-0.5)*12, th + 40 + Math.random()*8, msg.y + (Math.random()-0.5)*12);
-    sprite.scale.set(96, 28, 1);
-    scene.add(sprite);
-    let life = 1.3;
-    const vy = 8 + Math.random() * 4;
-    const vxr = (Math.random() - 0.5) * 10;
-    const vzr = (Math.random() - 0.5) * 10;
-    let bnDisposed = false;
-    const bnCleanup = () => { if (bnDisposed) return; bnDisposed = true; scene.remove(sprite); tex.dispose(); mat.dispose(); };
-    const banim = () => { if (bnDisposed) return; life -= 0.012; mat.opacity = Math.max(0, life); sprite.position.y += vy * 0.016; sprite.position.x += vxr * 0.016; sprite.position.z += vzr * 0.016; if (life <= 0) bnCleanup(); else requestAnimationFrame(banim); };
-    requestAnimationFrame(banim);
-    setTimeout(bnCleanup, 1800);
-  },
-
-  wallDestroyed(msg) {
-    destroyWall(msg.id);
-    onHouseWallDestroyed(msg.id);
-    removeBulletHolesBySurfaceKey('wall:' + msg.id);
-    if (S.mapFeatures && S.mapFeatures.walls) {
-      const wi = S.mapFeatures.walls.findIndex(w => w.id === msg.id);
-      if (wi >= 0) S.mapFeatures.walls.splice(wi, 1);
-    }
-  },
-
-  // Cowtank rockets partially damage walls; each hit reduces hp by 1, destroy at 0.
-  // The server broadcasts wallDamaged for the partial case (destruction has its own msg).
-  // Today we just update the tracked hp so any future damage visual can read it — the
-  // wall InstancedMesh is static per round and doesn't currently render hp deltas.
-  wallDamaged(msg) {
-    if (S.mapFeatures && S.mapFeatures.walls) {
-      const w = S.mapFeatures.walls.find(w => w.id === msg.id);
-      if (w) w.hp = msg.hp;
-    }
-  },
+  // barricadeDestroyed, barricadeHit, wallDestroyed, wallDamaged
+  // — removed, state changes detected via tick wall/barricade arrays.
 
   kill(msg) {
     addKillFeed('\u{1F480} ' + (msg.killerName || '?') + ' \u2192 ' + (msg.victimName || '?'), 5);
