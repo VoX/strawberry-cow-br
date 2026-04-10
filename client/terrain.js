@@ -19,7 +19,9 @@ export function getTerrainHeight(x, z) {
 // Shared geometry refs for rebuilding
 const gndPad = 800;
 const extW = MW + gndPad * 2, extH = MH + gndPad * 2;
-const grassMat = new THREE.MeshLambertMaterial({ color: 0x3a7830 });
+// Biome-tinted ground — vertex colors blend between meadow (center),
+// forest (north), and quarry (south). Gives the map visual identity.
+const grassMat = new THREE.MeshLambertMaterial({ vertexColors: true });
 const mtMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
 const snowMat = new THREE.MeshLambertMaterial({ color: 0xeeeeff });
 
@@ -46,6 +48,34 @@ function buildTerrainMeshes() {
     const cx = Math.max(0, Math.min(MW, wx)), cz = Math.max(0, Math.min(MH, wz));
     gndPos.setZ(i, getTerrainHeight(cx, cz));
   }
+  // Biome vertex coloring — north=forest (dark green), center=meadow
+  // (bright green), south=quarry (gray-brown). Smooth transitions.
+  const colors = new Float32Array(gndPos.count * 3);
+  const meadow = [0.23, 0.47, 0.19];    // 0x3a7830
+  const forest = [0.12, 0.30, 0.08];    // darker green
+  const quarry = [0.38, 0.32, 0.22];    // gray-brown
+  for (let i = 0; i < gndPos.count; i++) {
+    const wz = extH / 2 - gndPos.getY(i) - gndPad;
+    const t = Math.max(0, Math.min(1, wz / MH)); // 0=north, 1=south
+    let r, g, b;
+    if (t < 0.35) {
+      // Forest (north) → meadow blend
+      const f = t / 0.35;
+      r = forest[0] + (meadow[0] - forest[0]) * f;
+      g = forest[1] + (meadow[1] - forest[1]) * f;
+      b = forest[2] + (meadow[2] - forest[2]) * f;
+    } else if (t > 0.65) {
+      // Meadow → quarry (south) blend
+      const f = (t - 0.65) / 0.35;
+      r = meadow[0] + (quarry[0] - meadow[0]) * f;
+      g = meadow[1] + (quarry[1] - meadow[1]) * f;
+      b = meadow[2] + (quarry[2] - meadow[2]) * f;
+    } else {
+      r = meadow[0]; g = meadow[1]; b = meadow[2];
+    }
+    colors[i * 3] = r; colors[i * 3 + 1] = g; colors[i * 3 + 2] = b;
+  }
+  gndGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   gndGeo.computeVertexNormals();
   gndMesh = new THREE.Mesh(gndGeo, grassMat);
   gndMesh.rotation.x = -Math.PI / 2; gndMesh.position.set(MW / 2, 0, MH / 2); gndMesh.receiveShadow = true;
