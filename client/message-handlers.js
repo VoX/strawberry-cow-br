@@ -863,9 +863,15 @@ export const handlers = {
   },
 
   resourceHit(msg) {
-    if (msg.playerId === S.myId) {
-      sfx(600, 0.06, 'square', 0.05);
-    }
+    // Different sfx per resource type — spatialized for remote players
+    const np = S._resourceNodePositions && S._resourceNodePositions.find(n => n.id === msg.nodeId);
+    const sndPos3d = np ? { x: np.x, y: getTerrainHeight(np.x, np.y) + 15, z: np.y } : null;
+    const isLocal = msg.playerId === S.myId;
+    const sndPos = isLocal ? undefined : sndPos3d;
+    if (msg.resourceType === 'grass') { sfx(300, 0.05, 'sine', isLocal ? 0.04 : 0.03, sndPos); }
+    else if (msg.resourceType === 'wood') { sfx(180, 0.08, 'square', isLocal ? 0.06 : 0.04, sndPos); sfx(400, 0.04, 'sawtooth', isLocal ? 0.03 : 0.02, sndPos); }
+    else if (msg.resourceType === 'stone') { sfx(800, 0.06, 'square', isLocal ? 0.05 : 0.03, sndPos); sfx(1200, 0.03, 'sine', isLocal ? 0.03 : 0.02, sndPos); }
+    else if (msg.resourceType === 'metal') { sfx(1500, 0.05, 'sine', isLocal ? 0.05 : 0.03, sndPos); sfx(2200, 0.03, 'sine', isLocal ? 0.03 : 0.02, sndPos); }
     // Debris particles at the node's position
     const nodePos = S._resourceNodePositions && S._resourceNodePositions.find(n => n.id === msg.nodeId);
     if (nodePos) {
