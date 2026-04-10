@@ -110,10 +110,12 @@ const PLAYER_STATS_BASE = {
   },
   // Minigun — 300 rounds, 600 RPM full auto. 30% move speed.
   // Double MP5K spread, MP5K damage. Extreme suppression weapon.
+  // Minigun: fires at 600 RPM internally but spawns 2 pellets per shot
+  // for visual 1200 RPM effect. 1.0s lifetime for shorter range.
   minigun: {
     hungerGate: [2, 6], hungerCost: [2, 5],
-    cooldown: 0.05, dmg: 9, speed: 3312, spreadBase: 0.088, pellets: 1, spawnOffset: 40,
-    autoOnly: true,
+    cooldown: 0.1, dmg: 4.5, speed: 3312, spreadBase: 0.088, pellets: 2, spawnOffset: 40,
+    autoOnly: true, volleyed: true, vzSpreadBase: 0.08, life: 1.0,
   },
   aug: {
     hungerGate: [2, 6], hungerCost: [2, 5],
@@ -148,7 +150,7 @@ const BOT_STATS = {
   },
   python: { hungerGate: 5, hungerCost: 4, cooldown: 0.15, dmg: 25, speed: 5520, spreadBase: 0.015, pellets: 1, spawnOffset: 40 },
   m249: { hungerGate: 5, hungerCost: 5, cooldown: 0.1, dmg: 12, speed: 3312, spreadBase: 0.044, pellets: 1, spawnOffset: 40 },
-  minigun: { hungerGate: 5, hungerCost: 5, cooldown: 0.05, dmg: 7, speed: 3312, spreadBase: 0.088, pellets: 1, spawnOffset: 40 },
+  minigun: { hungerGate: 5, hungerCost: 5, cooldown: 0.1, dmg: 3.5, speed: 3312, spreadBase: 0.088, pellets: 2, spawnOffset: 40, volleyed: true, vzSpreadBase: 0.08, life: 1.0 },
 };
 
 // Extract cooldown / damage / hungerDiscount multipliers from a shooter's
@@ -273,7 +275,7 @@ function fireWeapon(shooter, weapon, aim, stats, opts = {}) {
         shooter.x + bx * spawnOffset, shooter.y + by * spawnOffset, eyeZ,
         bx, by, spreadVz,
         speed, pelletDmg,
-        fdtExtras ? { volleyId, fireServerTime } : { volleyId },
+        fdtExtras ? { volleyId, fireServerTime, ...(stats.life != null ? { life: stats.life } : {}) } : { volleyId, ...(stats.life != null ? { life: stats.life } : {}) },
         broadcastExtras,
         0,
       );
