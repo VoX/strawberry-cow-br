@@ -4,6 +4,7 @@ import { cam, ren } from './renderer.js';
 import { initAudio } from './audio.js';
 import { send } from './network.js';
 import { getServerTime } from './snapshot.js';
+import { sfxShoot, sfxBolty, sfxShotgun, sfxRocket, sfxLR } from './audio.js';
 import { TICK_RATE, BURST_FAMILY, JUMP_VZ } from '../shared/constants.js';
 
 // Jump prediction: server applies vz=200 + onGround=false on receipt of
@@ -79,9 +80,21 @@ export function doAttack() {
       _spawnedAt: performance.now(),
     });
     // Set local cooldown to prevent spawning another tracer before the
-    // weapon can fire again. Uses the server's attackCooldown from the
-    // last tick as the base — it reflects the weapon's actual fire rate.
-    _localAttackCooldown = S.me.attackCooldown > 0 ? S.me.attackCooldown : 0.15;
+    // weapon can fire again.
+    const COOLDOWNS = {
+      normal: 0.3, shotgun: 1.0, bolty: 2.5, cowtank: 1.0,
+      burst: 0.12, aug: 0.12, mp5k: 0.1, thompson: 0.13,
+      sks: 0.176, akm: 0.133,
+    };
+    _localAttackCooldown = COOLDOWNS[wep] || 0.15;
+    // Own weapon sound (predicted — fires instantly, not on server tick)
+    if (wep === 'bolty') sfxBolty();
+    else if (wep === 'cowtank') sfxRocket(0.12);
+    else if (wep === 'shotgun') sfxShotgun(0.1);
+    else if (BURST_FAMILY.has(wep)) sfxLR(0.1);
+    else sfxShoot();
+    // Recoil applied via the recoil system in message-handlers.js when
+    // the server projectile arrives (still fires from the old handler).
   }
 }
 

@@ -478,6 +478,12 @@ export const handlers = {
           // The predicted tracer was spawned instantly by doAttack().
           const pred = S.projData.find(p => p._localPredicted);
           if (pred) {
+            // Remap mesh to the server's ID
+            const oldId = pred.id;
+            if (S.projMeshes[oldId]) {
+              S.projMeshes[sp.id] = S.projMeshes[oldId];
+              delete S.projMeshes[oldId];
+            }
             pred.id = sp.id;
             pred._localPredicted = false;
             pred._fromTick = true;
