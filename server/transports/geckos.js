@@ -96,9 +96,8 @@ function sendReliable(channel, msg) {
   try { channel.emit(MSG_EVENT, msg, RELIABLE_OPTS); } catch (e) { /* channel closed */ }
 }
 
-// Unreliable sends pass data directly. For binary buffers (ArrayBuffer from
-// typed-array-buffer-schema), geckos data channels handle binary natively.
-// For plain objects, geckos serializes internally.
+// Unreliable sends pass data directly. For plain objects, geckos serializes
+// internally.
 function sendUnreliable(channel, msg) {
   if (!channel) return;
   try { channel.emit(MSG_EVENT, msg); } catch (e) { /* channel closed */ }

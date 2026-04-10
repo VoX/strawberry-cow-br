@@ -1,340 +1,184 @@
 # Strawberry Cow Netcode
 
-How the client and server talk to each other. Covers the wire protocol, the tick/snapshot split, rate limiting, backpressure, and the server authority model.
+How the client and server talk to each other. Covers transport, prediction, interpolation, reconciliation, the tick/snapshot split, and how to add new features that play nicely with the netcode.
 
-## Tl;dr
+## Architecture summary
 
-- **Transport**: raw WebSocket, JSON-encoded, no compression. Single endpoint at `/strawberrycow-fps-ws/`.
-- **Authority**: 100% server-authoritative. The client sends inputs, never positions. There is no client-side prediction for movement or combat.
-- **Tick rate**: 30 Hz (`server/config.js::TICK_RATE = 30`). One `setInterval(gameTick, 1000/30)` drives the whole simulation.
-- **Two-channel broadcast**: every tick ships mutable state via a `tick` message; sticky/rare fields ship via event-driven `playerSnapshot` messages.
-- **Backpressure**: slow clients drop `tick` messages instead of queueing them. Nothing else is droppable.
-- **Rate limiting**: per-connection, per-message-type token buckets. 10 consecutive violations = socket close.
-- **Boot-time safety nets**: message-type enum integrity check on the server, handler coverage check on the client.
+- **Dual transport**: WebSocket (TCP, reliable) + geckos.io WebRTC data channels (UDP, unreliable). Client auto-selects geckos, falls back to WS if UDP is blocked.
+- **Authority**: 100% server-authoritative. The client sends inputs (dx/dy/aim), never positions.
+- **Tick rate**: 30 Hz (`server/config.js::TICK_RATE = 30`).
+- **Local player**: client-side prediction with seq-based Bernier reconciliation. Zero-latency response to WASD; server corrections absorbed by a 150ms render-offset smoother.
+- **Remote players**: snapshot interpolation via `@geckos.io/snapshot-interpolation`. Renders 100ms in the past with smooth lerp between server snapshots.
+- **Encoding**: WS uses MessagePack binary. Geckos uses geckos.io's internal JSON serialization (raw binary doesn't survive the library's emit API).
+- **Two-channel broadcast**: mutable state via 30Hz `tick` messages; sticky fields via event-driven `playerSnapshot` messages.
 
 ## Transport layer
 
-### Server
+### Dual transport design
 
-`server/index.js` creates a single `ws.WebSocketServer` with three non-default knobs:
+Both WebSocket and geckos.io (WebRTC) transports run simultaneously. `server/transport.js` is a facade that routes per-peer `sendReliable`/`sendUnreliable` calls to the correct transport via a `WeakMap<ref, impl>`.
+
+**WebSocket** (`server/transports/ws.js`, `client/transports/ws.js`):
+- Reliable TCP. Both reliable and unreliable sends go through `ws.send()`.
+- MessagePack binary encoding for all messages (`@msgpack/msgpack`).
+- `perMessageDeflate: false` — latency > bandwidth for a 30Hz action game.
+- `maxPayload: 16KB`, `setNoDelay(true)`, kernel keepalive at 10s.
+- 5-second WebSocket-level heartbeat (ping/pong) catches frozen tabs.
+
+**geckos.io** (`server/transports/geckos.js`, `client/transports/geckos.js`):
+- WebRTC data channels. Unreliable sends are fire-and-forget UDP.
+- Reliable sends use geckos' built-in retry mechanism (`{reliable: true, interval: 150, runs: 10}`).
+- All messages pass as plain JS objects — geckos.io's emit API doesn't handle raw binary (Uint8Array) correctly. The library JSON-serializes payloads internally for its retry/dedup envelope.
+- Signaling rides HTTP through Caddy reverse proxy at `/.wrtc/v2/`.
+
+**Client auto-fallback** (`client/network.js`): tries geckos first. If no message arrives before the geckos channel fires `onClose`, switches to WS transparently.
+
+### Reliability routing
+
+`server/network.js` routes each message type:
+- **Unreliable** (`UNRELIABLE_TYPES = Set(['tick'])`): dropped under backpressure, next tick supersedes. On geckos this is true UDP fire-and-forget.
+- **Reliable**: everything else (events, acks, lobby messages). On geckos, retransmitted by the library.
+
+### Rate limiting
+
+`server/transports/ws.js::checkRate` — per-connection, per-type token buckets. 10 consecutive violations = socket close (code 1008). Unknown types pass through.
+
+## Client-side prediction (local player)
+
+### How it works
+
+`client/prediction.js` implements Source/CS-style prediction:
+
+1. **Fixed timestep** at 30Hz (`TICK_DT = 1/30`). The render loop accumulates frame time; the predict loop runs 0-2 steps per render frame.
+2. **Send and predict are lockstep.** Each fixed step: send a `move` message (which increments `S.inputSeq`), then run `stepPlayerMovement()` on `S.mePredicted`, then push `{seq, state, input}` onto the prediction ring.
+3. **Shared movement function** (`shared/movement.js::stepPlayerMovement`): identical code runs on both client and server. This is the load-bearing invariant — if client and server diverge, you get rubber-banding.
+4. **Sub-tick interpolation**: `getRenderedPredicted()` lerps between the previous and current predicted position based on the accumulator fraction, so 60fps rendering doesn't show the 30Hz step cadence.
+
+### Reconciliation
+
+When the server sends an `inputAck` (15Hz, every 2nd tick):
+
+1. **Find the ring entry** matching the acked seq (FIRST match — server snapshot is captured on the first tick that integrates each new `lastInputSeq`).
+2. **Compare** predicted position vs server position. If drift <= `RECONCILE_EPSILON` (1.0 units), prediction matched — drop confirmed entries, done.
+3. **If divergent**: snap `S.mePredicted` to server state, drop confirmed entries, **replay all remaining ring entries** using their stored inputs. This is Bernier's design.
+4. **Render smoother**: the pre-snap → post-replay camera delta goes into `errX/Y/Z`, which decays linearly over 150ms (`ERR_LINEAR_TIME`). Camera reads `mePredicted + renderOffset`, so the logical position jumps instantly but the camera glides.
+5. **Hard snap** (>40 units): teleport/respawn, skip the smoother.
+
+### Key invariants
+
+- `STATEFUL_INPUT_TYPES = Set(['move'])`. Only moves get seq numbers. Adding seq to attack/jump would create gaps the server can't match.
+- `stunTimer` and `spawnProtection` are server-only — synced via the tick handler. The client can't predict getting hit.
+- The prediction ring holds 60 entries (2 seconds at 30Hz).
+
+## Remote player interpolation
+
+### Snapshot interpolation (`@geckos.io/snapshot-interpolation`)
+
+`client/snapshot.js` wraps the SI library for remote entity rendering:
+
+1. **Server creates SI snapshots** in `gameTick()`: `SI.snapshot.create(getPlayerTicks())` wraps the player state array in a timestamped envelope. Stored in `SI.vault` for future lag compensation.
+2. **Client feeds snapshots** via `addSnapshot(msg.snapshot)` in the tick handler.
+3. **Once per frame**, `updateInterpolation(frameId)` calls `SI.calcInterpolation('x y z aimAngle(rad)')`. This finds two server snapshots bracketing `now - timeOffset - interpolationBuffer` and lerps between them.
+4. **Per-entity lookup**: `getInterpolatedEntity(p)` scans the cached result for a matching `id`. Falls back to raw tick position if SI doesn't have enough data yet.
+
+The interpolation buffer is `(1000/30) * 3 = 100ms` — remote entities render 100ms in the past for smooth motion. This trades display latency for perfectly smooth interpolation instead of 30Hz step-jitter.
+
+### Why SI for remotes but not local player
+
+We tried using SI for local player reconciliation. It doesn't work:
+
+- **SI has no built-in prediction or reconciliation** — despite the README claiming it. The library is purely an interpolation tool.
+- **Time-based matching is fuzzy.** The server position is always 1-2 ticks behind the client's prediction due to latency. The time-based approach can't match specific inputs like seq numbers can.
+- **Gradual correction causes visible jitter** on direction changes. The old render-offset smoother + instant snap is visually superior.
+
+## Server tick broadcast
+
+### Tick structure
 
 ```js
-perMessageDeflate: false,   // latency > bandwidth for a 30 Hz action game
-maxPayload: 16 * 1024,      // 16 KB cap — every legit client message is <1 KB
-```
-
-Compression is off because `perMessageDeflate` coalesces small frames and adds per-send latency. We measured inchworming at the client traceable to deflate backpressure + Nagle batching. Turning it off is worth the extra bandwidth.
-
-`maxPayload: 16384` hard-caps single messages so a bad actor can't hold memory with megabyte frames before the rate limiter gets a chance to run.
-
-On connect, two more socket knobs get flipped:
-
-```js
-ws._socket.setNoDelay(true);           // disable Nagle, flush every send immediately
-ws._socket.setKeepAlive(true, 10000);  // kernel-level dead-peer detection
-```
-
-Plus a WebSocket-level heartbeat: every 5 seconds (`HEARTBEAT_MS`), the server pings each client. Clients mark `ws.isAlive = true` on pong. Any client that fails to pong between two heartbeats gets terminated. This catches mid-stack stalls (frozen tab, broken intermediary) that look fine to TCP while the websocket is wedged.
-
-### Client
-
-`client/network.js` opens the socket and wires incoming messages into a single handler callback:
-
-```js
-S.ws = new WebSocket(proto + '://' + location.host + '/strawberrycow-fps-ws/');
-S.ws.onmessage = e => { if (msgHandler) msgHandler(JSON.parse(e.data)); };
-```
-
-`client/index.js` registers the dispatch function:
-
-```js
-setMessageHandler(msg => {
-  const h = handlers[msg.type];
-  if (h) h(msg);
-});
-```
-
-`handlers` is a plain object in `client/message-handlers.js` keyed by message type. One named function per type. No string comparisons, no switch statements, no polymorphic dispatch — just an object lookup per inbound message.
-
-## Wire format
-
-Every frame in either direction is `JSON.stringify(...)` of an object with a `type` field. No binary, no protobuf, no MessagePack. The hot path (`tick`) is small enough (~8 players × ~20 fields) that JSON wins on CPU for the parse/serialize vs. the complexity of a binary codec.
-
-### Message type registry
-
-`shared/messages.js` is the single source of truth for every valid `type` string. It exports three frozen objects:
-
-- **`S2C`** — server → client. 45 types covering gameplay state, entity spawns/despawns, visual effects, lobby events, and admin toggles.
-- **`C2S`** — client → server. 16 types covering inputs (`move`, `attack`, `dash`, `jump`), host controls (`toggleBots`, `kick`), lobby actions (`ready`, `setName`), and chat.
-- **`MSG`** — `{ ...S2C, ...C2S }` for call sites that don't care about direction.
-
-Two boot-time assertions keep the registry honest:
-
-1. **`assertEnumIntegrity()`** runs inside `server/index.js` before the WebSocket server starts. It walks `MSG` and throws if any value is empty, non-string, or a duplicate. Fail-loud on boot beats shipping a typo.
-2. **`assertHandlerCoverage()`** is an IIFE at the bottom of `client/message-handlers.js`. It iterates `Object.values(S2C)` and logs `console.error` for any type that doesn't have a corresponding handler function. Catches stale handlers after a rename.
-
-The enum is also the contract for the rest of this document — if you see a type name below, it's defined in `shared/messages.js`.
-
-## Server → client flow
-
-### The 30 Hz tick loop
-
-`server/game.js::gameTick` runs at 30 Hz via `setInterval(gameTick, 1000/TICK_RATE)`. It does everything: physics, AI, combat, zone damage, food spawns, projectile stepping, death resolution, broadcast. At the end of the tick it ships exactly one `tick` broadcast containing the mutable state of every alive-or-spectating player.
-
-```js
-broadcast({
+{
   type: 'tick',
-  players: getPlayerTicks(),
-  zone: gameState.getZone(),
-  gameTime: Math.floor(gameState.getGameTime()),
-});
-```
-
-### Why tick + snapshot instead of one big "state" broadcast
-
-Previously `gameTick` shipped a single `state` message with the full player shape on every tick: name, color, weapon, perks, level, xp, xpToNext, sizeMult, dualWield, recoilMult, extMagMult, plus all the mutable fields. That was ~120 bytes per player, 30 times per second, per connected client. With 8 players that's ~292 KB/s of upload per active room even though 90% of those bytes never changed between ticks.
-
-The sweep split the broadcast in two:
-
-- **`tick`** — ships only the fields that change on almost every tick: position, velocity-derived aim, hunger, score, ammo, cooldowns, stun timer, spawn-protection flag. `server/player.js::getPlayerTick(p)` builds these.
-- **`playerSnapshot`** — ships the full player shape (sticky + mutable). Emitted only when a sticky field actually changes: weapon pickup, weapon drop, perk selection, level up, dual-wield toggle, cowtank single-use auto-drop. `server/player.js::broadcastPlayerSnapshot(p)` is the single entry point; every mutation site calls it.
-
-After the split, the tick payload dropped from ~120 to ~35 bytes per player and the full bandwidth dropped by ~73% (measured: 292 KB/s → 80 KB/s for 8 players).
-
-### Sticky-field discipline
-
-Because sticky fields are not in `tick`, every place in the server code that writes one *must* call `broadcastPlayerSnapshot(p)` before the tick ends, or the client will stay stale until the next unrelated snapshot event. The sweep added this call to:
-
-- `server/weapons.js::handleWeaponPickups` — weapon + dualWield + ammo changed
-- `server/weapons.js::handleDropWeapon` — same fields changed
-- `server/perks.js::handlePerk` — sizeMult/recoilMult/extMagMult/perks.* changed
-- `server/player.js::eliminatePlayer` kill-credit level-up — level/xp/xpToNext changed
-- `server/game.js::gameTick` golden-food level-up — same
-- `server/combat.js::handleAttack` cowtank post-fire — weapon/dualWield/ammo reset
-- `server/bots.js::fireBot` cowtank post-fire — identical to player path
-
-These are the 7 sticky-mutation sites in the codebase. If you add an 8th (e.g. a perk that mutates `p.weapon`), you need to add a snapshot call too. A missing call is silent — the client just looks stale.
-
-### Start / spectate full-state sync
-
-On join, the server sends one of two full-state messages depending on lobby phase:
-
-- **`start`** — fires at round start for players who were in the lobby. Contains terrain seed, every player's full shape, all foods, walls, barricades, weapon pickups, armor pickups, mud patches, heal ponds, portals, shelters, houses, the zone, and the map feature bundle.
-- **`spectate`** — identical payload for a mid-round join. Same field set.
-
-Both use `getPlayerStates()` (which calls `getPlayerSnapshot` per alive player), so a fresh client has the exact same full shape it would get from a stream of `playerSnapshot` events.
-
-### Event-driven messages
-
-Everything else is event-driven and ships immediately from the relevant code path. Examples:
-
-- `projectile` — new projectile spawned (from `server/weapon-fire.js` or `server/combat.js::applyExplosion`)
-- `projectileHit` — projectile damaged a player (from `server/combat.js`)
-- `wallImpact` / `wallDamaged` / `wallDestroyed` — projectile hit a wall (from combat + ballistics)
-- `barricadeHit` / `barricadeDestroyed` — projectile or blast hit a barricade
-- `explosion` — blast visual + audio trigger
-- `eliminated` — player died (hunger, disconnect, or other); carries the rank the victim finished at
-- `kill` — killer credit, emitted alongside `eliminated` when the victim had a `lastAttacker`
-- `eat` / `food` — food pickups and respawns
-- `weaponSpawn` / `weaponDespawn` / `weaponPickup` / `weaponDrop` — weapon pickup lifecycle
-- `armorSpawn` / `armorPickup` / `shieldHit` / `shieldBreak` — armor pickup + shield lifecycle
-- `chat` — player chat broadcast with name + color + text (120-char cap)
-- `cowstrikeWarning` / `cowstrike` — perk ability visual + stun waves
-- `levelup` — sent only to the leveling player's socket (via `sendTo`); tells the client to show the perk menu
-- `restart` / `winner` — round-end transitions
-
-Every one of these is in `S2C` and has a handler in `client/message-handlers.js`.
-
-## Client → server flow
-
-Client inputs ship as small JSON frames. The active ones:
-
-- **`move`** — `{type, dx, dy, walking}`. Movement intent as a normalized ±1 vector plus a crouch/walk flag. Server clamps and computes `aimAngle` from the vector. Sent by `client/input.js` whenever WASD state changes or every ~16 ms during movement.
-- **`attack`** — `{type, fireMode, aimX, aimY, ...}`. Fire request with aim coordinates and burst/auto flag. Server runs `handleAttack` → `fireWeapon` to actually spawn projectiles and deduct ammo.
-- **`reload`**, **`dash`**, **`jump`**, **`dropWeapon`** — action triggers, no payload beyond the type.
-- **`placeBarricade`** — `{type, aimX, aimY}`. Server validates cooldown and places a barricade at the aim point.
-- **`perk`** — `{type, id}`. After the server sent `levelup`, the client shows a perk menu; the player's choice comes back as `perk`.
-- **`chat`** — `{type, text}`. 120-char cap enforced server-side.
-- **`join`**, **`setName`**, **`ready`** — lobby actions.
-- **`kick`**, **`toggleBots`**, **`toggleBotsFreeWill`**, **`toggleNight`** — host-only actions; the server verifies `isHost(player.id)` before acting.
-
-There is no position field in any client message. The client does not send `{x, y}`. It sends *intent* (dx/dy, aim direction, fire mode) and the server simulates the world forward. This is why there is no client-side prediction — without the client running the same simulation the server runs, there's nothing to predict against.
-
-## Rate limiting
-
-`server/index.js::checkRate` implements per-connection, per-message-type token buckets.
-
-```js
-const RATE_LIMITS = Object.freeze({
-  move: 40, attack: 30, chat: 2, placeBarricade: 5,
-  toggleBots: 2, toggleBotsFreeWill: 2, toggleNight: 2,
-  ready: 5, kick: 2, setName: 2, perk: 5,
-  dash: 10, reload: 5, dropWeapon: 5, jump: 20,
-});
-```
-
-The rates are tokens-per-second budgets. On every inbound message, `checkRate` refills the bucket based on elapsed time since the last check, then tries to spend 1 token. If the bucket is dry, the message is silently dropped and a violation counter increments. Ten consecutive violations on any single type closes the socket with code 1008 ("rate").
-
-Unknown message types bypass the limiter entirely — this is intentional so adding a new client→server type doesn't require touching this table. If you want an abusable type covered, add it to `RATE_LIMITS`.
-
-Buckets are lazily allocated per `(socket, msgType)` on first touch and live on `ws._rateBuckets`. They die with the socket; no GC pressure.
-
-## Backpressure
-
-`server/network.js::broadcast` has one escape hatch for slow clients:
-
-```js
-const BACKPRESSURE_BYTES = 256 * 1024;
-const DROPPABLE_TYPES = new Set(['tick']);
-
-function broadcast(data) {
-  const msg = JSON.stringify(data);
-  const droppable = DROPPABLE_TYPES.has(data && data.type);
-  for (const [, p] of gameState.getPlayers()) {
-    const ws = p.ws;
-    if (!ws || ws.readyState !== 1) continue;
-    if (droppable && ws.bufferedAmount > BACKPRESSURE_BYTES) continue;
-    ws.send(msg);
-  }
+  tickNum: number,
+  snapshot: { id, time, state: [...players] },  // SI snapshot
+  zone: { x, y, w, h },
+  gameTime: number
 }
 ```
 
-If a client has more than 256 KB buffered (because their connection is stalled and the OS socket buffer is backing up), the server drops subsequent `tick` broadcasts to that one client until the buffer drains. Every other message type (`projectile`, `eliminated`, `kill`, `playerSnapshot`, `weaponPickup`, chat, etc.) is still delivered — those are authoritative one-shot events and missing one breaks the game.
+The `snapshot` field is an SI-format timestamped envelope. `state` contains `getPlayerTick()` output for each alive/spectatable player — mutable fields only (position, aim, hunger, ammo, cooldowns, etc.).
 
-`tick` is uniquely safe to drop because the next tick supersedes it entirely. The client's tick handler merges received fields into the existing cached player state (`Object.assign(existing, t)`) rather than replacing it, so even if two ticks go missing, the third one re-establishes truth. See below.
+### inputAck (15 Hz)
 
-This is the one place slow clients stop hurting everyone — before the drop guard, a single stalled socket would balloon server memory, delay every other client's shared-serialization step, and eventually OOM the process.
-
-## Client state merging
-
-`client/message-handlers.js::tick` does the merge:
+Every 2nd tick, the server sends each human player their ack:
 
 ```js
-const seen = new Set();
-for (const t of msg.players) {
-  seen.add(t.id);
-  const existing = S.serverPlayers.find(sp => sp.id === t.id);
-  if (!existing) continue; // race: no snapshot yet, skip until one arrives
-  Object.assign(existing, t);
+{
+  type: 'inputAck',
+  seq: lastAppliedSeq,
+  x, y, z, vz, onGround,
+  stunTimer, spawnProt
 }
-// Drop players the server dropped. Preserves sticky fields on survivors.
-for (let i = S.serverPlayers.length - 1; i >= 0; i--) {
-  if (!seen.has(S.serverPlayers[i].id)) S.serverPlayers.splice(i, 1);
-}
-S.me = S.serverPlayers.find(p => p.id === S.myId) || null;
 ```
 
-Key invariants:
+The position is captured **on the first tick that integrates each new seq** — not the latest position. This matches the client's first ring entry for that seq, ensuring 1:1 comparison.
 
-- **Tick messages merge, they do not replace.** If the tick handler replaced entries, sticky fields like `weapon` and `name` would vanish on every tick and reappear on the next snapshot.
-- **Unknown ids are skipped, not appended.** A `tick` entry for a player the client doesn't yet have a snapshot for means the player joined mid-round and the `playerSnapshot` hasn't arrived yet. Skipping is safer than pushing a stub missing the sticky fields.
-- **Unseen survivors are dropped.** If the server's tick doesn't include player X, X was either corpse-reaped, left the lobby, or disconnected. The client drops them from `serverPlayers` immediately.
+### Move queue
 
-The `playerSnapshot` handler is the opposite direction — it's an upsert. If the player already exists, merge in-place; otherwise append. Covers the race where a fresh join gets a tick before its initial snapshot lands (rare, but possible with ordering/coalescing).
+Client moves are enqueued in `player._moveQueue[]` (capped at 6). `gameTick` drains ONE move per tick per player — 1:1 with the client's predict step. This ensures the server integrates the same number of steps as the client predicted.
 
-## Death resolution timing
+Jump is deferred via `_pendingJump` flag — applied at drain time, not receipt time, so it's in sync with the prediction cadence.
 
-Hunger mutations inside the tick loop (combat hits, cowstrike waves, zone damage, firing costs, poisoned food, pond heal) route through `applyHungerDelta(p, delta, attackerId)` in `server/player.js`. If the delta drops `hunger` to ≤0, the player's id goes into a module-level `_pendingDeaths` Set — they are NOT eliminated inline.
+## Adding new features — netcode checklist
 
-At the end of the tick, `server/game.js::gameTick` calls `resolveDeaths()`:
+### New server → client message
 
-```js
-if (resolveDeaths() > 0) checkWinner();
-broadcast({ type: 'tick', ... });
-```
+1. Add the type to `shared/messages.js::S2C`.
+2. Add a handler in `client/message-handlers.js`.
+3. Decide reliability: if it's a one-shot event (kill, explosion, pickup), it goes reliable (default). If it's superseded by the next one, add to `UNRELIABLE_TYPES` in `server/network.js`.
 
-`resolveDeaths()` drains the set, calls `eliminatePlayer(p, 'hunger')` on each victim, and then the tick ships. This means a player who died this tick is `alive: false` in the tick broadcast, not `alive: true` followed by a separate `eliminated` message on the next tick. Fixes the ~33 ms window where a "dead" player could keep firing, get hit again (mis-crediting the kill), or appear alive on other clients.
+### New client → server message
 
-The same `applyHungerDelta` is called from async contexts too — cowstrike waves are scheduled via `scheduleRoundTimer` and fire at 5000/6500/8000 ms after perk activation. Those callbacks run outside `gameTick`, so any death they cause is enqueued and processed on the next tick (max 33 ms drift). This is still correct for gameplay, and the `_pendingDeaths` set is cleared on round reset (`clearPendingDeaths()` in `game.js::startGame`) so stale ids can't leak across rounds.
+1. Add the type to `shared/messages.js::C2S`.
+2. Add a handler in `server/dispatch.js`.
+3. Add a rate limit in `server/transports/ws.js::RATE_LIMITS`.
+4. Do NOT add it to `STATEFUL_INPUT_TYPES` unless it needs seq-based reconciliation (almost certainly doesn't).
 
-## Armor mutation funnel
+### New player field
 
-Same pattern as hunger: `applyArmorDelta(p, delta)` in `server/player.js` is the only sanctioned way to change `p.armor`. It clamps to `[0, maxArmor]` (default 50) and emits `shieldBreak` exactly once per positive→zero transition. Combat hits, cowstrike, and armor pickups all go through it. No inline `p.armor -= ...` writes anywhere in the codebase.
+**Mutable (changes every tick)**: add to `server/player.js::getPlayerTick()`. Client automatically receives it via the tick handler's `Object.assign` merge. If you need it for prediction, sync it from the tick handler onto `S.mePredicted`.
 
-## Round-scoped timers
+**Sticky (changes on events)**: add to `server/player.js::getPlayerSnapshot()`. Call `broadcastPlayerSnapshot(p)` at every mutation site. If you forget, the client stays stale until the next unrelated snapshot event — this is silent and hard to catch.
 
-Cowstrike, delayed visual effects, and anything else that uses `setTimeout` during a round goes through `gameState.scheduleRoundTimer(fn, ms)`. The wrapper tracks the handle in a `_roundTimers` Set and try/catches the callback so one bad timer can't crash the process. `resetRound()` calls `clearRoundTimers()` first, so round-over cleanup zeroes out every pending timer. Without this wrapper, a cowstrike wave scheduled at 9 s could fire during the 10 s restart countdown and poke fresh-spawned players.
+### New movement mechanic
 
-## What is NOT in the netcode
+If it affects `stepPlayerMovement()` (speed, collision, gravity):
+- Implement in `shared/movement.js` so both client and server run the same code.
+- Any input the mechanic needs must be in the `move` message (dx, dy, walking, speedMult, aim).
+- If it needs server-only state (stun, spawn protection), sync that state onto `S.mePredicted` in the tick handler.
 
-- **No client-side prediction.** The client renders whatever the server said was true at the last tick. Movement feels responsive at normal latency (30-80 ms) because there's barely any input-to-visible-motion delay at that rate, but high-latency clients will see input lag equal to their RTT + half a tick. Client-side prediction is a planned future topic.
-- **No interpolation between ticks.** Entities render at whatever position the latest tick placed them. A future addition could interpolate positions across ticks for smoother motion, but currently the renderer just reads `p.x, p.y, p.z` straight from the merged tick state every frame.
-- **No lag compensation on hits.** Hit detection happens in the tick where the `attack` message was processed, against positions at that tick. A high-latency shooter's shots land where they were aiming when the message was received, not where they were aiming when they pressed fire.
-- **No delta compression.** Every tick ships the full mutable shape for every player. There's no "send only fields that changed since last tick" mechanism — the tick payload is already small enough that delta compression would cost more CPU than it saves bandwidth.
-- **No reliable/unreliable split.** Everything goes over the same WebSocket. `tick` is the only type that can drop under backpressure; everything else is TCP-reliable by construction.
+If it's server-only (hunger drain, zone damage, food pickup): implement only on the server. The client learns about it via the tick broadcast.
 
-## Gaps vs Counter-Strike
+### New visual effect for remote players
 
-Counter-Strike (GoldSrc and Source) is the canonical reference for "how to do realtime FPS netcode correctly." Setting aside the obvious differences in transport and wire format (they use UDP with a custom reliability layer, delta-compressed binary snapshots, and a separate command/update channel), the real architectural gaps are these:
-
-### 1. No client-side prediction
-
-CS clients run the full movement and physics code locally. On every input, the client immediately simulates the result and shows you moving — zero-latency response to WASD. When the server's authoritative state arrives, the client reconciles: if the prediction matches (almost always), nothing happens; if it diverged, the client snaps to the server position and replays any inputs the server hasn't acknowledged yet to land where it should.
-
-We send `{dx, dy, walking}` to the server and wait for the next `tick` to learn where we ended up. Input-to-visible-motion latency = `RTT + (tick_interval / 2)`. At 80 ms ping and 30 Hz, that's ~96 ms minimum before you see your own character move. A CS client at the same ping feels instant because the local sim runs ahead.
-
-### 2. No entity interpolation
-
-CS renders remote entities ~100 ms in the past via an interpolation buffer (`cl_interp` in the old cvar parlance). The client maintains a short history of received snapshots; the renderer picks two snapshots that bracket `now - interp_delay` and smoothly lerps between them. This trades a fixed 100 ms of display latency on remote entities for perfectly smooth motion.
-
-We just render remote players at whatever the latest `tick` said. At 30 Hz, that's a ~33 ms hop per update — visually choppy. Adding a small interp buffer (even 50 ms) would make remote motion dramatically smoother without touching any other part of the stack.
-
-### 3. No lag compensation
-
-When a CS player fires, the server rewinds the world to the timestamp the shooter was actually seeing — `server_time - their_ping - their_interp_delay` — runs the hit check against historical entity positions, then rolls forward. The shooter hits what was on their screen when they pulled the trigger, even though the target has moved several units by the time the fire command arrives.
-
-We run hit detection in the tick when the `attack` message is received, against whatever `p.x, p.y, p.z` is right now. High-ping players in cow game have to lead moving targets by their ping; CS players with 150 ms ping still hit stationary targets with perfect accuracy. Fixing this requires both a historical position ring on the server AND a way for the client to send its `cl_interp` preference so the rewind depth is right.
-
-### 4. No input command buffering or reconciliation
-
-CS clients number every input command and send a sliding window of the last N (redundantly, in case of packet loss). The server applies them in order and sends the last-applied command number back with each state update. The client keeps its own ring of predicted states keyed by command number, discards anything the server confirmed, and replays the remainder on top of the new baseline.
-
-We send inputs naked — no sequence numbers, no ack, no replay. One dropped `move` message just means your movement vector doesn't update until the next one arrives. We can get away with this because we're on TCP and messages are never "dropped" in transit, only delayed — but it also means we have no reconciliation story at all, which is the load-bearing piece for client-side prediction to work.
-
-### 5. No historical entity state on the server
-
-Lag compensation requires the server to keep a ring buffer of `(tick → {positions of every entity})` for the last several hundred ms. We keep exactly zero history — the world is always at "now." The ballistics module runs against `gameState.getPlayers()` / `getWalls()` / `getBarricades()` at their current positions. Adding lag comp would mean a per-entity position ring, plus threading "at what historical tick" through every hit-detection path.
-
-### 6. TCP head-of-line blocking
-
-CS rides UDP with its own reliability layer on top. Critical events (fire, hit, death, chat) are marked reliable and retransmitted; per-tick state snapshots are unreliable and superseded by the next one. Packet loss on a state snapshot is invisible.
-
-We ride TCP via WebSocket. One lost packet stalls every subsequent message on that connection until it's retransmitted — head-of-line blocking. On a flaky wifi connection, a single dropped packet freezes the entire game stream for the kernel's retransmit window (typically 100-300 ms on first retry, exponential backoff after). The `DROPPABLE_TYPES` backpressure guard mitigates the memory side of this (we stop queueing `tick` messages to slow clients) but doesn't fix the underlying stall — the socket is still wedged until the lost packet recovers. Moving off TCP would mean running our own reliability layer on top of WebRTC data channels or raw UDP.
-
-### 7. Tick rate and update rate are coupled
-
-CS exposes three independent knobs: `sv_tickrate` (how often the server simulation runs), `cl_cmdrate` (how often the client sends inputs), and `cl_updaterate` (how often the server sends state updates to that specific client). A player with a slow connection can receive 20 updates per second while the server still runs the sim at 64 or 128 Hz; a competitive player on a fast connection can get 128 updates per second for smoother motion.
-
-We run everything at 30 Hz with no knobs. A player on a gigabit connection gets the same 30 updates per second as a player on phone data. A subtle consequence: `cl_updaterate` decoupling is what makes it economical to run a high-tickrate server — most clients don't need 128 updates per second, only the hit-registration sim does.
-
-### 8. No split between "simulation tick" and "snapshot tick"
-
-Related to #7: CS runs its game simulation every server tick (e.g. 64 Hz) but only sends state snapshots at `cl_updaterate` intervals (e.g. 20-64 Hz). Simulation accuracy (hit detection, physics) is decoupled from bandwidth cost. We just broadcast every tick, so bumping the sim to 60 Hz would double the broadcast cost too.
-
-### What we'd need to get there (rough migration)
-
-If you wanted to take this codebase toward CS-style netcode, the steps in dependency order:
-
-1. **Input command sequence numbers.** Every client input gets a monotonically increasing number. Server echoes "last applied command number" in every `tick`. No behavioral change yet — just infrastructure.
-2. **Entity interpolation buffer on the client.** Keep the last ~4 `tick` snapshots, render remote entities from `now - 100 ms` by lerping between bracketing ticks. Smoother remote motion immediately; no server change.
-3. **Client-side prediction for local movement.** Factor the server's movement integrator into a pure function both sides can call. Client runs it on input, stores `(commandNumber, resultingState)` in a ring. On every `tick`, find the ack'd command, snap if divergent, replay the unacked commands. This is the big one — the server's movement code and the client's have to stay bit-identical or rubber-banding goes crazy.
-4. **Historical entity state on the server.** Ring buffer of positions per tick, indexed by tick number. No rewind yet — just the storage.
-5. **Lag compensation.** On every fire event, look up (commandNumber from input) → (tick it was sent) → rewind the entity positions used by ballistics to that tick. Only the hit check is rewound, not the simulation.
-6. **UDP transport.** Last because it touches everything. Either WebRTC data channels (browser-native unreliable delivery) or a node-UDP-in-userspace shim. Reliability layer on top for commands + critical events.
-
-Each step except #6 is independently shippable and provides value on its own. The natural first step is #2 (interp buffer) because it's pure client, no server change, and the smoothness win is immediate.
+If it depends on position (particles at a player's feet, laser dot): use `getInterpolatedEntity(p)` to get the SI-interpolated position, not `p.x/p.y`. The raw tick position is up to 100ms ahead of where the entity visually renders.
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `shared/messages.js` | `S2C` + `C2S` + `MSG` enums, `assertEnumIntegrity()` |
-| `server/index.js` | WebSocket server, rate limiter, heartbeat, C2S dispatch |
-| `server/network.js` | `broadcast()` + `sendTo()`, backpressure drop logic |
-| `server/game.js` | `gameTick` 30 Hz loop, `tick` broadcast, `checkWinner` |
-| `server/player.js` | `getPlayerTick`, `getPlayerSnapshot`, `broadcastPlayerSnapshot`, `applyHungerDelta`, `applyArmorDelta`, `resolveDeaths`, `clearPendingDeaths`, `eliminatePlayer` |
-| `server/game-state.js` | `scheduleRoundTimer`, `clearRoundTimers`, round-scoped collections |
-| `client/network.js` | WebSocket open + dispatch shim |
-| `client/message-handlers.js` | `handlers` table (one function per S2C type), `assertHandlerCoverage()` |
-| `client/input.js` | Keyboard/mouse → C2S message emit |
-| `client/index.js` | Render loop + `setMessageHandler` wiring |
+| `shared/movement.js` | Shared movement integrator — runs identically on client + server |
+| `shared/messages.js` | S2C + C2S + MSG enums, `assertEnumIntegrity()` |
+| `shared/constants.js` | STATEFUL_INPUT_TYPES, weapon stats, game constants |
+| `client/prediction.js` | Local player CSP: ring buffer, predict step, reconcile, render smoother |
+| `client/snapshot.js` | Remote player interpolation via SI library |
+| `client/message-handlers.js` | Handler table (one function per S2C type) |
+| `client/network.js` | Transport selection, reconnect, `send()` with seq injection |
+| `client/transports/ws.js` | WebSocket transport (msgpack binary) |
+| `client/transports/geckos.js` | geckos.io WebRTC transport (plain objects) |
+| `server/game.js` | 30Hz tick loop, SI snapshot creation, inputAck broadcast |
+| `server/dispatch.js` | C2S message routing, move queue, player creation |
+| `server/transport.js` | Transport facade routing to WS/geckos impls |
+| `server/transports/ws.js` | WS impl with rate limiting + heartbeat |
+| `server/transports/geckos.js` | geckos impl with deferred close for reliable flush |
+| `server/network.js` | `broadcast()` + `sendTo()`, reliability routing, backpressure |
+| `server/player.js` | `getPlayerTick`, `getPlayerSnapshot`, death/armor/hunger funnels |

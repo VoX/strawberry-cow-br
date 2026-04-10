@@ -1,9 +1,6 @@
 const { TICK_RATE, MAP_W, MAP_H } = require('./config');
 const { KNIFE_SPEED_MULT, JUMP_VZ } = require('../shared/constants');
 const { SnapshotInterpolation } = require('@geckos.io/snapshot-interpolation');
-// typed-array-buffer-schema encoding disabled for now — player IDs are
-// numbers but the schema expects strings. Revisit after stabilizing SI.
-
 // Server-side SI — creates timestamped snapshots and stores them in a vault
 // for lag-compensated hit detection (time rewind).
 const SI = new SnapshotInterpolation(TICK_RATE);
