@@ -4,7 +4,7 @@ import { cam, ren } from './renderer.js';
 import { initAudio } from './audio.js';
 import { send } from './network.js';
 import { INTERP_DELAY_MS } from './interp.js';
-import { TICK_RATE, BURST_FAMILY, JUMP_VZ, CRAFTING_RECIPES } from '../shared/constants.js';
+import { TICK_RATE, BURST_FAMILY, JUMP_VZ, CRAFTING_RECIPES, BUILDING_PIECES } from '../shared/constants.js';
 
 // Jump prediction: server applies vz=200 + onGround=false on receipt of
 // the jump message ONLY IF player.onGround was true. Mirror that gate
@@ -333,10 +333,19 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyB' && S.state === 'playing') {
     const me = S.me;
     if (me && me.alive && performance.now() >= S.barricadeReadyAt) {
-      _inputDir.set(0, 0, -1).applyQuaternion(cam.quaternion);
-      _inputDir.y = 0;
-      if (_inputDir.length() > 0.01) _inputDir.normalize();
-      send({ type: 'placeBarricade', aimX: _inputDir.x, aimY: _inputDir.z });
+      // Shift+B cycles the active building piece type
+      if (e.shiftKey) {
+        const types = Object.keys(BUILDING_PIECES);
+        const cur = types.indexOf(S.buildPieceType || 'plank');
+        S.buildPieceType = types[(cur + 1) % types.length];
+        S.chatLog.push({ name: '', color: '', text: 'Build: ' + BUILDING_PIECES[S.buildPieceType].label, t: 2, system: true });
+        if (S.chatLog.length > 10) S.chatLog.shift();
+      } else {
+        _inputDir.set(0, 0, -1).applyQuaternion(cam.quaternion);
+        _inputDir.y = 0;
+        if (_inputDir.length() > 0.01) _inputDir.normalize();
+        send({ type: 'placeBarricade', aimX: _inputDir.x, aimY: _inputDir.z, piece: S.buildPieceType || 'plank' });
+      }
     }
   }
   if (S.perkMenuOpen && window._perkChoices) {

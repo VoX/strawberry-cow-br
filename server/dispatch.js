@@ -262,7 +262,7 @@ function dispatchMessage(player, msg) {
     }
   }
   if (msg.type === 'placeBarricade' && player._joined && player.alive) {
-    placeBarricadeForPlayer(player, msg.aimX || 0, msg.aimY || 0);
+    placeBarricadeForPlayer(player, msg.aimX || 0, msg.aimY || 0, msg.piece || 'plank');
   }
   if (msg.type === 'setUpdateRate' && player._joined) {
     const r = Number(msg.rate);

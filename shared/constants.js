@@ -100,6 +100,14 @@ const CRAFTING_RECIPES = {
 
 const TOOL_CUPBOARD_RADIUS = 120; // units — build protection zone
 
+// Building piece types — B key cycles through these. Each has a different
+// size, cost, and visual. Collision uses the existing barricade OBB system.
+const BUILDING_PIECES = {
+  plank:      { label: 'Plank',      w: 52, h: 8,  cost: 25,  hp: 200 },
+  wall:       { label: 'Wall',       w: 80, h: 10, cost: 50,  hp: 300 },
+  foundation: { label: 'Foundation', w: 80, h: 80, cost: 40,  hp: 400 },
+};
+
 const COLORS = ['pink','blue','green','gold','purple','red','orange','cyan'];
 const FOOD_TYPES = [
   {name:'strawberry',hunger:15,pts:10},
@@ -120,7 +128,7 @@ module.exports = {
   SPEED_MULT_MIN, SPEED_MULT_MAX,
   KNIFE_MELEE_RANGE, KNIFE_MELEE_CONE_COS, KNIFE_MELEE_DAMAGE, KNIFE_MELEE_CD_MS,
   RESOURCE_TYPES, RESOURCE_SPAWN_COUNTS, RESOURCE_CAP,
-  CRAFTING_RECIPES, TOOL_CUPBOARD_RADIUS,
+  CRAFTING_RECIPES, TOOL_CUPBOARD_RADIUS, BUILDING_PIECES,
   STATEFUL_INPUT_TYPES, BURST_FAMILY, DUAL_WIELD_FAMILY, MAG_SIZES, EXT_MAG_SIZES,
   COLORS, FOOD_TYPES, WEAPON_TYPES,
 };

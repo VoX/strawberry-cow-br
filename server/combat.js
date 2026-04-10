@@ -5,7 +5,7 @@ const { getTerrainHeight, getGroundHeight, WALL_HEIGHT } = require('./terrain');
 const ballistics = require('./ballistics');
 const weaponFire = require('./weapon-fire');
 const { applyHungerDelta, applyArmorDelta, broadcastPlayerSnapshot } = require('./player');
-const { MAG_SIZES, EXT_MAG_SIZES, DUAL_WIELD_FAMILY, KNIFE_MELEE_RANGE, KNIFE_MELEE_CONE_COS, KNIFE_MELEE_DAMAGE, KNIFE_MELEE_CD_MS, RESOURCE_TYPES, RESOURCE_CAP, TOOL_CUPBOARD_RADIUS } = require('../shared/constants');
+const { MAG_SIZES, EXT_MAG_SIZES, DUAL_WIELD_FAMILY, KNIFE_MELEE_RANGE, KNIFE_MELEE_CONE_COS, KNIFE_MELEE_DAMAGE, KNIFE_MELEE_CD_MS, RESOURCE_TYPES, RESOURCE_CAP, TOOL_CUPBOARD_RADIUS, BUILDING_PIECES } = require('../shared/constants');
 
 
 const BASE_EYE_HEIGHT = 35;
@@ -409,39 +409,38 @@ function handleReload(player) {
   }
 }
 
-function placeBarricadeForPlayer(player, aimX, aimY) {
+function placeBarricadeForPlayer(player, aimX, aimY, pieceType) {
   if (!player || !player.alive) return false;
   const nowMs = Date.now();
   if (player.barricadeReadyAt && nowMs < player.barricadeReadyAt) return false;
+  // Look up piece dimensions + cost from the shared config
+  const piece = BUILDING_PIECES[pieceType] || BUILDING_PIECES.plank;
   let ax = aimX || 0, ay = aimY || 0;
   const alen = Math.hypot(ax, ay);
   if (alen < 0.01) {
     const d = { south: [0,1], north: [0,-1], east: [1,0], west: [-1,0] }[player.dir] || [0,1];
     ax = d[0]; ay = d[1];
   } else { ax /= alen; ay /= alen; }
-  const cx = player.x + ax * 45;
-  const cy = player.y + ay * 45;
+  const cx = player.x + ax * 50;
+  const cy = player.y + ay * 50;
   const angle = Math.atan2(ay, ax);
-  const W = 52, H = 8;
-  // Survival mode: placing a barricade costs 25 wood and is permanent (no
-  // expiry timer). HP is 200 for wood tier. Bots use the legacy free path.
+  const W = piece.w, H = piece.h;
   if (!player.isBot) {
-    if (!player.resources || (player.resources.wood || 0) < 25) return false;
-    // Tool cupboard build protection — can't build near someone else's TC
+    if (!player.resources || (player.resources.wood || 0) < piece.cost) return false;
     for (const tc of gameState.getToolCupboards()) {
       if (tc.ownerId !== player.id && Math.hypot(cx - tc.x, cy - tc.y) < TOOL_CUPBOARD_RADIUS) {
-        return false; // blocked by another player's tool cupboard
+        return false;
       }
     }
-    player.resources.wood -= 25;
+    player.resources.wood -= piece.cost;
   }
   const bid = gameState.nextBarricadeId();
   gameState.addBarricade({
     id: bid, cx, cy, w: W, h: H, angle,
     _cosA: Math.cos(angle), _sinA: Math.sin(angle),
     _terrainH: getTerrainHeight(cx, cy),
-    ownerId: player.id, placedAt: nowMs, hp: player.isBot ? 50 : 200,
-    permanent: !player.isBot,
+    ownerId: player.id, placedAt: nowMs, hp: player.isBot ? 50 : piece.hp,
+    permanent: !player.isBot, pieceType: pieceType || 'plank',
   });
   const cdMs = player.isBot ? gameState.BOT_BARRICADE_COOLDOWN_MS : gameState.BARRICADE_COOLDOWN_MS;
   player.barricadeReadyAt = nowMs + cdMs;
