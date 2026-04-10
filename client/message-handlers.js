@@ -841,6 +841,13 @@ export const handlers = {
     }
   },
 
+  crafted(msg) {
+    S.chatLog.push({ name: '', color: '', text: 'Crafted: ' + msg.recipeId, t: 3, system: true });
+    if (S.chatLog.length > 10) S.chatLog.shift();
+    sfx(800, 0.08, 'sine', 0.06);
+    sfx(1200, 0.08, 'sine', 0.04);
+  },
+
   barricadeHit(msg) {
     const label = '\u{1FAB5} ' + msg.dmg;
     const nc = document.createElement('canvas'); nc.width = 160; nc.height = 48;

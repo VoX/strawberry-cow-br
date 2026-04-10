@@ -77,6 +77,25 @@ const RESOURCE_TYPES = {
 const RESOURCE_SPAWN_COUNTS = { grass: 40, tree: 20, rock: 15, scrap: 8 };
 const RESOURCE_CAP = 500;
 
+// Crafting recipes — keyed by recipe ID. Each recipe lists the resource
+// cost and what it produces. 'give' is either a weapon name (replaces
+// current weapon) or an ammo/heal/item action.
+const CRAFTING_RECIPES = {
+  pistol:       { label: 'Pistol',         cost: { wood: 50,  metal: 30 }, give: { weapon: 'normal', ammo: 15 } },
+  shotgun:      { label: 'Shotgun',        cost: { wood: 80,  metal: 50 }, give: { weapon: 'shotgun', ammo: 6 } },
+  burst:        { label: 'M16A2',          cost: { wood: 60,  metal: 80 }, give: { weapon: 'burst', ammo: 20 } },
+  bolty:        { label: 'L96 Sniper',     cost: { wood: 40,  metal: 120 }, give: { weapon: 'bolty', ammo: 5 } },
+  aug:          { label: 'AUG',            cost: { wood: 80,  metal: 100 }, give: { weapon: 'aug', ammo: 30 } },
+  cowtank:      { label: 'M72 LAW',        cost: { wood: 50,  metal: 150, stone: 30 }, give: { weapon: 'cowtank', ammo: 1 } },
+  ammo_pistol:  { label: 'Pistol Ammo',    cost: { metal: 10 }, give: { ammoFor: 'normal', amount: 15 } },
+  ammo_rifle:   { label: 'Rifle Ammo',     cost: { metal: 10 }, give: { ammoFor: 'burst', amount: 30, also: ['aug'] } },
+  ammo_shotgun: { label: 'Shotgun Shells', cost: { metal: 5, wood: 5 }, give: { ammoFor: 'shotgun', amount: 8 } },
+  ammo_sniper:  { label: 'Sniper Rounds',  cost: { metal: 15 }, give: { ammoFor: 'bolty', amount: 5 } },
+  ammo_rocket:  { label: 'Rocket',         cost: { metal: 30, stone: 10 }, give: { ammoFor: 'cowtank', amount: 1 } },
+  hay_bale:     { label: 'Hay Bale',       cost: { grass: 20 }, give: { heal: 30 } },
+  smoothie:     { label: 'Grass Smoothie', cost: { grass: 40, wood: 10 }, give: { heal: 60 } },
+};
+
 const COLORS = ['pink','blue','green','gold','purple','red','orange','cyan'];
 const FOOD_TYPES = [
   {name:'strawberry',hunger:15,pts:10},
@@ -97,6 +116,7 @@ module.exports = {
   SPEED_MULT_MIN, SPEED_MULT_MAX,
   KNIFE_MELEE_RANGE, KNIFE_MELEE_CONE_COS, KNIFE_MELEE_DAMAGE, KNIFE_MELEE_CD_MS,
   RESOURCE_TYPES, RESOURCE_SPAWN_COUNTS, RESOURCE_CAP,
+  CRAFTING_RECIPES,
   STATEFUL_INPUT_TYPES, BURST_FAMILY, DUAL_WIELD_FAMILY, MAG_SIZES, EXT_MAG_SIZES,
   COLORS, FOOD_TYPES, WEAPON_TYPES,
 };

@@ -4,7 +4,7 @@ import { cam, ren } from './renderer.js';
 import { initAudio } from './audio.js';
 import { send } from './network.js';
 import { INTERP_DELAY_MS } from './interp.js';
-import { TICK_RATE, BURST_FAMILY, JUMP_VZ } from '../shared/constants.js';
+import { TICK_RATE, BURST_FAMILY, JUMP_VZ, CRAFTING_RECIPES } from '../shared/constants.js';
 
 // Jump prediction: server applies vz=200 + onGround=false on receipt of
 // the jump message ONLY IF player.onGround was true. Mirror that gate
@@ -30,6 +30,39 @@ export function setVmGroupRef(getter) { vmGroupRef = getter; }
 
 // Shared Vector3 temp for input handlers — avoids allocating per action
 const _inputDir = new THREE.Vector3();
+
+// --- Crafting menu ---
+let _craftMenuOpen = false;
+function toggleCraftMenu() {
+  _craftMenuOpen = !_craftMenuOpen;
+  const el = document.getElementById('craftMenu');
+  if (!el) return;
+  el.style.display = _craftMenuOpen ? 'block' : 'none';
+  if (_craftMenuOpen) rebuildCraftMenu();
+}
+function rebuildCraftMenu() {
+  const list = document.getElementById('craftList');
+  if (!list) return;
+  const me = S.me;
+  const res = me && me.resources ? me.resources : { grass: 0, wood: 0, stone: 0, metal: 0 };
+  let html = '';
+  for (const [id, recipe] of Object.entries(CRAFTING_RECIPES)) {
+    const canAfford = Object.entries(recipe.cost).every(([r, amt]) => (res[r] || 0) >= amt);
+    const costStr = Object.entries(recipe.cost).map(([r, amt]) => `${r}: ${amt}`).join(', ');
+    const opacity = canAfford ? '1' : '0.4';
+    const cursor = canAfford ? 'pointer' : 'default';
+    html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;margin-bottom:4px;background:rgba(255,255,255,0.05);border-radius:6px;opacity:${opacity};cursor:${cursor}" `
+      + (canAfford ? `onclick="window._doCraft('${id}')"` : '')
+      + `><span style="color:#eee;font-size:14px">${recipe.label}</span>`
+      + `<span style="color:#aaa;font-size:12px">${costStr}</span></div>`;
+  }
+  list.innerHTML = html;
+}
+window._doCraft = function(id) {
+  send({ type: 'craft', recipeId: id });
+  // Brief delay then rebuild to reflect updated resources
+  setTimeout(rebuildCraftMenu, 100);
+};
 
 export function doAttack() {
   // Knife routes to the melee path — a separate `meleeAttack` msg that
@@ -289,6 +322,10 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyC' && S.state === 'playing') {
     const meC = S.me;
     if (meC && meC.alive) S.crouching = !S.crouching;
+  }
+  if (e.code === 'Tab' && S.state === 'playing') {
+    e.preventDefault();
+    toggleCraftMenu();
   }
   if (e.code === 'KeyB' && S.state === 'playing') {
     const me = S.me;

@@ -56,6 +56,7 @@ body{background:#1a0a2e;overflow:hidden;font-family:'Segoe UI',sans-serif}
 <div><kbd>Q</kbd> drop weapon</div>
 <div><kbd>X</kbd> fire mode</div>
 <div><kbd>V</kbd> moo</div>
+<div><kbd>Tab</kbd> crafting</div>
 <div><kbd>T</kbd> chat</div>
 <div><kbd>P</kbd> debug overlay</div>
 <div><kbd>O</kbd> fullscreen</div>
@@ -96,6 +97,10 @@ body{background:#1a0a2e;overflow:hidden;font-family:'Segoe UI',sans-serif}
 <div id="playerCount"></div>
 <div id="resourceBar" style="position:absolute;top:12px;left:12px;font-size:13px;color:#ddd;font-family:monospace;background:rgba(0,0,0,0.5);padding:6px 10px;border-radius:4px;z-index:20;display:none"></div>
 <canvas id="minimap" width="120" height="90"></canvas>
+<div id="craftMenu" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.85);border:2px solid #cc88ff;border-radius:12px;padding:16px 20px;z-index:50;max-height:80vh;overflow-y:auto;min-width:320px">
+<h3 style="color:#cc88ff;margin:0 0 12px;font-size:16px;text-align:center">CRAFTING [C]</h3>
+<div id="craftList"></div>
+</div>
 </div>
 <div id="lockMsg" style="display:none!important;background:none!important;padding:0!important"></div>
 <canvas id="touchDpad" width="130" height="130" style="position:fixed;bottom:10px;left:10px;z-index:60;display:none;opacity:0.5;touch-action:none"></canvas>

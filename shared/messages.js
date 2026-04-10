@@ -62,6 +62,7 @@ const S2C = Object.freeze({
   resourceNodeSpawn: 'resourceNodeSpawn',
   resourceNodeDepleted: 'resourceNodeDepleted',
   resourceHit: 'resourceHit',
+  crafted: 'crafted',
 });
 
 // --- client -> server ------------------------------------------------------
@@ -87,6 +88,7 @@ const C2S = Object.freeze({
   setUpdateRate: 'setUpdateRate',
   moo: 'moo',
   meleeAttack: 'meleeAttack',
+  craft: 'craft',
 });
 
 const MSG = Object.freeze({ ...S2C, ...C2S });

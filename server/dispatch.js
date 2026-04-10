@@ -8,7 +8,7 @@
 // here is a verbatim move from the old inline ws.on('message') handler.
 
 const { MAP_W, MAP_H } = require('./config');
-const { STATEFUL_INPUT_TYPES, JUMP_VZ, SPEED_MULT_MIN, SPEED_MULT_MAX } = require('../shared/constants');
+const { STATEFUL_INPUT_TYPES, JUMP_VZ, SPEED_MULT_MIN, SPEED_MULT_MAX, CRAFTING_RECIPES, MAG_SIZES } = require('../shared/constants');
 const lobbyState = require('./lobby-state');
 const gameState = require('./game-state');
 const { broadcast, sendTo } = require('./network');
@@ -105,7 +105,42 @@ function dispatchMessage(player, msg) {
   if (msg.type === 'dropWeapon') {
     handleDropWeapon(player);
   }
-  // Lobby-specific handlers (ready/kick) removed — survival mode has no lobby.
+  // --- Crafting ---
+  if (msg.type === 'craft' && player._joined && player.alive && msg.recipeId) {
+    const recipe = CRAFTING_RECIPES[msg.recipeId];
+    if (!recipe) return;
+    if (!player.resources) return;
+    // Check resource costs
+    for (const [res, amount] of Object.entries(recipe.cost)) {
+      if ((player.resources[res] || 0) < amount) return;
+    }
+    // Deduct costs
+    for (const [res, amount] of Object.entries(recipe.cost)) {
+      player.resources[res] -= amount;
+    }
+    const give = recipe.give;
+    if (give.weapon) {
+      // Weapon craft: replace current weapon
+      cancelReload(player);
+      player.weapon = give.weapon;
+      player.ammo = give.ammo || (MAG_SIZES[give.weapon] || 15);
+      player.dualWield = false;
+      broadcastPlayerSnapshot(player);
+    } else if (give.ammoFor) {
+      // Ammo craft: add ammo if holding the right weapon
+      const matching = give.also
+        ? [give.ammoFor, ...give.also]
+        : [give.ammoFor];
+      if (matching.includes(player.weapon)) {
+        player.ammo = (player.ammo || 0) + give.amount;
+      }
+      // If not holding the matching weapon, ammo is still consumed (no refund)
+    } else if (give.heal) {
+      const { applyHungerDelta } = require('./player');
+      applyHungerDelta(player, give.heal);
+    }
+    sendTo(player.ws, { type: 'crafted', recipeId: msg.recipeId });
+  }
   if (msg.type === 'move' && player._joined && player.alive) {
     // Enqueue the move for the next tick's drain instead of overwriting
     // dx/dy directly. Each queue entry carries its OWN seq + input —
