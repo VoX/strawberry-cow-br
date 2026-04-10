@@ -12,11 +12,6 @@
       "x": 1039.950094,
       "y": 1000,
       "z": 35
-    },
-    {
-      "name": "TestPlayer",
-      "playerId": 100,
-      "type": "weaponDrop"
     }
   ],
   "mutations": {

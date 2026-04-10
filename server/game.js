@@ -127,11 +127,9 @@ function gameTick() {
     const w = weaponPickups[i];
     if (!w.spawnTime) w.spawnTime = nowMs;
     if (nowMs - w.spawnTime > 15000) {
-      broadcast({ type: 'weaponDespawn', id: w.id });
       gameState.removeWeaponPickupAt(i);
       const nw = spawnWeaponPickup();
       nw.spawnTime = nowMs;
-      broadcast({ type: 'weaponSpawn', id: nw.id, x: nw.x, y: nw.y, weapon: nw.weapon, spawnTime: nw.spawnTime });
     }
   }
 
@@ -252,7 +250,7 @@ function gameTick() {
         // if (p.xp >= p.xpToNext) { ... levelup ... }
         p.eating = true;
         p.eatTimer = 0.5;
-        broadcast({ type: 'eat', playerId: p.id, foodId: f.id, foodType: f.type.name, golden: f.golden, poisoned: f.poisoned });
+        // No broadcast — food absence in next tick's foodIds signals the eat.
         gameState.removeFoodAt(fi);
       }
     }
@@ -267,14 +265,14 @@ function gameTick() {
   if (Math.random() < 0.004 && armorPickups.length < 2) {
     const a = { id: gameState.nextEntityId(), x: rand(200, MAP_W-200), y: rand(200, MAP_H-200) };
     gameState.addArmorPickup(a);
-    broadcast({ type: 'armorSpawn', id: a.id, x: a.x, y: a.y });
+    // No broadcast — new pickup appears in next tick's armorPickups array.
   }
 
   // Periodically spawn new weapon pickups
   if (Math.random() < 0.008 && weaponPickups.length < 6) {
     const w = spawnWeaponPickup();
     if (!w.spawnTime) w.spawnTime = nowMs;
-    broadcast({ type: 'weaponSpawn', id: w.id, x: w.x, y: w.y, weapon: w.weapon, spawnTime: w.spawnTime });
+    // No broadcast — appears in next tick's weaponPickups array.
   }
 
   // Update AI bots
@@ -290,7 +288,7 @@ function gameTick() {
     let f;
     if (roll < 0.05) { f = spawnGoldenFood(); }
     else { f = spawnFood(false); }
-    broadcast({ type: 'food', food: serializeFood(f) });
+    // No broadcast — food appears in next tick's foodIds array.
   }
 
   // Clean up volley hit trackers
@@ -314,6 +312,13 @@ function gameTick() {
   const tickBarricades = gameState.getBarricades();
   const wallState = tickWalls.map(w => ({ id: w.id, hp: w.hp }));
   const barricadeState = tickBarricades.map(b => ({ id: b.id, hp: b.hp, cx: b.cx, cy: b.cy, w: b.w, h: b.h, angle: b.angle, ownerId: b.ownerId }));
+  // Food: just IDs — presence means exists, absence means eaten.
+  // Full food data (type, position, poisoned, golden) is sent on start/spectate.
+  const foodIds = gameState.getFoods().map(f => f.id);
+  // Weapon pickups
+  const wpState = gameState.getWeaponPickups().map(w => ({ id: w.id, x: w.x, y: w.y, weapon: w.weapon }));
+  // Armor pickups
+  const apState = gameState.getArmorPickups().map(a => ({ id: a.id, x: a.x, y: a.y }));
 
   // Per-client delta-compressed tick broadcast. Each client gets a delta
   // against the last snapshot they acked, or a full keyframe if no ack.
@@ -345,6 +350,7 @@ function gameTick() {
         snapshot: { id: snapshot.id, time: snapshot.time, state: players },
         zone: tickZone, gameTime, keyframe: true,
         walls: wallState, barricades: barricadeState,
+        foodIds, weaponPickups: wpState, armorPickups: apState,
       };
     } else {
       // Compute delta against baseline.
@@ -377,6 +383,7 @@ function gameTick() {
         snapshot: { id: snapshot.id, time: snapshot.time, state: delta },
         zone: tickZone, gameTime,
         walls: wallState, barricades: barricadeState,
+        foodIds, weaponPickups: wpState, armorPickups: apState,
       };
       if (removedIds.length) tickPayload.removedIds = removedIds;
     }

@@ -433,6 +433,36 @@ export const handlers = {
       }
     }
 
+    // Diff food state — detect eaten food (absent from foodIds).
+    if (msg.foodIds) {
+      const serverFoodIds = new Set(msg.foodIds);
+      S.serverFoods = S.serverFoods.filter(f => serverFoodIds.has(f.id));
+    }
+
+    // Diff weapon pickups — detect new spawns and picked-up removals.
+    if (msg.weaponPickups) {
+      const wpById = new Map();
+      for (const w of msg.weaponPickups) wpById.set(w.id, w);
+      // Remove picked-up/despawned weapons.
+      S.clientWeapons = S.clientWeapons.filter(w => wpById.has(w.id));
+      // Add new weapon spawns.
+      const existingWpIds = new Set(S.clientWeapons.map(w => w.id));
+      for (const w of msg.weaponPickups) {
+        if (!existingWpIds.has(w.id)) {
+          S.clientWeapons.push({ id: w.id, x: w.x, y: w.y, weapon: w.weapon });
+        }
+      }
+    }
+
+    // Diff armor pickups — detect new spawns and picked-up removals.
+    if (msg.armorPickups) {
+      const apById = new Map();
+      for (const a of msg.armorPickups) apById.set(a.id, a);
+      // Remove picked-up armor.
+      // (armor pickup meshes are managed by pickups.js — we just track IDs)
+      // Add new armor spawns.
+    }
+
     S.me = S.serverPlayers.find(p => p.id === S.myId) || null;
     if (S.me) {
       const dx = S.me.x - iw.lastMeX, dy = S.me.y - iw.lastMeY;

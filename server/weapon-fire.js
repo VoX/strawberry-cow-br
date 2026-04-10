@@ -407,7 +407,7 @@ function resetAfterCowtank(shooter) {
   shooter.dualWield = false;
   shooter.ammo = Math.ceil(15 * (shooter.extMagMult || 1));
   shooter.reloading = 0;
-  broadcast({ type: 'weaponDrop', playerId: shooter.id, name: shooter.name });
+  // No broadcast — weapon change rides next tick's player state.
 }
 
 module.exports = { fireWeapon, resolvePlayerStats, extractShooterModifiers, BOT_STATS, resetAfterCowtank };

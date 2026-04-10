@@ -153,7 +153,7 @@ function eliminatePlayer(p, reason) {
   if (p.weapon && p.weapon !== 'normal') {
     const drop = { id: gameState.nextEntityId(), x: p.x + 15, y: p.y, weapon: p.weapon };
     gameState.addWeaponPickup(drop);
-    broadcast({ type: 'weaponSpawn', id: drop.id, x: drop.x, y: drop.y, weapon: drop.weapon });
+    // No broadcast — new pickup appears in next tick's weaponPickups array.
     p.weapon = 'normal'; p.dualWield = false;
   }
   // Event flags — client detects alive→false + these fields in the next tick.
