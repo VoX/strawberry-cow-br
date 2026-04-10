@@ -144,8 +144,8 @@ function updateProjectiles(dt) {
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const pr = projectiles[i];
     // Advance the "age in ticks" counter before anything else so the
-    // rewind lookup computes (fireDisplayTick + ticksAlive) for the
-    // snapshot that matches this frame of the projectile's flight.
+    // rewind lookup computes (fireServerTime + ticksAlive * tickDuration)
+    // for the snapshot that matches this frame of the projectile's flight.
     pr.ticksAlive = (pr.ticksAlive || 0) + 1;
     // Step 1: integrate motion + gravity, capture prev position
     const { prevX, prevY, prevZ } = ballistics.integrateProjectile(pr, dt);

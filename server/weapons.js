@@ -41,9 +41,6 @@ function handleWeaponPickups(dt) {
         }
         combat.cancelReload(p);
         broadcast({ type: 'weaponPickup', playerId: p.id, name: p.name, weapon: p.weapon, dualWield: !!p.dualWield, pickupId: w.id });
-        // Sticky fields changed — ship a snapshot so clients update
-        // viewmodel + HUD next frame instead of waiting for a tick.
-
         gameState.removeWeaponPickupAt(i);
       }
     }

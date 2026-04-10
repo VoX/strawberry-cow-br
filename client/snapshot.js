@@ -26,30 +26,34 @@ export function getServerTime() {
 // Clear vault (on round restart, tab un-hide, etc.)
 export function clearSnapshots() {
   SI.vault.clear();
-  _interpCache = null;
+  _interpMap = null;
 }
 
 // Cached interpolation result — computed once per frame, read by all entities.
-let _interpCache = null;
+// _interpMap is an id→entity index built from the SI result so per-entity
+// lookups are O(1) instead of O(n).
+let _interpMap = null;
 let _interpCacheFrame = -1;
 
 // Update the interpolation cache. Call once per frame before reading.
 export function updateInterpolation(frameId) {
   if (frameId === _interpCacheFrame) return;
   _interpCacheFrame = frameId;
-  _interpCache = SI.calcInterpolation('x y z aimAngle(rad)');
+  const result = SI.calcInterpolation('x y z aimAngle(rad)');
+  if (result && result.state) {
+    _interpMap = new Map();
+    for (const e of result.state) _interpMap.set(e.id, e);
+  } else {
+    _interpMap = null;
+  }
 }
 
 // Get interpolated position for a specific entity. Returns {x, y, z, aim}
 // or falls back to the entity's raw position if SI doesn't have enough data.
 export function getInterpolatedEntity(p) {
-  if (_interpCache && _interpCache.state) {
-    for (let i = 0; i < _interpCache.state.length; i++) {
-      const e = _interpCache.state[i];
-      if (e.id === p.id) {
-        return { x: e.x, y: e.y, z: e.z || 0, aim: e.aimAngle || 0 };
-      }
-    }
+  if (_interpMap) {
+    const e = _interpMap.get(p.id);
+    if (e) return { x: e.x, y: e.y, z: e.z || 0, aim: e.aimAngle || 0 };
   }
   return { x: p.x, y: p.y, z: p.z || 0, aim: p.aimAngle || 0 };
 }

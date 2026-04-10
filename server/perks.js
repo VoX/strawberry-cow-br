@@ -61,7 +61,6 @@ function handlePerk(player, id) {
     });
     return;
   }
-  // All non-cowstrike perks mutated sticky fields (sizeMult, recoilMult,
   // Sticky fields now ride every tick — no separate snapshot needed.
 }
 

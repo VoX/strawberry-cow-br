@@ -251,16 +251,9 @@ export const handlers = {
     clearBulletHoles();
   },
 
-  // 30 Hz broadcast of mutable player fields only. Sticky fields
-  // (name/color/weapon/perks/xpToNext/sizeMult/recoilMult/extMagMult) arrive
-  // via 'start'/'spectate' (wholesale replace) or 'playerSnapshot' (per-player
-  // upsert). This handler merges tick fields into the existing serverPlayers
-  // array in-place — no wholesale replace, so sticky fields survive.
-  //
-  // Race: if a tick arrives for a player we haven't seen a snapshot for yet
-  // (rare — a join mid-round would hit 'spectate' first, but a late player
-  // join could race), we skip that entry. The next snapshot or spectate sync
-  // will fill it in.
+  // 30 Hz tick broadcast with full player state (mutable + sticky fields).
+  // Merges into serverPlayers in-place. Position rendering for remote players
+  // comes from SI interpolation; this merge keeps HUD/kill-feed data current.
   tick(msg) {
     if (typeof msg.tickNum === 'number') {
       // Net stats: detect tick-number gaps + per-arrival jitter (sliding

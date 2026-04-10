@@ -134,7 +134,7 @@ function mutationDiff(before, after) {
 // Drop fields that are irrelevant to behaviour snapshots (timers, ws refs).
 // `life` is a TTL countdown, not a per-fire behaviour — ignored so TTL tuning
 // doesn't force a snapshot regeneration.
-const IGNORED_PROJ_FIELDS = new Set(['_firstTick', 'life', 'fireDisplayTick', 'ticksAlive']);
+const IGNORED_PROJ_FIELDS = new Set(['_firstTick', 'life', 'fireServerTime', 'ticksAlive']);
 function cleanProjectile(p) {
   const out = {};
   for (const k of Object.keys(p).sort()) {

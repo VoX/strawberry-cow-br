@@ -307,7 +307,7 @@ function gameTick() {
   // Broadcast tick as an SI snapshot. The snapshot wraps the mutable-per-tick
   // player fields in a timestamped envelope that the client's SI instance
   // uses for interpolation (remote players) and reconciliation (local player).
-  // Sticky fields (name/color/weapon/perks) still travel on 'playerSnapshot'.
+  // Sticky fields (name/color/weapon/perks) are included in every tick.
   const players = getPlayerTicks();
   const snapshot = SI.snapshot.create(players);
   SI.vault.add(snapshot); // store for lag-compensated hit detection

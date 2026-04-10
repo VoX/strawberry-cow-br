@@ -10,10 +10,6 @@ function assignColor() {
   return COLORS[Math.random() * COLORS.length | 0];
 }
 
-// Full player shape — sticky (name/color/weapon/perks) + mutable (pos/hunger/ammo).
-// Used by 'start' / 'spectate' / first-snapshot paths where the client needs
-// everything at once. The 30Hz broadcast is now split into getPlayerTick
-// (mutable only) + getPlayerSnapshot (full shape), emitted on events.
 // Full player state for start/spectate sync. Uses the same getPlayerTick()
 // that the 30Hz broadcast uses — no separate snapshot shape needed.
 function getPlayerStates() {
@@ -83,9 +79,6 @@ function applyArmorDelta(p, delta) {
   }
 }
 
-// Mutable-per-tick fields only. Everything a client needs to interpolate
-// position/aim/hunger/cooldowns between ticks, minus the sticky stuff that
-// only changes on events and ships in playerSnapshot.
 // Full player state per tick — mutable + sticky fields combined.
 // Previously sticky fields (name/color/weapon/perks) were sent via a
 // separate playerSnapshot message on event. Now everything rides the
