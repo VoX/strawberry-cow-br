@@ -324,7 +324,7 @@ function gameTick() {
   const tickPayload = {
     type: 'tick',
     tickNum: gameState.getTickNum(),
-    players: getPlayerTickDeltas(),
+    players: getPlayerTicks(),  // delta compression disabled pending investigation
     zone: gameState.getZone(),
     gameTime: Math.floor(gameState.getGameTime()),
   };
