@@ -527,7 +527,8 @@ export const handlers = {
       else if (myWep === 'shotgun') sfxShotgun(0.1);
       else if (BURST_FAMILY.has(myWep) || msg.burst !== undefined) sfxLR(0.1);
       else sfxShoot();
-      // Apply recoil
+      // Apply recoil — skip extra shotgun pellets (only first pellet kicks)
+      if (msg.shotgun === false) { } else {
       const wep = myWep;
       const recoilPatterns = {
         burst: [ // LR-300: snake pattern upward
@@ -642,6 +643,7 @@ export const handlers = {
         S.pitch = Math.max(-1.2, Math.min(1.2, S.pitch));
         S.recoilIndex++;
       }
+      } // end shotgun-pellet recoil guard
     }
   },
 

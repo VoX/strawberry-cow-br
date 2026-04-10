@@ -132,15 +132,8 @@ function gameTick() {
     }
   }
 
-  // Shrinking zone after 60 seconds
+  // Zone is static — no shrinking
   const zone = gameState.getZone();
-  if (gameState.getGameTime() > 60) {
-    const shrinkRate = 15 * dt;
-    zone.x += shrinkRate / 2;
-    zone.y += shrinkRate / 2;
-    zone.w = Math.max(400, zone.w - shrinkRate);
-    zone.h = Math.max(300, zone.h - shrinkRate);
-  }
 
   const walls = gameState.getWalls();
   const mudPatches = gameState.getMudPatches();
@@ -218,10 +211,7 @@ function gameTick() {
       }
     }
 
-    // Zone damage
-    if (p.x <= zone.x + 5 || p.x >= zone.x + zone.w - 5 || p.y <= zone.y + 5 || p.y >= zone.y + zone.h - 5) {
-      applyHungerDelta(p, -8 * dt);
-    }
+    // Zone damage disabled — no shrinking zone
 
     // Hunger drain (skip for bots when free will is off)
     if (!(p.isBot && !gameState.isBotsFreeWill())) {

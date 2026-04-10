@@ -141,6 +141,18 @@ export function updateProjectiles(dt) {
     }
     const mesh = S.projMeshes[p.id];
     mesh.position.set(p.x, p.y3d, p.y);
+    // Debug: wireframe sphere showing projectile collider size
+    if (S.debugMode) {
+      if (!mesh.userData._dbgWire) {
+        const wGeo = new THREE.SphereGeometry(5, 6, 4);
+        const wMat = new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: true });
+        mesh.userData._dbgWire = new THREE.Mesh(wGeo, wMat);
+        mesh.add(mesh.userData._dbgWire);
+      }
+      mesh.userData._dbgWire.visible = true;
+    } else if (mesh.userData._dbgWire) {
+      mesh.userData._dbgWire.visible = false;
+    }
     // Aim the bullet along its velocity vector (world: x=server x, y=y3d, z=server y)
     const vWorldZ = p.vy; // server y-velocity maps to world z
     const aheadX = p.x + p.vx * 0.05;

@@ -19,10 +19,10 @@ const { pushOutOfWalls } = require('../shared/collision');
 
 // Shared constants — kept here so the file is self-contained. Exposed via module
 // exports so combat.js / bots.js can reuse the same values instead of hardcoding them.
-const PROJECTILE_RADIUS = 10;   // AABB inflate amount for wall collisions
+const PROJECTILE_RADIUS = 5;    // AABB inflate amount for wall collisions (halved)
 const WALL_MIN_SIZE = 20;       // walls thinner than this still collide at 20 units wide
-const PLAYER_BODY_RADIUS = 14;  // capsule body radius (was 18, -22%)
-const PLAYER_HEAD_RADIUS = 10;  // capsule head radius (was 12, -17%)
+const PLAYER_BODY_RADIUS = 14;  // capsule body radius
+const PLAYER_HEAD_RADIUS = 10;  // capsule head radius
 const PLAYER_HEAD_SPAN = 20;    // head extends HEAD_SPAN above the head base
 // Shield bubble — egg-shaped ellipsoid mirroring the visual in
 // client/entities.js (sphere r=24 scaled (0.95, 1.55, 0.95) with the

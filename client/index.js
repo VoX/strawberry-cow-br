@@ -118,6 +118,11 @@ function loop(ts) {
     setCurrentInput(curMx, curMz, curWalking, curAim);
     if (!S.mePredicted) initPrediction();
     predictStep(dt);
+    // Repeat jump while space is held — re-trigger when landing
+    if (S._spaceHeld && S.mePredicted && S.mePredicted.onGround) {
+      send({ type: 'jump' });
+      S.mePredicted.vz = 230; S.mePredicted.onGround = false;
+    }
   } else {
     // Drop any stale prediction state so the next spawn re-initializes.
     S.mePredicted = null;
@@ -155,7 +160,7 @@ function loop(ts) {
 
   buildMap();
   buildTowerIfNeeded();
-  updateZone();
+  // updateZone(); // Zone walls disabled
   updateViewmodel();
 
   // (L96 laser dot is handled below near the end of the render loop)
@@ -269,7 +274,7 @@ function loop(ts) {
     }
     S._laserDot.position.set(dotX, dotY + 0.5, dotZ);
     // Further = smaller so it looks like a consistent dot on the surface
-    const s = Math.max(0.4, 1.45 - hitDist / 1500);
+    const s = Math.max(0.34, 1.23 - hitDist / 1500);
     S._laserDot.scale.set(s, s, s);
     S._laserDot.visible = true;
   } else if (S._laserDot) {

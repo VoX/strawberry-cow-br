@@ -291,7 +291,12 @@ export function reconcilePrediction(ackedState) {
   const dx = acked.state.x - serverX;
   const dy = acked.state.y - serverY;
   const dz = (acked.state.z || 0) - (serverZ || 0);
-  const drift = Math.hypot(dx, dy, dz);
+  // Airborne players get a wider Z tolerance — jump timing mismatch
+  // between client prediction and server queue drain causes 7+ unit
+  // Z drift per tick which always exceeds the 1.0 epsilon. Only
+  // include Z in drift if the player is on the ground.
+  const useZ = serverOnGround ? dz : 0;
+  const drift = Math.hypot(dx, dy, useZ);
   // Net stats — record every reconcile so the overlay can split avg
   // drift from snap count.
   const ns = S.netStats;

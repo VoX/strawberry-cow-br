@@ -38,9 +38,9 @@ function _buildArmorMesh(a) {
   // Bottle neck
   const neck = new THREE.Mesh(new THREE.CylinderGeometry(2, 3, 3, 8), glassMat);
   neck.position.y = 6; g.add(neck);
-  // Cork stopper
+  // Cork stopper — sits on top of the neck
   const cork = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 2, 6), corkMat);
-  cork.position.y = 8.5; g.add(cork);
+  cork.position.y = 7; g.add(cork);
   // Glow aura
   const glow = new THREE.Mesh(new THREE.SphereGeometry(10, 8, 8), new THREE.MeshBasicMaterial({ color: 0x5588ff, transparent: true, opacity: 0.15 }));
   g.add(glow);

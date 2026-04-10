@@ -337,7 +337,7 @@ addEventListener('keydown', e => {
     if (e.code === 'ArrowLeft' || e.code === 'KeyA') { cycleSpectate(-1); return; }
   }
   if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && S.state === 'playing') doDash();
-  if (e.code === 'Space') { e.preventDefault(); send({ type: 'jump' }); predictJump(); }
+  if (e.code === 'Space') { e.preventDefault(); S._spaceHeld = true; send({ type: 'jump' }); predictJump(); }
   if (e.code === 'KeyQ' && S.state === 'playing') send({ type: 'dropWeapon' });
   if (e.code === 'KeyV' && !e.repeat && S.state === 'playing' && S.me && S.me.alive) send({ type: 'moo' });
   // F toggles between the held primary and the knife. Number keys are
@@ -405,4 +405,7 @@ addEventListener('keydown', e => {
     if (e.code === 'Digit3' && window._perkChoices[2]) window.pickPerk(window._perkChoices[2].id);
   }
 });
-addEventListener('keyup', e => { S.keys[e.code] = false; });
+addEventListener('keyup', e => {
+  S.keys[e.code] = false;
+  if (e.code === 'Space') S._spaceHeld = false;
+});

@@ -43,7 +43,7 @@ const PLAYER_STATS_BASE = {
   shotgun: {
     hungerGate: [3, 10], hungerCost: [3, 9],
     cooldown: 0.9, cooldownDualMult: 0.55 / 0.9, // dual benelli halves cooldown; matches original 0.55
-    dmg: 8, speed: 1380, spreadBase: 0.157, pellets: 5, spawnOffset: 40,
+    dmg: 4, speed: 1380, spreadBase: 0.157, pellets: 10, spawnOffset: 40,
     volleyed: true, broadcastTag: 'shotgun', vzSpreadBase: 0.2,
   },
   bolty: {
@@ -112,8 +112,8 @@ const BOT_STATS = {
     hungerGate: 4, hungerCost: 5, cooldown: 0.8, dmg: 14, speed: 3643, spreadBase: 0, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
     auto: { hungerCost: 1, cooldown: 0.1, dmg: 14, speed: 3312, spreadBase: 0.035, pellets: 1 },
   },
-  shotgun: { hungerGate: 7, hungerCost: 7, cooldown: 1.0, dmg: 8, speed: 1380, spreadBase: 0.2, pellets: 5, spawnOffset: 40, volleyed: true, broadcastTag: 'shotgun', vzSpreadBase: 0.2 },
-  bolty:   { hungerGate: 12, hungerCost: 8, cooldown: 2.5, dmg: 50, speed: 16800, spreadBase: 0, pellets: 1, spawnOffset: 40, wallPiercing: true, broadcastTag: 'bolty' },
+  shotgun: { hungerGate: 7, hungerCost: 7, cooldown: 1.0, dmg: 4, speed: 1380, spreadBase: 0.2, pellets: 10, spawnOffset: 40, volleyed: true, broadcastTag: 'shotgun', vzSpreadBase: 0.2 },
+  bolty:   { hungerGate: 12, hungerCost: 8, cooldown: 2.5, dmg: 50, speed: 16800, spreadBase: 0, pellets: 1, spawnOffset: 40, broadcastTag: 'bolty' },
   cowtank: { hungerGate: 6, hungerCost: 5, cooldown: 1.0, dmg: 38, speed: 2070, spreadBase: 0, pellets: 1, spawnOffset: 40, explosive: true, blastRadius: 180, broadcastTag: 'cowtank' },
   thompson: { hungerGate: 4, hungerCost: 3, cooldown: 0.13, dmg: 8, speed: 1311, spreadBase: 0.0506, pellets: 1, spawnOffset: 40 },
   akm: {
