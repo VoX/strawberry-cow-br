@@ -870,8 +870,7 @@ export const handlers = {
   lootBagPickup(msg) {
     removeLootBag(msg.id);
     if (msg.playerId === S.myId) {
-      S.chatLog.push({ name: '', color: '', text: 'Picked up loot bag', t: 3, system: true });
-      if (S.chatLog.length > 10) S.chatLog.shift();
+      addKillFeed('Picked up loot bag', 3);
       sfx(600, 0.1, 'sine', 0.08);
     }
   },
@@ -881,14 +880,12 @@ export const handlers = {
   },
 
   wallUpgraded(msg) {
-    S.chatLog.push({ name: '', color: '', text: 'Wall upgraded to ' + msg.material, t: 3, system: true });
-    if (S.chatLog.length > 10) S.chatLog.shift();
+    if (msg.ownerId === S.myId) addKillFeed('Wall upgraded to ' + msg.material, 3);
     sfx(400, 0.12, 'sine', 0.08);
   },
 
   crafted(msg) {
-    S.chatLog.push({ name: '', color: '', text: 'Crafted: ' + msg.recipeId, t: 3, system: true });
-    if (S.chatLog.length > 10) S.chatLog.shift();
+    addKillFeed('Crafted: ' + msg.recipeId, 3);
     sfx(800, 0.08, 'sine', 0.06);
     sfx(1200, 0.08, 'sine', 0.04);
   },

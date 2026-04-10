@@ -9,7 +9,7 @@ const { generateMap } = require('./map');
 const { getGroundHeight, WALL_HEIGHT, generateTerrain, getSeed } = require('./terrain');
 const { spawnInitialFood, spawnFood, spawnGoldenFood, spawnWeaponPickup } = require('./spawning');
 const { spawnBots, updateBots } = require('./bots');
-const { getPlayerStates, getPlayerTicks, broadcastPlayerSnapshot, applyHungerDelta, resolveDeaths, clearPendingDeaths, eliminatePlayer, serializeFood, buildServerStatus } = require('./player');
+const { getPlayerStates, getPlayerTicks, broadcastPlayerSnapshot, applyHungerDelta, assignColor, resolveDeaths, clearPendingDeaths, eliminatePlayer, serializeFood, buildServerStatus } = require('./player');
 const { handleWeaponPickups, handleArmorPickups } = require('./weapons');
 const { updateProjectiles } = require('./combat');
 const { rand } = require('./utils');
@@ -294,39 +294,31 @@ function gameTick() {
     }
     // Spawn chance: ~1 every 10 seconds during night
     if (nightBotCount < 5 && Math.random() < 0.003) {
-      // Spawn at a random map edge
       const edge = Math.floor(Math.random() * 4);
       let sx, sy;
-      if (edge === 0) { sx = rand(50, MAP_W - 50); sy = 30; }       // north
-      else if (edge === 1) { sx = rand(50, MAP_W - 50); sy = MAP_H - 30; } // south
-      else if (edge === 2) { sx = 30; sy = rand(50, MAP_H - 50); }  // west
-      else { sx = MAP_W - 30; sy = rand(50, MAP_H - 50); }          // east
-      // Use spawnBots' infrastructure — create a minimal aggressive bot
+      if (edge === 0) { sx = rand(50, MAP_W - 50); sy = 30; }
+      else if (edge === 1) { sx = rand(50, MAP_W - 50); sy = MAP_H - 30; }
+      else if (edge === 2) { sx = 30; sy = rand(50, MAP_H - 50); }
+      else { sx = MAP_W - 30; sy = rand(50, MAP_H - 50); }
       const botId = gameState.nextPlayerId();
-      const { assignColor } = require('./player');
-      const bot = {
+      const bot = Object.assign(JSON.parse(JSON.stringify(FRESH_PLAYER_STATS)), {
         id: botId, ws: null, name: 'Feral Cow', color: assignColor(),
-        x: sx, y: sy, z: 0, vz: 0, onGround: true, dx: 0, dy: 0, dir: 'south',
-        hunger: 100, score: 0, alive: true, inLobby: false, isBot: true,
-        eating: false, eatTimer: 0, foodEaten: 0, kills: 0,
-        dashCooldown: 0, attackCooldown: 0, stunTimer: 0, lastAttacker: null,
+        x: sx, y: sy, isBot: true, inLobby: false, _joined: true,
         perks: { speedMult: 1.1, maxHunger: 100, sizeMult: 1, damage: 1.3 },
         weaponPerks: { cooldown: 0.8, hungerDiscount: 0, damageMult: 1 },
-        weapon: 'normal', weaponTimer: 0, ammo: 999, reloading: 0, armor: 0,
-        personality: 'aggressive', _nightBot: true, _joined: true,
+        ammo: 999, personality: 'aggressive', _nightBot: true,
         lastInputSeq: 0, updateRate: 30,
-      };
+      });
       gameState.addPlayer(botId, bot);
       broadcastPlayerSnapshot(bot);
     }
   } else {
-    // Dawn — despawn all night bots
+    // Dawn — collect IDs first to avoid Map mutation during iteration
+    const toRemove = [];
     for (const [id, p] of gameState.getPlayers()) {
-      if (p.isBot && p._nightBot) {
-        p.alive = false;
-        gameState.removePlayer(id);
-      }
+      if (p.isBot && p._nightBot) { p.alive = false; toRemove.push(id); }
     }
+    for (const id of toRemove) gameState.removePlayer(id);
   }
 
   // Resource node respawn tick

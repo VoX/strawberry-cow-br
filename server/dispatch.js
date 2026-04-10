@@ -129,12 +129,12 @@ function dispatchMessage(player, msg) {
         player.resources.stone -= 50;
         best.material = 'stone';
         best.hp = 500;
-        broadcast({ type: 'wallUpgraded', id: best.id, material: 'stone', hp: 500 });
+        broadcast({ type: 'wallUpgraded', id: best.id, material: 'stone', hp: 500, ownerId: player.id });
       } else if (tier === 'stone' && player.resources && (player.resources.metal || 0) >= 50) {
         player.resources.metal -= 50;
         best.material = 'metal';
         best.hp = 1000;
-        broadcast({ type: 'wallUpgraded', id: best.id, material: 'metal', hp: 1000 });
+        broadcast({ type: 'wallUpgraded', id: best.id, material: 'metal', hp: 1000, ownerId: player.id });
       }
     }
   }
