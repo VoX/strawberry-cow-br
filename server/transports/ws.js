@@ -54,7 +54,7 @@ function checkRate(ws, msgType) {
 }
 
 // Backpressure threshold for unreliable sends. Matches the old
-// server/network.js::BACKPRESSURE_BYTES value so Phase 7's per-client tick
+// server/network.js::BACKPRESSURE_BYTES value so the per-client tick
 // loop behaves identically.
 const BACKPRESSURE_BYTES = 256 * 1024;
 const HEARTBEAT_MS = 5000;

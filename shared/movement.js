@@ -24,7 +24,7 @@
 //   - level-up / XP
 //
 // The caller owns everything in `world` and `terrain`. The server passes
-// real gameState collections; the client (in Phase 4) will pass its
+// real gameState collections; the client (CSP) passes its
 // mirrored local copies. Both sides must agree on the contents.
 //
 // All mutations happen in place on `p`. Return value is unused — kept

@@ -20,12 +20,12 @@ import { spawnParts, showChatBubble } from './entities.js';
 import { addBarricade, removeBarricade, clearBarricades, destroyWall, onHouseWallDestroyed } from './map-objects.js';
 import { clearRocketSounds } from './projectiles.js';
 import { spawnParticle, clearParticles, PGEO_SPHERE_LO, PGEO_SPHERE_MED, PGEO_BOX, PGEO_TORUS } from './particles.js';
-import { setArmorSpawns, onArmorSpawn, onArmorPickup, clearPickups } from './pickups.js';
+import { setArmorSpawns, clearPickups } from './pickups.js';
 import { disposeMeshTree } from './three-utils.js';
 import { S2C } from '../shared/messages.js';
 import { BURST_FAMILY, HIT_SLOW_DURATION_MS } from '../shared/constants.js';
 import { COL_HEX } from './config.js';
-import { INTERP_HIST_CAP, interpSamplePlayer } from './interp.js';
+import { addSnapshot, getInterpolatedEntity } from './snapshot.js';
 import { reconcilePrediction } from './prediction.js';
 import { spawnBulletHole, clearBulletHoles, removeBulletHolesBySurfaceKey } from './bullet-holes.js';
 
@@ -251,16 +251,9 @@ export const handlers = {
     clearBulletHoles();
   },
 
-  // 30 Hz broadcast of mutable player fields only. Sticky fields
-  // (name/color/weapon/perks/xpToNext/sizeMult/recoilMult/extMagMult) arrive
-  // via 'start'/'spectate' (wholesale replace) or 'playerSnapshot' (per-player
-  // upsert). This handler merges tick fields into the existing serverPlayers
-  // array in-place — no wholesale replace, so sticky fields survive.
-  //
-  // Race: if a tick arrives for a player we haven't seen a snapshot for yet
-  // (rare — a join mid-round would hit 'spectate' first, but a late player
-  // join could race), we skip that entry. The next snapshot or spectate sync
-  // will fill it in.
+  // 30 Hz tick broadcast with full player state (mutable + sticky fields).
+  // Merges into serverPlayers in-place. Position rendering for remote players
+  // comes from SI interpolation; this merge keeps HUD/kill-feed data current.
   tick(msg) {
     if (typeof msg.tickNum === 'number') {
       // Net stats: detect tick-number gaps + per-arrival jitter (sliding
@@ -310,55 +303,164 @@ export const handlers = {
       if (iw.gapsCount < 120) iw.gapsCount++;
     }
     iw.lastStateTs = iwNow;
-    // Merge each tick into the matching existing player. Track which ids we
-    // saw so we can drop players the server no longer lists (corpse reaped,
-    // left lobby, disconnected). Remote players (not myId) also get their
-    // position appended to an interpolation history ring — the renderer
-    // reads from the ring INTERP_DELAY_MS in the past so motion is smooth
-    // instead of stepping once per tick. Local player keeps the direct
-    // Object.assign path since phase 4 replaces that with CSP.
-    // Build a one-shot id→player map so the merge loop is O(n) instead of
-    // O(n²) per tick on `S.serverPlayers.find(...)`.
-    const byId = new Map();
-    for (const sp of S.serverPlayers) byId.set(sp.id, sp);
-    const seen = new Set();
-    for (const t of msg.players) {
-      seen.add(t.id);
-      const existing = byId.get(t.id);
-      if (!existing) continue; // race: no snapshot yet, skip until one arrives
-      if (existing.id === S.myId) {
-        // Camera owns aim/dir for the local player; the server's values
-        // are a stale RTT echo and would clobber the live look direction.
-        const { aimAngle, dir, ...rest } = t;
-        Object.assign(existing, rest);
-        // Sync server-only movement gates (stun + spawn protection) into
-        // the predicted player. Both make stepPlayerMovement skip the
-        // movement integration entirely, but the client has no way to
-        // predict them — getting hit is server-authoritative, so the
-        // local CSP loop just charges forward into the stun window and
-        // builds up drift until the next reconcile snaps it back. Keeping
-        // these in lockstep with the tick broadcast means the next predict
-        // step after the hit also respects the stun.
-        if (S.mePredicted) {
-          S.mePredicted.stunTimer = existing.stunTimer || 0;
-          S.mePredicted.spawnProtection = existing.spawnProt ? 1 : 0;
+    // Track snapshot seq for delta compression ack piggybacking.
+    if (typeof msg.snapSeq === 'number') S.lastRecvSnapSeq = msg.snapSeq;
+
+    // Delta merge: if this is a delta tick (no keyframe flag), the state
+    // array contains only changed fields per entity. Merge onto cached
+    // S.serverPlayers. If keyframe, replace entirely.
+    const tickPlayers = msg.snapshot ? msg.snapshot.state : (msg.players || []);
+    const isKeyframe = !!msg.keyframe;
+
+    if (isKeyframe) {
+      // Full state — replace serverPlayers entirely.
+      S.serverPlayers = tickPlayers.map(t => ({ ...t }));
+    } else {
+      // Delta — merge changed fields onto existing cached state.
+      const byId = new Map();
+      for (const sp of S.serverPlayers) byId.set(sp.id, sp);
+      for (const t of tickPlayers) {
+        const existing = byId.get(t.id);
+        if (!existing) {
+          // New player (or _full flag) — append.
+          S.serverPlayers.push({ ...t });
+          continue;
         }
-      } else {
-        // Merge everything EXCEPT position/aim — those ride the interp ring.
-        // Stats like hunger/ammo/score still want to snap to latest.
-        Object.assign(existing, t);
-        if (!existing._histBuf) existing._histBuf = [];
-        existing._histBuf.push({
-          t: iwNow, x: t.x, y: t.y, z: t.z, aim: t.aimAngle,
-        });
-        if (existing._histBuf.length > INTERP_HIST_CAP) existing._histBuf.shift();
+        if (existing.id === S.myId) {
+          const { aimAngle, dir, ...rest } = t;
+          Object.assign(existing, rest);
+        } else {
+          Object.assign(existing, t);
+        }
+      }
+      // Remove players the server says left since the baseline.
+      if (msg.removedIds) {
+        const removed = new Set(msg.removedIds);
+        S.serverPlayers = S.serverPlayers.filter(p => !removed.has(p.id));
       }
     }
-    // Drop players the server dropped. Preserves sticky fields on survivors.
-    for (let i = S.serverPlayers.length - 1; i >= 0; i--) {
-      if (!seen.has(S.serverPlayers[i].id)) S.serverPlayers.splice(i, 1);
+
+    // Process event flags from the INCOMING tick data (not cached state).
+    // With delta compression, a flag that's true for one tick then reverts
+    // to false may not appear in the next delta (false matches the old
+    // baseline). Reading from the incoming data guarantees we only fire
+    // the event once — when the flag is explicitly present and true.
+    for (const t of tickPlayers) {
+      const cachedP = S.serverPlayers.find(sp => sp.id === t.id);
+      if (t.justDashed && cachedP) {
+        const smooth = cachedP.id === S.myId ? { x: cachedP.x, y: cachedP.y } : getInterpolatedEntity(cachedP);
+        const th = getTerrainHeight(smooth.x, smooth.y);
+        for (let i = 0; i < 15; i++) {
+          const sz = 3 + Math.random() * 4;
+          spawnParticle({ geo: PGEO_SPHERE_LO, color: 0xcccccc, x: smooth.x + (Math.random() - 0.5) * 20, y: th + 5 + Math.random() * 15, z: smooth.y + (Math.random() - 0.5) * 20, sx: sz, life: 0.8 + Math.random() * 0.4, peakOpacity: 0.6, vy: 30, growth: 1.8 });
+        }
+        sfx(300, 0.15, 'sine', 0.08);
+      }
+      if (t.justEliminated) {
+        const name = (cachedP && cachedP.name) || t.name || '?';
+        addKillFeed(name + ' eliminated (#' + (t.eliminatedRank || '?') + ')', 5);
+        if (t.id === S.myId) {
+          sfxDeath();
+          S.perkMenuOpen = false;
+          S.pendingLevelUps = 0;
+          const pm = document.getElementById('perkMenu'); if (pm) pm.style.display = 'none';
+          if (S.killerId) S.spectateTargetId = S.killerId;
+          else {
+            const firstAlive = S.serverPlayers.find(sp => sp.alive && sp.id !== S.myId);
+            if (firstAlive) S.spectateTargetId = firstAlive.id;
+          }
+        }
+      }
     }
-    S.me = byId.get(S.myId) || null;
+
+    // Sync server-only movement gates onto predicted player.
+    const me = S.serverPlayers.find(p => p.id === S.myId);
+    if (me && S.mePredicted) {
+      S.mePredicted.stunTimer = me.stunTimer || 0;
+      S.mePredicted.spawnProtection = me.spawnProt ? 1 : 0;
+    }
+
+    // Feed reconstructed full state to SI for remote player interpolation.
+    if (msg.snapshot) {
+      const fullState = S.serverPlayers.map(p => ({ ...p }));
+      addSnapshot({ id: msg.snapshot.id, time: msg.snapshot.time, state: fullState });
+    }
+
+    // Diff wall state — detect HP changes and removals.
+    if (msg.walls) {
+      const wallById = new Map();
+      for (const w of msg.walls) wallById.set(w.id, w);
+      if (S.mapFeatures && S.mapFeatures.walls) {
+        for (let i = S.mapFeatures.walls.length - 1; i >= 0; i--) {
+          const cached = S.mapFeatures.walls[i];
+          if (!wallById.has(cached.id)) {
+            destroyWall(cached.id);
+            onHouseWallDestroyed(cached.id);
+            removeBulletHolesBySurfaceKey('wall:' + cached.id);
+            S.mapFeatures.walls.splice(i, 1);
+          }
+        }
+        for (const w of S.mapFeatures.walls) {
+          const svr = wallById.get(w.id);
+          if (svr) w.hp = svr.hp;
+        }
+      }
+    }
+
+    // Diff barricade state — detect additions, removals.
+    if (msg.barricades) {
+      const bById = new Map();
+      for (const b of msg.barricades) bById.set(b.id, b);
+      for (let i = S.barricades.length - 1; i >= 0; i--) {
+        const cached = S.barricades[i];
+        if (!bById.has(cached.id)) {
+          const pos = { x: cached.cx, y: getTerrainHeight(cached.cx, cached.cy) + 20, z: cached.cy };
+          removeBarricade(cached.id);
+          removeBulletHolesBySurfaceKey('barricade:' + cached.id);
+          sfx(300, 0.08, 'square', 0.05, pos);
+          sfx(150, 0.15, 'sawtooth', 0.04, pos);
+        }
+      }
+      const existingIds = new Set(S.barricades.map(b => b.id));
+      for (const b of msg.barricades) {
+        if (!existingIds.has(b.id)) {
+          addBarricade({ id: b.id, cx: b.cx, cy: b.cy, w: b.w, h: b.h, angle: b.angle });
+          if (b.ownerId === S.myId) {
+            S.barricadeReadyAt = performance.now() + 5000;
+            sfx(200, 0.08, 'square', 0.08); sfx(150, 0.12, 'triangle', 0.06);
+          }
+        }
+      }
+    }
+
+    // Diff food state — detect eaten food (absent from foodIds).
+    if (msg.foodIds) {
+      const serverFoodIds = new Set(msg.foodIds);
+      S.serverFoods = S.serverFoods.filter(f => serverFoodIds.has(f.id));
+    }
+
+    // Diff weapon pickups — detect new spawns and picked-up removals.
+    if (msg.weaponPickups) {
+      const wpById = new Map();
+      for (const w of msg.weaponPickups) wpById.set(w.id, w);
+      // Remove picked-up/despawned weapons.
+      S.clientWeapons = S.clientWeapons.filter(w => wpById.has(w.id));
+      // Add new weapon spawns.
+      const existingWpIds = new Set(S.clientWeapons.map(w => w.id));
+      for (const w of msg.weaponPickups) {
+        if (!existingWpIds.has(w.id)) {
+          S.clientWeapons.push({ id: w.id, x: w.x, y: w.y, weapon: w.weapon });
+        }
+      }
+    }
+
+    // Diff armor pickups — detect new spawns and picked-up removals.
+    // setArmorSpawns replaces the full list; pickups.js reconciles meshes each frame.
+    if (msg.armorPickups) {
+      setArmorSpawns(msg.armorPickups);
+    }
+
+    S.me = S.serverPlayers.find(p => p.id === S.myId) || null;
     if (S.me) {
       const dx = S.me.x - iw.lastMeX, dy = S.me.y - iw.lastMeY;
       iw.deltas[iw.deltasIdx] = Math.sqrt(dx * dx + dy * dy);
@@ -371,25 +473,13 @@ export const handlers = {
     if (S.pingLast > 0) { const pd = performance.now() - S.pingLast; if (pd < 2000) S.pingVal = S.pingVal * 0.7 + pd * 0.3; S.pingLast = 0; }
   },
 
-  // Low-rate (~6 Hz) echo of the server's highest-applied input seq for
-  // THIS client PLUS the server's authoritative position at this tick.
-  // Phase 4 CSP reconcile compares predicted-at-seq against the embedded
-  // position (not S.me, which would be a later tick and race).
+  // Seq-based input ack — server echoes the highest applied input seq plus
+  // the authoritative position at that tick. Local player reconciliation
+  // compares predicted-at-seq against this to detect and correct drift.
   inputAck(msg) {
     if (typeof msg.seq !== 'number' || msg.seq <= S.lastAckedInput) return;
     if (typeof msg.x !== 'number' || typeof msg.y !== 'number' || typeof msg.z !== 'number') return;
     S.lastAckedInput = msg.seq;
-    // Net stats: ack arrival timing + server-reported move-channel loss.
-    const ns = S.netStats;
-    const ackT = performance.now();
-    ns.inputAckArrivals.push(ackT);
-    while (ns.inputAckArrivals.length > 0 && ackT - ns.inputAckArrivals[0] > 1000) {
-      ns.inputAckArrivals.shift();
-    }
-    if (typeof msg.moveArrivedPct === 'number') ns.moveArrivedPct = msg.moveArrivedPct;
-    // Snap server-only movement gates onto the predicted player too.
-    // The tick handler also syncs these, but inputAck can arrive between
-    // ticks and we want the very next predict step to respect the gates.
     if (S.mePredicted) {
       if (typeof msg.stunTimer === 'number') S.mePredicted.stunTimer = msg.stunTimer;
       if (typeof msg.spawnProt === 'boolean') S.mePredicted.spawnProtection = msg.spawnProt ? 1 : 0;
@@ -401,31 +491,9 @@ export const handlers = {
     });
   },
 
-  // Upsert a single player's full sticky+mutable shape. Emitted by the server
-  // when a sticky field changes (weapon pickup, perk, level up, dual-wield
-  // toggle). If the player is already in serverPlayers, merge; otherwise
-  // append — covers the mid-round join path where a tick can arrive before
-  // the spectate sync lands.
-  playerSnapshot(msg) {
-    const snap = msg.player;
-    if (!snap || snap.id == null) return;
-    const existing = S.serverPlayers.find(sp => sp.id === snap.id);
-    if (existing) Object.assign(existing, snap);
-    else S.serverPlayers.push(snap);
-    if (snap.id === S.myId) S.me = S.serverPlayers.find(p => p.id === S.myId) || null;
-  },
+  // playerSnapshot removed — sticky fields now included in every tick.
 
-  food(msg) {
-    const f = msg.food || msg;
-    S.serverFoods.push({ id: f.id, x: f.x, y: f.y, type: f.type || f.typeName });
-  },
-
-  eat(msg) {
-    const fi = S.serverFoods.findIndex(f => f.id === msg.foodId);
-    if (fi >= 0) S.serverFoods.splice(fi, 1);
-    spawnParts(msg.playerId);
-    if (msg.playerId === S.myId) sfxEat();
-  },
+  // food, eat — removed, state rides tick payload (foodIds array).
 
   projectile(msg) {
     let vy3d = msg.vz || 0, spawnH = msg.z || (15 + getTerrainHeight(msg.x, msg.y));
@@ -769,7 +837,7 @@ export const handlers = {
       if (target) {
         const smooth = target.id === S.myId
           ? { x: target.x, y: target.y, z: target.z }
-          : interpSamplePlayer(target, performance.now());
+          : getInterpolatedEntity(target);
         const tz = smooth.z !== undefined ? smooth.z : getTerrainHeight(smooth.x, smooth.y);
         const impactY = msg.headshot ? tz + 36 : tz + 20;
         const count = msg.headshot ? 18 : 8;
@@ -882,22 +950,7 @@ export const handlers = {
     sfxExplosion(0.15, { x: ex, y: th + 10, z: ey });
   },
 
-  eliminated(msg) {
-    addKillFeed(msg.name + ' eliminated (#' + (msg.rank || '?') + ')', 5);
-    if (msg.playerId === S.myId) {
-      sfxDeath();
-      // Hide perk menu on death
-      S.perkMenuOpen = false;
-      S.pendingLevelUps = 0;
-      const pm = document.getElementById('perkMenu'); if (pm) pm.style.display = 'none';
-      // If we have a tracked killer, lock spectate to them. Otherwise pick any alive player.
-      if (S.killerId) S.spectateTargetId = S.killerId;
-      else {
-        const firstAlive = S.serverPlayers.find(p => p.alive && p.id !== S.myId);
-        if (firstAlive) S.spectateTargetId = firstAlive.id;
-      }
-    }
-  },
+  // eliminated — now handled via justEliminated event flag in tick handler.
 
   chat(msg) {
     S.chatLog.push({ name: msg.name, color: msg.color, text: msg.text, t: 10 });
@@ -924,69 +977,10 @@ export const handlers = {
     }
   },
 
-  barricadePlaced(msg) {
-    addBarricade({ id: msg.id, cx: msg.cx, cy: msg.cy, w: msg.w, h: msg.h, angle: msg.angle });
-    if (msg.ownerId === S.myId) {
-      S.barricadeReadyAt = performance.now() + 5000;
-      sfx(200, 0.08, 'square', 0.08); sfx(150, 0.12, 'triangle', 0.06);
-    }
-  },
+  // barricadePlaced — now detected via tick barricade state diff.
 
-  barricadeDestroyed(msg) {
-    const b = S.barricades.find(b => b.id === msg.id);
-    const pos = b ? { x: b.cx, y: getTerrainHeight(b.cx, b.cy) + 20, z: b.cy } : null;
-    removeBarricade(msg.id);
-    removeBulletHolesBySurfaceKey('barricade:' + msg.id);
-    sfx(300, 0.08, 'square', 0.05, pos);
-    sfx(150, 0.15, 'sawtooth', 0.04, pos);
-  },
-
-  barricadeHit(msg) {
-    const label = '\u{1FAB5} ' + msg.dmg;
-    const nc = document.createElement('canvas'); nc.width = 160; nc.height = 48;
-    const ctx = nc.getContext('2d');
-    ctx.font = 'bold 26px Segoe UI';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(label, 81, 35);
-    ctx.fillStyle = '#8b5a2b'; ctx.fillText(label, 80, 34);
-    const tex = new THREE.CanvasTexture(nc); tex.minFilter = THREE.LinearFilter;
-    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
-    const sprite = new THREE.Sprite(mat);
-    const th = getTerrainHeight(msg.x, msg.y);
-    sprite.position.set(msg.x + (Math.random()-0.5)*12, th + 40 + Math.random()*8, msg.y + (Math.random()-0.5)*12);
-    sprite.scale.set(96, 28, 1);
-    scene.add(sprite);
-    let life = 1.3;
-    const vy = 8 + Math.random() * 4;
-    const vxr = (Math.random() - 0.5) * 10;
-    const vzr = (Math.random() - 0.5) * 10;
-    let bnDisposed = false;
-    const bnCleanup = () => { if (bnDisposed) return; bnDisposed = true; scene.remove(sprite); tex.dispose(); mat.dispose(); };
-    const banim = () => { if (bnDisposed) return; life -= 0.012; mat.opacity = Math.max(0, life); sprite.position.y += vy * 0.016; sprite.position.x += vxr * 0.016; sprite.position.z += vzr * 0.016; if (life <= 0) bnCleanup(); else requestAnimationFrame(banim); };
-    requestAnimationFrame(banim);
-    setTimeout(bnCleanup, 1800);
-  },
-
-  wallDestroyed(msg) {
-    destroyWall(msg.id);
-    onHouseWallDestroyed(msg.id);
-    removeBulletHolesBySurfaceKey('wall:' + msg.id);
-    if (S.mapFeatures && S.mapFeatures.walls) {
-      const wi = S.mapFeatures.walls.findIndex(w => w.id === msg.id);
-      if (wi >= 0) S.mapFeatures.walls.splice(wi, 1);
-    }
-  },
-
-  // Cowtank rockets partially damage walls; each hit reduces hp by 1, destroy at 0.
-  // The server broadcasts wallDamaged for the partial case (destruction has its own msg).
-  // Today we just update the tracked hp so any future damage visual can read it — the
-  // wall InstancedMesh is static per round and doesn't currently render hp deltas.
-  wallDamaged(msg) {
-    if (S.mapFeatures && S.mapFeatures.walls) {
-      const w = S.mapFeatures.walls.find(w => w.id === msg.id);
-      if (w) w.hp = msg.hp;
-    }
-  },
+  // barricadeDestroyed, barricadeHit, wallDestroyed, wallDamaged
+  // — removed, state changes detected via tick wall/barricade arrays.
 
   kill(msg) {
     addKillFeed('\u{1F480} ' + (msg.killerName || '?') + ' \u2192 ' + (msg.victimName || '?'), 5);
@@ -1205,54 +1199,10 @@ export const handlers = {
     addKillFeed('Bot free will ' + (msg.enabled ? 'granted' : 'revoked'), 3);
   },
 
-  dash(msg) {
-    const dasher = S.serverPlayers.find(p => p.id === msg.playerId);
-    if (dasher) {
-      // Use interpolated position for remote dashers so the dust lands on
-      // the visible cow, not 100 ms ahead of it.
-      const smooth = dasher.id === S.myId
-        ? { x: dasher.x, y: dasher.y }
-        : interpSamplePlayer(dasher, performance.now());
-      const th = getTerrainHeight(smooth.x, smooth.y);
-      for (let i = 0; i < 15; i++) {
-        const sz = 3 + Math.random() * 4;
-        spawnParticle({
-          geo: PGEO_SPHERE_LO, color: 0xcccccc,
-          x: smooth.x + (Math.random() - 0.5) * 20,
-          y: th + 5 + Math.random() * 15,
-          z: smooth.y + (Math.random() - 0.5) * 20,
-          sx: sz, life: 0.8 + Math.random() * 0.4, peakOpacity: 0.6,
-          vy: 30, growth: 1.8,
-        });
-      }
-    }
-    sfx(300, 0.15, 'sine', 0.08);
-  },
+  // dash — now handled via justDashed event flag in tick handler.
 
-  weaponPickup(msg) {
-    S.clientWeapons = S.clientWeapons.filter(w => w.id !== msg.pickupId);
-    const _wn = { shotgun: 'XM1014', burst: 'M16A2', bolty: 'L96', cowtank: 'M72 LAW', aug: 'AUG', mp5k: 'MP5K', thompson: 'Thompson', sks: 'SKS', akm: 'AK' };
-    const wpName = _wn[msg.weapon] || msg.weapon || 'weapon';
-    if (msg.playerId === S.myId) {
-      addKillFeed('Picked up ' + wpName + '!', 3);
-      // Default to full-auto when picking up a weapon with a fire selector
-      if (BURST_FAMILY.has(msg.weapon)) S.fireMode = 'auto';
-    }
-    else addKillFeed((msg.name || '?') + ' picked up ' + wpName, 3);
-  },
-
-  weaponSpawn(msg) {
-    S.clientWeapons.push({ id: msg.id, x: msg.x, y: msg.y, weapon: msg.weapon, spawnTime: msg.spawnTime || Date.now() });
-  },
-
-  weaponDespawn(msg) {
-    S.clientWeapons = S.clientWeapons.filter(w => w.id !== msg.id);
-  },
-
-  weaponDrop(msg) {
-    if (msg.playerId === S.myId) addKillFeed('Dropped weapon', 3);
-    else addKillFeed((msg.name || '?') + ' dropped their weapon', 3);
-  },
+  // weaponPickup, weaponSpawn, weaponDespawn, weaponDrop
+  // — removed, state rides tick payload (weaponPickups array).
 
   reloaded(msg) {
     if (msg.playerId !== S.myId) return;
@@ -1271,14 +1221,7 @@ export const handlers = {
     forceUnADS();
   },
 
-  armorPickup(msg) {
-    onArmorPickup(msg.pickupId);
-    if (msg.playerId === S.myId) addKillFeed('Picked up shield (+25)', 3);
-  },
-
-  armorSpawn(msg) {
-    onArmorSpawn({ id: msg.id, x: msg.x, y: msg.y });
-  },
+  // armorPickup, armorSpawn — removed, state rides tick payload (armorPickups array).
 
   shieldHit(msg) {
     const th = getTerrainHeight(msg.x, msg.y);

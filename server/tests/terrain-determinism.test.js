@@ -2,7 +2,7 @@
 //
 // Protects the invariant that server and client call the same terrain math
 // with the same inputs and get bit-identical outputs. This is the foundation
-// for client-side movement prediction (Phase 4 of docs/netcode-prediction-plan.md)
+// for client-side movement prediction (CSP)
 // — if server and client disagreed on getGroundHeight(x, y) by even 0.01 units,
 // the local sim would diverge from the server and the player would rubber
 // band every frame they were on the ground.

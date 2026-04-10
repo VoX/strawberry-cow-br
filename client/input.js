@@ -3,7 +3,7 @@ import S from './state.js';
 import { cam, ren } from './renderer.js';
 import { initAudio } from './audio.js';
 import { send } from './network.js';
-import { INTERP_DELAY_MS } from './interp.js';
+import { getServerTime } from './snapshot.js';
 import { TICK_RATE, BURST_FAMILY, JUMP_VZ } from '../shared/constants.js';
 
 // Jump prediction: server applies vz=200 + onGround=false on receipt of
@@ -18,11 +18,8 @@ function predictJump() {
   mp.onGround = false;
 }
 
-// Phase 6 lag comp: the tick offset between the newest server tick and the
-// one the client is actually rendering (due to the interpolation delay).
-// Attack messages carry `displayTick = S.lastTickNum - INTERP_DELAY_TICKS`
-// so the server can rewind entity positions to match what the shooter saw.
-const INTERP_DELAY_TICKS = Math.round(INTERP_DELAY_MS * TICK_RATE / 1000);
+// Lag comp: attack messages carry serverTime so the server can rewind
+// entity positions to what the shooter was seeing via SI vault.
 
 const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 let vmGroupRef = null;
@@ -44,9 +41,7 @@ export function doAttack() {
     type: 'attack',
     aimX: _inputDir.x, aimY: _inputDir.z, aimZ: _inputDir.y,
     fireMode: S.fireMode,
-    // displayTick: the server tick the interp buffer is currently showing.
-    // Server uses this to rewind entity positions for hit detection.
-    displayTick: Math.max(0, S.lastTickNum - INTERP_DELAY_TICKS),
+    serverTime: getServerTime(),
   });
 }
 

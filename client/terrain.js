@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { MW, MH } from './config.js';
 import { scene } from './renderer.js';
 // Shared terrain math lives in shared/terrain-math.js so client and server
-// are bit-identical by construction. Required for CSP (Phase 4) where the
+// are bit-identical by construction. Required for CSP where the
 // client simulates movement locally and needs the same getGroundHeight
 // output the server uses for collision + z-clamping.
 import { GRID_W, GRID_H, generateHeightMap, sampleHeight } from '../shared/terrain-math.js';

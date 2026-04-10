@@ -1,5 +1,10 @@
 const { TICK_RATE, MAP_W, MAP_H } = require('./config');
 const { KNIFE_SPEED_MULT, JUMP_VZ } = require('../shared/constants');
+const { SnapshotInterpolation } = require('@geckos.io/snapshot-interpolation');
+// Server-side SI — creates timestamped snapshots and stores them in a vault
+// for lag-compensated hit detection (time rewind).
+const SI = new SnapshotInterpolation(TICK_RATE);
+SI.vault.setMaxSize(300); // 10 seconds at 30 FPS
 const { stepPlayerMovement } = require('../shared/movement');
 const { broadcast, sendTo } = require('./network');
 const transport = require('./transport');
@@ -9,7 +14,7 @@ const { generateMap } = require('./map');
 const { getGroundHeight, WALL_HEIGHT, generateTerrain, getSeed } = require('./terrain');
 const { spawnInitialFood, spawnFood, spawnGoldenFood, spawnWeaponPickup, safeRandPos } = require('./spawning');
 const { spawnBots, updateBots } = require('./bots');
-const { getPlayerStates, getPlayerTicks, broadcastPlayerSnapshot, applyHungerDelta, resolveDeaths, clearPendingDeaths, eliminatePlayer, serializeFood, buildServerStatus } = require('./player');
+const { getPlayerStates, getPlayerTicks, clearEventFlags, applyHungerDelta, resolveDeaths, clearPendingDeaths, eliminatePlayer, serializeFood, buildServerStatus } = require('./player');
 const { handleWeaponPickups, handleArmorPickups } = require('./weapons');
 const { updateProjectiles } = require('./combat');
 const { rand } = require('./utils');
@@ -22,11 +27,7 @@ function startGame() {
   // Drop any hunger-death ids that late-firing cowstrike callbacks (or any
   // end-of-round death path) may have left in the set while the round was ending.
   clearPendingDeaths();
-  // Reset per-player input seq counters — CSP (Phase 4) replays inputs-since-ack,
-  // and carrying seqs across a round boundary would reference sim state that
-  // no longer exists. Client mirrors this reset in the `start` handler. The
-  // ackSnapshot follows the same lifecycle — clear it so the first inputAck
-  // of the new round doesn't ship a stale-round position to the client.
+  // Reset per-player move queue + ack state across round boundaries.
   for (const [, p] of gameState.getPlayers()) {
     p.lastInputSeq = 0;
     p._lastRecvMoveSeq = 0;
@@ -34,6 +35,9 @@ function startGame() {
     p._lastMoveSpeedMult = 1;
     p._ackSnapshot = null;
   }
+  // Clear the SI vault — stale snapshots from the previous round would
+  // pollute lag-compensation lookups in the new round.
+  SI.vault.clear();
   gameState.setGameTime(0);
   gameState.setZone({ x: 0, y: 0, w: MAP_W, h: MAP_H });
   generateTerrain(Math.random() * 10000);
@@ -94,11 +98,8 @@ function gameTick() {
   const dt = 1 / TICK_RATE;
   gameState.addGameTime(dt);
   gameState.incTickNum();
-  // Phase 5: capture the "display state" positions BEFORE movement runs,
-  // so lag compensation in Phase 6 can rewind to the frame the client was
-  // actually looking at when they pulled the trigger. Stored under the
-  // incremented tickNum — consumers look up by tickNum.
-  gameState.pushHistorySnapshot();
+  // Lag comp history now handled by SI vault (populated at end of tick
+  // via SI.snapshot.create + SI.vault.add).
 
   // Expire barricades older than 30 seconds
   const nowMs = Date.now();
@@ -106,7 +107,6 @@ function gameTick() {
   for (let i = barricades.length - 1; i >= 0; i--) {
     const b = barricades[i];
     if (nowMs - b.placedAt > 30000) {
-      broadcast({ type: 'barricadeDestroyed', id: b.id });
       gameState.removeBarricadeAt(i);
     }
   }
@@ -127,11 +127,9 @@ function gameTick() {
     const w = weaponPickups[i];
     if (!w.spawnTime) w.spawnTime = nowMs;
     if (nowMs - w.spawnTime > 15000) {
-      broadcast({ type: 'weaponDespawn', id: w.id });
       gameState.removeWeaponPickupAt(i);
       const nw = spawnWeaponPickup();
       nw.spawnTime = nowMs;
-      broadcast({ type: 'weaponSpawn', id: nw.id, x: nw.x, y: nw.y, weapon: nw.weapon, spawnTime: nw.spawnTime });
     }
   }
 
@@ -189,11 +187,7 @@ function gameTick() {
 
     stepPlayerMovement(p, dt, moveWorld, { dx: p.dx, dy: p.dy, walking: p.walking, speedMult: moveSpeedMult }, moveTerrain);
 
-    // Snapshot stored in place — re-armed only when lastInputSeq
-    // advances. Each draining of the queue advances lastInputSeq by
-    // exactly one client predict step's worth, so the snapshot now
-    // truly represents "first server tick that integrated this seq",
-    // matching the client's first ring entry for that seq.
+    // Capture ack snapshot on first tick that integrates a new seq.
     if (!p.isBot && (p._ackSnapshot == null || p.lastInputSeq > p._ackSnapshot.seq)) {
       if (!p._ackSnapshot) p._ackSnapshot = { seq: 0, x: 0, y: 0, z: 0, vz: 0, onGround: false, stunTimer: 0, spawnProt: false };
       const snap = p._ackSnapshot;
@@ -256,7 +250,7 @@ function gameTick() {
         // if (p.xp >= p.xpToNext) { ... levelup ... }
         p.eating = true;
         p.eatTimer = 0.5;
-        broadcast({ type: 'eat', playerId: p.id, foodId: f.id, foodType: f.type.name, golden: f.golden, poisoned: f.poisoned });
+        // No broadcast — food absence in next tick's foodIds signals the eat.
         gameState.removeFoodAt(fi);
       }
     }
@@ -271,14 +265,14 @@ function gameTick() {
   if (Math.random() < 0.004 && armorPickups.length < 2) {
     const a = { id: gameState.nextEntityId(), x: rand(200, MAP_W-200), y: rand(200, MAP_H-200) };
     gameState.addArmorPickup(a);
-    broadcast({ type: 'armorSpawn', id: a.id, x: a.x, y: a.y });
+    // No broadcast — new pickup appears in next tick's armorPickups array.
   }
 
   // Periodically spawn new weapon pickups
   if (Math.random() < 0.008 && weaponPickups.length < 6) {
     const w = spawnWeaponPickup();
     if (!w.spawnTime) w.spawnTime = nowMs;
-    broadcast({ type: 'weaponSpawn', id: w.id, x: w.x, y: w.y, weapon: w.weapon, spawnTime: w.spawnTime });
+    // No broadcast — appears in next tick's weaponPickups array.
   }
 
   // Update AI bots
@@ -294,7 +288,7 @@ function gameTick() {
     let f;
     if (roll < 0.05) { f = spawnGoldenFood(); }
     else { f = spawnFood(false); }
-    broadcast({ type: 'food', food: serializeFood(f) });
+    // No broadcast — food appears in next tick's foodIds array.
   }
 
   // Clean up volley hit trackers
@@ -307,51 +301,105 @@ function gameTick() {
   // "dead" players from appearing alive for another 33 ms.
   if (resolveDeaths() > 0) checkWinner();
 
-  // Broadcast tick — mutable-per-tick player fields only. Sticky fields
-  // (name/color/weapon/perks/xpToNext/sizeMult/recoilMult/extMagMult) travel
-  // on the 'playerSnapshot' message emitted at weapon pickup / perk /
-  // level up / armor / dual-wield events. Zone is 4 numbers, sent every tick.
-  // Phase 7: build the tick payload once, then per-client sendUnreliable
-  // with a stride gate so each client sees their chosen updateRate. A
-  // player with updateRate=15 gets every 2nd tick; updateRate=30 gets
-  // every tick. `tick` is unreliable — on WebSocket this drops under
-  // backpressure; on geckos.io it goes out as fire-and-forget UDP.
-  //
-  // KNOWN LATENT ISSUES — safe today because no client UI changes
-  // updateRate from the default 30 (stride always = 1). Fix together
-  // BEFORE shipping a client-side rate control: interp delay, displayTick
-  // math, and inputAck cadence all assume 30 Hz tick arrival.
-  const tickPayload = {
-    type: 'tick',
-    tickNum: gameState.getTickNum(),
-    players: getPlayerTicks(),
-    zone: gameState.getZone(),
-    gameTime: Math.floor(gameState.getGameTime()),
-  };
+  // Build full player state and SI snapshot for lag comp vault.
+  const players = getPlayerTicks();
+  const snapshot = SI.snapshot.create(players);
+  SI.vault.add(snapshot);
+
+  // World entity state — included in every tick (not delta'd, small enough).
+  // Client diffs against cached state to detect changes and trigger visuals.
+  const tickWalls = gameState.getWalls();
+  const tickBarricades = gameState.getBarricades();
+  const wallState = tickWalls.map(w => ({ id: w.id, hp: w.hp }));
+  const barricadeState = tickBarricades.map(b => ({ id: b.id, hp: b.hp, cx: b.cx, cy: b.cy, w: b.w, h: b.h, angle: b.angle, ownerId: b.ownerId }));
+  // Food: just IDs — presence means exists, absence means eaten.
+  // Full food data (type, position, poisoned, golden) is sent on start/spectate.
+  const foodIds = gameState.getFoods().map(f => f.id);
+  // Weapon pickups
+  const wpState = gameState.getWeaponPickups().map(w => ({ id: w.id, x: w.x, y: w.y, weapon: w.weapon }));
+  // Armor pickups
+  const apState = gameState.getArmorPickups().map(a => ({ id: a.id, x: a.x, y: a.y }));
+
+  // Per-client delta-compressed tick broadcast. Each client gets a delta
+  // against the last snapshot they acked, or a full keyframe if no ack.
+  const SNAP_RING_SIZE = 32;
   const currentTick = gameState.getTickNum();
+  const tickZone = gameState.getZone();
+  const gameTime = Math.floor(gameState.getGameTime());
   for (const [, p] of gameState.getPlayers()) {
     if (p.isBot || !p.ws) continue;
     const stride = Math.max(1, Math.round(TICK_RATE / (p.updateRate || TICK_RATE)));
     if (currentTick % stride !== 0) continue;
+
+    const seq = p._snapSeq++;
+    // Store a shallow copy so ring entries aren't aliased across ticks.
+    p._snapRing[seq % SNAP_RING_SIZE] = { seq, state: players.map(p => ({ ...p })) };
+
+    // Find the acked baseline.
+    let baseline = null;
+    if (p._lastAckedSnapSeq >= 0) {
+      const entry = p._snapRing[p._lastAckedSnapSeq % SNAP_RING_SIZE];
+      if (entry && entry.seq === p._lastAckedSnapSeq) baseline = entry.state;
+    }
+
+    let tickPayload;
+    if (!baseline) {
+      // No valid baseline — send full keyframe.
+      tickPayload = {
+        type: 'tick', tickNum: currentTick, snapSeq: seq,
+        snapshot: { id: snapshot.id, time: snapshot.time, state: players },
+        zone: tickZone, gameTime, keyframe: true,
+        walls: wallState, barricades: barricadeState,
+        foodIds, weaponPickups: wpState, armorPickups: apState,
+      };
+    } else {
+      // Compute delta against baseline.
+      const baseById = new Map();
+      for (const bp of baseline) baseById.set(bp.id, bp);
+      const delta = [];
+      for (const cur of players) {
+        const base = baseById.get(cur.id);
+        if (!base) {
+          delta.push({ ...cur, _full: true }); // new player
+          continue;
+        }
+        const d = { id: cur.id };
+        let changed = false;
+        for (const key of Object.keys(cur)) {
+          if (key === 'id') continue;
+          if (cur[key] !== base[key]) { d[key] = cur[key]; changed = true; }
+        }
+        if (changed) delta.push(d);
+      }
+      // Detect players present in baseline but missing from current tick.
+      const currentIds = new Set();
+      for (const cur of players) currentIds.add(cur.id);
+      const removedIds = [];
+      for (const bp of baseline) {
+        if (!currentIds.has(bp.id)) removedIds.push(bp.id);
+      }
+      tickPayload = {
+        type: 'tick', tickNum: currentTick, snapSeq: seq,
+        snapshot: { id: snapshot.id, time: snapshot.time, state: delta },
+        zone: tickZone, gameTime,
+        walls: wallState, barricades: barricadeState,
+        foodIds, weaponPickups: wpState, armorPickups: apState,
+      };
+      if (removedIds.length) tickPayload.removedIds = removedIds;
+    }
     transport.sendUnreliable(p.ws, tickPayload);
   }
 
-  // Phase 2 input ack — echo each human player's last-applied input seq
-  // plus the server-authoritative position AT THE TICK THAT FIRST PROCESSED
-  // THAT SEQ. CSP reconcile pairs predicted-at-seq against this snapshot;
-  // sending the LATEST position would let drift accumulate linearly with
-  // idle ticks past the input and snap on every ack. The snapshot is
-  // captured in the per-player movement loop above when lastInputSeq
-  // first advances.
-  // inputAck at 15 Hz (every 2nd tick) — faster reconciliation for the new TTK
+  // Clear one-tick event flags now that all clients have the data.
+  clearEventFlags();
+
+  // inputAck at 15 Hz (every 2nd tick) — seq-based reconciliation for the
+  // local player. SI handles remote player interpolation; this handles
+  // local player prediction correction.
   if (gameState.getTickNum() % 2 === 0) {
     for (const [, p] of gameState.getPlayers()) {
       if (p.isBot || !p.ws || !p._ackSnapshot) continue;
       const snap = p._ackSnapshot;
-      // Net stats — moves received in the trailing 1-second window vs
-      // expected (TICK_RATE/sec). Lets the client debug overlay show
-      // unreliable C2S packet loss.
-      const moveArrivedPct = p._moveArrivals ? Math.round((p._moveArrivals.length / TICK_RATE) * 100) : 0;
       sendTo(p.ws, {
         type: 'inputAck',
         seq: snap.seq,
@@ -360,7 +408,6 @@ function gameTick() {
         onGround: snap.onGround,
         stunTimer: snap.stunTimer,
         spawnProt: snap.spawnProt,
-        moveArrivedPct,
       });
     }
   }
@@ -384,4 +431,4 @@ function checkWinner() {
 
 gameFsm.registerStartGame(startGame);
 
-module.exports = { startGame, gameTick, checkWinner };
+module.exports = { startGame, gameTick, checkWinner, SI };

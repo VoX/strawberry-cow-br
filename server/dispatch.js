@@ -12,7 +12,7 @@ const { STATEFUL_INPUT_TYPES, JUMP_VZ, SPEED_MULT_MIN, SPEED_MULT_MAX } = requir
 const lobbyState = require('./lobby-state');
 const gameState = require('./game-state');
 const { broadcast, sendTo } = require('./network');
-const { assignColor, getPlayerStates, serializeFood, eliminatePlayer, broadcastPlayerSnapshot } = require('./player');
+const { assignColor, getPlayerStates, serializeFood, eliminatePlayer } = require('./player');
 const { handlePerk } = require('./perks');
 const { handleDropWeapon } = require('./weapons');
 const { handleAttack, handleMelee, handleDash, handleReload, cancelReload, placeBarricadeForPlayer } = require('./combat');
@@ -46,6 +46,12 @@ function createPlayer(transportRef) {
     lastInputSeq: 0,
     updateRate: 30,
     _joined: false,
+    // Per-client delta compression state. Ring of recent full snapshots
+    // indexed by sequence number. The tick broadcast deltas against the
+    // last snapshot the client acked.
+    _snapRing: new Array(32).fill(null),
+    _snapSeq: 0,
+    _lastAckedSnapSeq: -1,
   };
 }
 
@@ -201,6 +207,10 @@ function dispatchMessage(player, msg) {
     }
   }
   if (msg.type === 'move' && player._joined && player.alive) {
+    // Update delta compression ack — client piggybacks on every move.
+    if (typeof msg.ackSnap === 'number' && msg.ackSnap > player._lastAckedSnapSeq) {
+      player._lastAckedSnapSeq = msg.ackSnap;
+    }
     // Enqueue the move for the next tick's drain instead of overwriting
     // dx/dy directly. Each queue entry carries its OWN seq + input —
     // the gameTick movement loop pops one per tick and integrates
@@ -268,12 +278,12 @@ function dispatchMessage(player, msg) {
       player.dualWield = false;
       player.ammo = -1;
       cancelReload(player);
-      broadcastPlayerSnapshot(player);
+
     } else if (target === 'primary' && player.weapon === 'knife' && player._primaryWeapon) {
       player.weapon = player._primaryWeapon;
       player.ammo = player._primaryAmmo != null ? player._primaryAmmo : 15;
       player.dualWield = !!player._primaryDualWield;
-      broadcastPlayerSnapshot(player);
+
     }
   }
   if (msg.type === 'placeBarricade' && player._joined && player.alive) {

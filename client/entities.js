@@ -5,7 +5,7 @@ import { scene } from './renderer.js';
 import { getTerrainHeight } from './terrain.js';
 import { spawnParticle, PGEO_SPHERE_LO } from './particles.js';
 import { disposeMeshTree, markSharedGeometry, markSharedMaterial } from './three-utils.js';
-import { interpSamplePlayer } from './interp.js';
+import { getInterpolatedEntity } from './snapshot.js';
 
 const _wispTmpPos = new THREE.Vector3();
 
@@ -392,10 +392,9 @@ export function updateCows(time, dt) {
     }
     const cowObj = S.cowMeshes[pid];
     const cm = cowObj.mesh;
-    // Phase 1: sample the interpolation ring at (now - INTERP_DELAY_MS) for
-    // smooth remote motion. Falls back to the raw tick position for players
-    // that just appeared or whose history is empty.
-    const smooth = interpSamplePlayer(p, nowMs);
+    // SI interpolation for smooth remote motion. Falls back to raw tick
+    // position if not enough snapshots have arrived yet.
+    const smooth = getInterpolatedEntity(p);
     if (!cowObj.isDead) {
       cm.position.x = smooth.x;
       cm.position.z = smooth.y;

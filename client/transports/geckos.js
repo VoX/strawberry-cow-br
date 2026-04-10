@@ -7,6 +7,7 @@
 // single-shot UDP fire-and-forget.
 
 import geckosClient from '@geckos.io/client';
+import { decode as msgpackDecode } from '@msgpack/msgpack';
 
 const RELIABLE_OPTS = Object.freeze({ reliable: true, interval: 150, runs: 10 });
 const MSG_EVENT = 'msg';
@@ -64,11 +65,19 @@ function connect(opts) {
     if (_onOpen) _onOpen();
   });
 
-  // geckos.io handles its own serialization — all messages arrive as plain
-  // objects. No msgpack binary on this transport (see ws.js for binary path).
+  // Reliable messages arrive as plain objects via the event system.
   _channel.on(MSG_EVENT, data => {
     if (!_onMessage) return;
     try { _onMessage(data); } catch (err) { /* never let a handler crash kill the transport */ }
+  });
+
+  // Unreliable messages arrive as raw binary (msgpack) via channel.raw.
+  _channel.onRaw(data => {
+    if (!_onMessage) return;
+    try {
+      const buf = data instanceof ArrayBuffer ? new Uint8Array(data) : data;
+      _onMessage(msgpackDecode(buf));
+    } catch (err) { /* drop malformed binary */ }
   });
 
   _channel.onDisconnect(() => fireClose(null));

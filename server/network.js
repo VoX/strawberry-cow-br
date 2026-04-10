@@ -12,20 +12,20 @@
 
 const transport = require('./transport');
 
-// The `tick` S2C message is the only fan-out broadcast that should ride
-// the unreliable channel — 30 Hz mutable state, next tick supersedes it,
-// and dropping one is invisible to the client merge/interpolation logic.
-// Every other type is sticky or one-shot and must deliver. See
-// client/prediction.js for the full netcode-strategy reference (why
-// unreliable for the hot path matters: TCP head-of-line blocking on a
-// dropped packet would stall the entire stream and visibly freeze the game).
-//
-// Note: Phase 7's per-client tick loop in server/game.js::gameTick already
-// bypasses broadcast() and calls transport.sendUnreliable directly on each
-// player so it can apply the per-client stride gate. This set is here
-// for future droppable types and for any tick emit that IS routed through
-// broadcast() (none today, but keeping the check is cheap).
-const UNRELIABLE_TYPES = new Set(['tick']);
+// Unreliable types: tick (30Hz state) + temp entities (cosmetic visuals).
+// If a packet is lost, game state is unaffected — next tick supersedes
+// state, and missing a visual effect is acceptable.
+// projectileHit is NOT here — it controls client-side projectile mesh
+// lifecycle (removal). Dropping it leaves ghost projectiles flying forever.
+const UNRELIABLE_TYPES = new Set([
+  'tick',
+  // Temp entities — fire-and-forget visuals/audio:
+  // projectile stays reliable — client needs it to create + step the visual
+  // tracer entity. Converting to hitscan (CS-style) would eliminate this.
+  'wallImpact', 'explosion',
+  'meleeSwing', 'meleeHit', 'shieldHit',
+  'mooTaunt', 'cowstrikeWarning', 'cowstrike',
+]);
 
 function broadcast(data) {
   const droppable = UNRELIABLE_TYPES.has(data && data.type);

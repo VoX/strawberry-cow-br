@@ -1,7 +1,7 @@
 const { broadcast } = require('./network');
 const lobbyState = require('./lobby-state');
 const gameState = require('./game-state');
-const { broadcastPlayerSnapshot, applyHungerDelta, applyArmorDelta } = require('./player');
+const { applyHungerDelta, applyArmorDelta } = require('./player');
 
 function handlePerk(player, id) {
   if (!player || !player.alive || !player.perks) return;
@@ -61,11 +61,7 @@ function handlePerk(player, id) {
     });
     return;
   }
-  // All non-cowstrike perks mutated sticky fields (sizeMult, recoilMult,
-  // extMagMult, perks.*). Ship a snapshot so clients pick up the new viewmodel
-  // scale / HUD indicator / perk-gating logic immediately instead of drifting
-  // until the next sticky-field change.
-  broadcastPlayerSnapshot(player);
+  // Sticky fields now ride every tick — no separate snapshot needed.
 }
 
 // Perks bots are allowed to auto-pick — matches the client-facing pool.

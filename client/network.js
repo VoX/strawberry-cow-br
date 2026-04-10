@@ -103,6 +103,8 @@ export function send(m) {
   if (!m) return;
   if (STATEFUL_INPUT_TYPES.has(m.type)) {
     m.seq = ++S.inputSeq;
+    // Piggyback snapshot ack so the server knows which baseline to delta against.
+    if (S.lastRecvSnapSeq >= 0) m.ackSnap = S.lastRecvSnapSeq;
   }
   if (UNRELIABLE_TYPES.has(m.type)) _active.sendUnreliable(m);
   else _active.sendReliable(m);

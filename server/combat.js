@@ -4,8 +4,11 @@ const gameState = require('./game-state');
 const { getTerrainHeight, getGroundHeight, WALL_HEIGHT } = require('./terrain');
 const ballistics = require('./ballistics');
 const weaponFire = require('./weapon-fire');
-const { applyHungerDelta, applyArmorDelta, broadcastPlayerSnapshot } = require('./player');
+const { applyHungerDelta, applyArmorDelta } = require('./player');
 const { MAG_SIZES, EXT_MAG_SIZES, DUAL_WIELD_FAMILY, KNIFE_MELEE_RANGE, KNIFE_MELEE_CONE_COS, KNIFE_MELEE_DAMAGE, KNIFE_MELEE_CD_MS } = require('../shared/constants');
+// Lazy-require to avoid circular dependency (game.js requires combat.js).
+let _SI = null;
+function getSI() { if (!_SI) _SI = require('./game').SI; return _SI; }
 
 
 const BASE_EYE_HEIGHT = 35;
@@ -59,11 +62,9 @@ function handleAttack(player, msg) {
     cdMult,
     dmgMult,
     eyeHeight,
-    // Phase 6 lag comp: client sends `displayTick` = S.lastTickNum minus
-    // interp delay ticks (= the tick they were actually rendering). Server
-    // rewinds entity positions to that tick for the hit check. Clamped to
-    // avoid abuse — see updateProjectiles for the bounds logic.
-    fireDisplayTick: typeof msg.displayTick === 'number' ? msg.displayTick : null,
+    // Lag comp: client sends serverTime (SI-synced timestamp of what they
+    // were rendering). Server rewinds via SI vault for hit detection.
+    fireServerTime: typeof msg.serverTime === 'number' ? msg.serverTime : null,
   });
   if (!fired) return;
 
@@ -79,20 +80,14 @@ function applyExplosion(pr, excludeId) {
   const sel = ballistics.computeBlastVictims(pr, players, walls, barricades, excludeId, eyeHeight);
   // Destroy barricades caught in the blast (indices are descending-order)
   for (const i of sel.barricadeIdxs) {
-    const b = barricades[i];
-    broadcast({ type: 'barricadeDestroyed', id: b.id });
     gameState.removeBarricadeAt(i);
   }
-  // Damage map walls — each takes `hp` explosions to destroy
+  // Damage map walls — each takes `hp` explosions to destroy.
+  // State changes ride the tick payload (walls/barricades arrays).
   for (const i of sel.wallIdxs) {
     const w = walls[i];
     w.hp = (w.hp || 1) - 1;
-    if (w.hp <= 0) {
-      broadcast({ type: 'wallDestroyed', id: w.id });
-      gameState.removeWallAt(i);
-    } else {
-      broadcast({ type: 'wallDamaged', id: w.id, hp: w.hp });
-    }
+    if (w.hp <= 0) gameState.removeWallAt(i);
   }
   // Damage players in blast
   for (const v of sel.playerVictims) {
@@ -107,34 +102,29 @@ function applyExplosion(pr, excludeId) {
   broadcast({ type: 'explosion', x: pr.x, y: pr.y, radius: sel.blastRadius, blastRadius: sel.blastRadius });
 }
 
-// Phase 6 lag comp: reconstruct a Map<id, playerLike> from a history
+// Lag comp: reconstruct a Map<id, playerLike> from an SI interpolated
 // snapshot + the live players map so `findPlayerHit` sees rewound
-// positions for the tick the client was rendering at fire time.
-// Position, sizeMult, stunTimer, and spawn protection come from the
-// snapshot (they may have changed since fire time). Every other field
-// that post-hit code reads — perks.damageReduction, armor, ws — is
-// pulled from the LIVE player so damage, shieldHit broadcast, and
-// milksteal heal all apply to the current entity.
-//
-// sizeMult gets its own override on a shallow-cloned perks object
-// because findPlayerHit reads `p.perks.sizeMult` to size the capsule.
-// Without the override we'd be checking live-size hitboxes against
-// rewound positions — exactly the desync lag comp is meant to prevent.
-function _buildRewoundPlayers(snapshot, livePlayers) {
+// positions for the time the client was rendering at fire time.
+// Position and sizeMult come from the rewound state. Everything else
+// (perks, armor, ws) comes from the LIVE player so damage/broadcasts
+// apply to the current entity.
+function _buildRewoundPlayers(interpState, livePlayers) {
   const out = new Map();
-  for (const entry of snapshot.positions) {
+  for (const entry of interpState) {
     const live = livePlayers.get(entry.id);
-    if (!live || !live.alive) continue; // dead-between path: no hit
-    const rewoundPerks = Object.assign({}, live.perks, { sizeMult: entry.sizeMult });
+    if (!live || !live.alive) continue;
+    const rewoundPerks = Object.assign({}, live.perks, {
+      sizeMult: entry.sizeMult || (live.perks && live.perks.sizeMult) || 1,
+    });
     out.set(entry.id, {
       id: entry.id,
-      x: entry.x, y: entry.y, z: entry.z,
+      x: entry.x, y: entry.y, z: entry.z || 0,
       alive: true,
-      stunTimer: entry.stunTimer,
-      spawnProtection: entry.spawnProtection,
-      armor: entry.armor || 0,  // shield ellipsoid hit test reads this
+      stunTimer: entry.stunTimer || 0,
+      spawnProtection: entry.spawnProt ? 1 : 0,
+      armor: entry.armor || 0,
       perks: rewoundPerks,
-      _rewound: true,    // diagnostic flag
+      _rewound: true,
     });
   }
   return out;
@@ -145,13 +135,11 @@ function updateProjectiles(dt) {
   const walls = gameState.getWalls();
   const barricades = gameState.getBarricades();
   const players = gameState.getPlayers();
-  const HISTORY_TICKS = gameState.HISTORY_TICKS;
-  const currentTickNum = gameState.getTickNum();
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const pr = projectiles[i];
     // Advance the "age in ticks" counter before anything else so the
-    // rewind lookup computes (fireDisplayTick + ticksAlive) for the
-    // snapshot that matches this frame of the projectile's flight.
+    // rewind lookup computes (fireServerTime + ticksAlive * tickDuration)
+    // for the snapshot that matches this frame of the projectile's flight.
     pr.ticksAlive = (pr.ticksAlive || 0) + 1;
     // Step 1: integrate motion + gravity, capture prev position
     const { prevX, prevY, prevZ } = ballistics.integrateProjectile(pr, dt);
@@ -176,17 +164,20 @@ function updateProjectiles(dt) {
       }
     }
     // Step 3: closest player hit within blockT (sets p._wasHeadshot).
-    // Phase 6 lag comp: if the client sent fireDisplayTick at spawn, look
-    // up the historical snapshot at (fireDisplayTick + ticksAlive) and
-    // run the hit check against THOSE positions. Clamped to avoid clients
-    // forging ancient or future-tick values for abuse.
+    // Lag comp: if the client sent serverTime at fire, compute the
+    // rewind time accounting for projectile age, then use SI vault
+    // to interpolate entity positions at that time.
     let playersForHit = players;
-    if (typeof pr.fireDisplayTick === 'number') {
-      const targetTick = pr.fireDisplayTick + pr.ticksAlive;
-      const minTick = Math.max(0, currentTickNum - HISTORY_TICKS);
-      const clampedTick = Math.max(minTick, Math.min(currentTickNum, targetTick));
-      const snap = gameState.getHistorySnapshot(clampedTick);
-      if (snap) playersForHit = _buildRewoundPlayers(snap, players);
+    if (typeof pr.fireServerTime === 'number') {
+      const siVault = getSI().vault;
+      // Advance the rewind time by ticksAlive × tick duration so each
+      // tick of the projectile's flight checks the right historical frame.
+      const rewindTime = pr.fireServerTime + (pr.ticksAlive * (1000 / 30));
+      const snapPair = siVault.get(rewindTime);
+      if (snapPair) {
+        const interp = getSI().interpolate(snapPair.older, snapPair.newer, rewindTime, 'x y z');
+        if (interp && interp.state) playersForHit = _buildRewoundPlayers(interp.state, players);
+      }
     }
     const hitPlayer = ballistics.findPlayerHit(prevX, prevY, prevZ, pr.x, pr.y, pr.z, playersForHit, pr.ownerId, blockT, eyeHeight);
     if (hitPlayer) {
@@ -314,10 +305,9 @@ function updateProjectiles(dt) {
       if (hitBarricade) {
         const dmgDealt = Math.round(pr.dmg);
         hitBarricade.hp -= dmgDealt;
-        broadcast({ type: 'barricadeHit', id: hitBarricade.id, dmg: dmgDealt, x: hitBarricade.cx, y: hitBarricade.cy });
+        // HP change rides the tick payload. Client detects HP drop / removal.
         if (hitBarricade.hp <= 0) {
           gameState.removeBarricade(hitBarricade.id);
-          broadcast({ type: 'barricadeDestroyed', id: hitBarricade.id });
         }
       }
       if (pr.explosive) applyExplosion(pr, null);
@@ -359,7 +349,7 @@ function handleDash(player) {
     player.z = getGroundHeight(player.x, player.y);
     player.vz = 0;
     player.dashCooldown = 3 * (player.dashCdMult || 1);
-    broadcast({ type: 'dash', playerId: player.id });
+    player._justDashed = true;  // event flag, rides the next tick
   }
 }
 
@@ -434,7 +424,7 @@ function placeBarricadeForPlayer(player, aimX, aimY) {
   });
   const cdMs = player.isBot ? gameState.BOT_BARRICADE_COOLDOWN_MS : gameState.BARRICADE_COOLDOWN_MS;
   player.barricadeReadyAt = nowMs + cdMs;
-  broadcast({ type: 'barricadePlaced', id: bid, cx, cy, w: W, h: H, angle, ownerId: player.id });
+  // No broadcast — barricade appears in the next tick's barricadeState array.
   return true;
 }
 

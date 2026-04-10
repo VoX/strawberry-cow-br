@@ -1,8 +1,7 @@
-const { broadcast } = require('./network');
 const gameState = require('./game-state');
 const combat = require('./combat');
 const { MAG_SIZES, DUAL_WIELD_FAMILY } = require('../shared/constants');
-const { broadcastPlayerSnapshot, applyArmorDelta } = require('./player');
+const { applyArmorDelta } = require('./player');
 
 function handleWeaponPickups(dt) {
   const weaponPickups = gameState.getWeaponPickups();
@@ -40,10 +39,7 @@ function handleWeaponPickups(dt) {
           p.ammo = combat.getMaxAmmo(p, p.weapon);
         }
         combat.cancelReload(p);
-        broadcast({ type: 'weaponPickup', playerId: p.id, name: p.name, weapon: p.weapon, dualWield: !!p.dualWield, pickupId: w.id });
-        // Sticky fields changed — ship a snapshot so clients update
-        // viewmodel + HUD next frame instead of waiting for a tick.
-        broadcastPlayerSnapshot(p);
+        // No broadcast — weapon change rides player tick, pickup removal rides weaponPickups array.
         gameState.removeWeaponPickupAt(i);
       }
     }
@@ -58,7 +54,7 @@ function handleArmorPickups() {
       const a = armorPickups[i];
       if (Math.hypot(p.x - a.x, p.y - a.y) < 45) {
         applyArmorDelta(p, 25);
-        broadcast({ type: 'armorPickup', playerId: p.id, name: p.name, pickupId: a.id });
+        // No broadcast — armor change rides player tick, pickup removal rides armorPickups array.
         gameState.removeArmorPickupAt(i);
       }
     }
@@ -75,19 +71,15 @@ function handleDropWeapon(player) {
     if (!stashed || stashed === 'normal') return;
     const dropId = gameState.nextEntityId();
     gameState.addWeaponPickup({ id: dropId, x: player.x + 50, y: player.y, weapon: stashed });
-    broadcast({ type: 'weaponSpawn', id: dropId, x: player.x + 50, y: player.y, weapon: stashed });
     player._primaryWeapon = 'normal';
     player._primaryAmmo = combat.getMaxAmmo(player, 'normal');
     player._primaryDualWield = false;
     player.pickupCooldown = 2; player._ignorePickupId = dropId;
-    broadcast({ type: 'weaponDrop', playerId: player.id, name: player.name });
-    broadcastPlayerSnapshot(player);
     return;
   }
   if (player.weapon === 'normal') return;
   const dropId = gameState.nextEntityId();
   gameState.addWeaponPickup({ id: dropId, x: player.x + 50, y: player.y, weapon: player.weapon });
-  broadcast({ type: 'weaponSpawn', id: dropId, x: player.x + 50, y: player.y, weapon: player.weapon });
   if (player.dualWield) {
     // Dropping one of two — stay with single weapon, halve the mag
     player.dualWield = false;
@@ -100,8 +92,6 @@ function handleDropWeapon(player) {
     player.ammo = combat.getMaxAmmo(player, 'normal');
   }
   combat.cancelReload(player);
-  broadcast({ type: 'weaponDrop', playerId: player.id, name: player.name });
-  broadcastPlayerSnapshot(player);
 }
 
 module.exports = { handleWeaponPickups, handleArmorPickups, handleDropWeapon };

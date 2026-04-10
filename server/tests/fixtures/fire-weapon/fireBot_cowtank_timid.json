@@ -12,48 +12,6 @@
       "x": 1040,
       "y": 1000,
       "z": 35
-    },
-    {
-      "name": "TestPlayer",
-      "playerId": 200,
-      "type": "weaponDrop"
-    },
-    {
-      "player": {
-        "aimAngle": -1.570796,
-        "alive": true,
-        "ammo": 15,
-        "armor": 0,
-        "attackCooldown": 1,
-        "color": 16777215,
-        "crouching": false,
-        "dashCooldown": 0,
-        "dir": "south",
-        "dualWield": false,
-        "eating": false,
-        "extMagMult": 1,
-        "foodEaten": 0,
-        "hunger": 95,
-        "id": 200,
-        "kills": 0,
-        "level": 0,
-        "name": "TestPlayer",
-        "personality": "timid",
-        "recoilMult": 1,
-        "reloading": false,
-        "score": 0,
-        "sizeMult": 1,
-        "spawnProt": false,
-        "speedMult": 1,
-        "stunTimer": 0,
-        "weapon": "normal",
-        "x": 1000,
-        "xp": 0,
-        "xpToNext": 50,
-        "y": 1000,
-        "z": 0
-      },
-      "type": "playerSnapshot"
     }
   ],
   "mutations": {

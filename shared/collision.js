@@ -1,5 +1,5 @@
 // Shared collision helpers — used by both the server simulation loop and
-// the client-side prediction loop (Phase 4 CSP). Must stay byte-identical
+// the client-side prediction loop (CSP). Must stay byte-identical
 // between sides or prediction will rubber band on every wall push-out.
 
 const { PLAYER_WALL_INFLATE } = require('./constants');

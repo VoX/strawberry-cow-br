@@ -18,7 +18,7 @@
 
 const gameState = require('./game-state');
 const { broadcast } = require('./network');
-const { applyHungerDelta, broadcastPlayerSnapshot } = require('./player');
+const { applyHungerDelta } = require('./player');
 const { BURST_FAMILY, MAG_SIZES } = require('../shared/constants');
 
 // --- Player base stats ----------------------------------------------------
@@ -166,9 +166,9 @@ function resolvePlayerStats(weapon, hungerDiscount = 0) {
 }
 
 // Spawn one projectile + broadcast. Centralized so new fields only need to be
-// added in one place. `extras.fireDisplayTick` is the client's render tick
-// at fire time for lag comp — null for bots and server-originated shots,
-// which makes updateProjectiles skip the rewind lookup (live positions).
+// added in one place. `extras.fireServerTime` is the SI-synced server time
+// the client was rendering at fire time — null for bots and server-originated
+// shots, which makes updateProjectiles skip the rewind lookup (live positions).
 function _spawnProjectile(shooter, posX, posY, posZ, dirX, dirY, dirZ, speed, dmg, extras, broadcastExtras, delayMs) {
   const projId = gameState.nextEntityId();
   const proj = {
@@ -178,7 +178,7 @@ function _spawnProjectile(shooter, posX, posY, posZ, dirX, dirY, dirZ, speed, dm
     vx: dirX * speed, vy: dirY * speed, vz: dirZ * speed,
     life: 3,
     dmg,
-    fireDisplayTick: extras && extras.fireDisplayTick != null ? extras.fireDisplayTick : null,
+    fireServerTime: extras && extras.fireServerTime != null ? extras.fireServerTime : null,
     ticksAlive: 0,
     ...extras,
   };
@@ -214,12 +214,12 @@ function fireWeapon(shooter, weapon, aim, stats, opts = {}) {
     cdMult = 1,
     dmgMult = 1,
     eyeHeight,
-    fireDisplayTick = null, // Phase 6: client-provided render tick for lag comp
+    fireServerTime = null, // client-provided SI server time for lag comp
   } = opts;
   // Baseline extras shape — one object per fireWeapon call, shared across
   // all _spawnProjectile calls from this trigger pull. Individual paths
   // merge their own keys on top via `{...fdtExtras, volleyId}` etc.
-  const fdtExtras = fireDisplayTick != null ? { fireDisplayTick } : null;
+  const fdtExtras = fireServerTime != null ? { fireServerTime } : null;
 
   const perkDmgMult = (shooter.perks && shooter.perks.damage) || 1;
   const eyeZ = shooter.z + (eyeHeight ? eyeHeight(shooter) : 0);
@@ -249,7 +249,7 @@ function fireWeapon(shooter, weapon, aim, stats, opts = {}) {
         shooter.x + bx * spawnOffset, shooter.y + by * spawnOffset, eyeZ,
         bx, by, spreadVz,
         speed, pelletDmg,
-        fdtExtras ? { volleyId, fireDisplayTick } : { volleyId },
+        fdtExtras ? { volleyId, fireServerTime } : { volleyId },
         broadcastExtras,
         0,
       );
@@ -379,7 +379,7 @@ function fireWeapon(shooter, weapon, aim, stats, opts = {}) {
   const extras = {};
   if (stats.explosive) { extras.explosive = true; extras.blastRadius = stats.blastRadius; }
   if (stats.wallPiercing) extras.wallPiercing = true;
-  if (fireDisplayTick != null) extras.fireDisplayTick = fireDisplayTick;
+  if (fireServerTime != null) extras.fireServerTime = fireServerTime;
   const broadcastExtras = {};
   if (stats.broadcastTag) broadcastExtras[stats.broadcastTag] = true;
   _spawnProjectile(
@@ -407,8 +407,7 @@ function resetAfterCowtank(shooter) {
   shooter.dualWield = false;
   shooter.ammo = Math.ceil(15 * (shooter.extMagMult || 1));
   shooter.reloading = 0;
-  broadcast({ type: 'weaponDrop', playerId: shooter.id, name: shooter.name });
-  broadcastPlayerSnapshot(shooter);
+  // No broadcast — weapon change rides next tick's player state.
 }
 
 module.exports = { fireWeapon, resolvePlayerStats, extractShooterModifiers, BOT_STATS, resetAfterCowtank };

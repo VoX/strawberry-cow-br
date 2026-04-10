@@ -9,9 +9,9 @@
 // beyond the single return object, which V8 elides under inlining).
 
 // BARRICADE_HEIGHT and PLAYER_WALL_INFLATE live in shared/constants.js so the
-// client-side prediction loop (Phase 4) can import the same values.
+// client-side prediction loop (CSP) can import the same values.
 const { BARRICADE_HEIGHT, PLAYER_WALL_INFLATE } = require('../shared/constants');
-// pushOutOfWalls was lifted to shared/collision.js in Phase 4 so the client
+// pushOutOfWalls was lifted to shared/collision.js so the client
 // prediction loop can call the exact same implementation. Re-exported below
 // so existing callers (blastKnockback, game.js, etc.) keep working without
 // a find-replace.

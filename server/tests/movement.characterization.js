@@ -6,7 +6,7 @@
 // changed — either intentionally (regen the fixture in the commit) or as
 // a regression (root cause and fix).
 //
-// This is the load-bearing regression guard for Phase 4 CSP: if the server
+// This is the load-bearing regression guard for CSP: if the server
 // and client call this function on the same inputs and get different
 // answers, prediction will rubber band. The test pins the output once so
 // later changes (the extraction alone, or the eventual client-side call
