@@ -929,8 +929,23 @@ export const handlers = {
 
   crafted(msg) {
     addKillFeed('Crafted: ' + msg.recipeId, 3);
-    sfx(800, 0.08, 'sine', 0.06);
-    sfx(1200, 0.08, 'sine', 0.04);
+    // Different sfx per craft category
+    const id = msg.recipeId || '';
+    if (id.startsWith('ammo_') || id === 'pistol' || id === 'shotgun' || id === 'burst' || id === 'bolty' || id === 'aug' || id === 'cowtank') {
+      // Weapon/ammo: metallic hammering
+      sfx(400, 0.06, 'square', 0.07);
+      sfx(600, 0.05, 'sawtooth', 0.05);
+      sfx(800, 0.04, 'square', 0.04);
+    } else if (id === 'hay_bale' || id === 'smoothie') {
+      // Healing: bubbly
+      sfx(500, 0.1, 'sine', 0.06);
+      sfx(700, 0.08, 'sine', 0.04);
+      sfx(900, 0.06, 'sine', 0.03);
+    } else {
+      // Building/utility: wood plank thud
+      sfx(200, 0.1, 'square', 0.06);
+      sfx(350, 0.06, 'sawtooth', 0.04);
+    }
   },
 
   barricadeHit(msg) {
