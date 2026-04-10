@@ -228,11 +228,17 @@ function gameTick() {
     // Eat timer
     if (p.eating) { p.eatTimer -= dt; if (p.eatTimer <= 0) p.eating = false; }
 
-    // Minigun spin-up timer — 1 second to fully spin
-    if (p._minigunSpinning && p.weapon === 'minigun') {
-      p._minigunSpinTime = Math.min(1, (p._minigunSpinTime || 0) + dt);
-      if (p._minigunSpinTime >= 1) p._minigunSpun = true;
-    } else if (p.weapon !== 'minigun') {
+    // Minigun spin-up/down timer — 1 second to fully spin, 0.8s to spin down
+    if (p.weapon === 'minigun') {
+      if (p._minigunSpinning) {
+        p._minigunSpinTime = Math.min(1, (p._minigunSpinTime || 0) + dt);
+        if (p._minigunSpinTime >= 1) p._minigunSpun = true;
+      } else if (p._minigunSpinTime > 0) {
+        // Gradual spin-down
+        p._minigunSpinTime = Math.max(0, p._minigunSpinTime - dt * 1.25);
+        p._minigunSpun = false;
+      }
+    } else {
       p._minigunSpinning = false; p._minigunSpun = false; p._minigunSpinTime = 0;
     }
 

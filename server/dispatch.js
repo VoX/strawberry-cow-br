@@ -302,10 +302,7 @@ function dispatchMessage(player, msg) {
   if (msg.type === 'minigunSpin' && player._joined && player.alive) {
     if (player.weapon === 'minigun') {
       player._minigunSpinning = !!msg.spinning;
-      if (!player._minigunSpinning) {
-        player._minigunSpun = false;
-        player._minigunSpinTime = 0;
-      }
+      // Spin-down is gradual — gameTick decays _minigunSpinTime
     }
   }
   if (msg.type === 'moo' && player._joined && player.alive) {
