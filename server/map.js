@@ -9,8 +9,12 @@ function tooCloseToTower(x, y, w, h) {
   return Math.abs(cx - TOWER_CX) < TOWER_CLEAR && Math.abs(cy - TOWER_CY) < TOWER_CLEAR;
 }
 
-function addWall(x, y, w, h) {
-  if (!tooCloseToTower(x, y, w, h)) gameState.addWall({ id: gameState.nextBarricadeId(), x, y, w, h, hp: 1 });
+function addWall(x, y, w, h, extra) {
+  if (!tooCloseToTower(x, y, w, h)) {
+    const wall = { id: gameState.nextBarricadeId(), x, y, w, h, hp: 1 };
+    if (extra) Object.assign(wall, extra);
+    gameState.addWall(wall);
+  }
 }
 
 // House: a rectangular footprint with 4 wall sides and a door gap in one side.
@@ -22,31 +26,33 @@ function addHouse(cx, cy, w, d, doorSide) {
   const halfW = w / 2, halfD = d / 2;
   const left = cx - halfW, right = cx + halfW;
   const top = cy - halfD, bot = cy + halfD;
-  // North (top) and South (bottom) walls may be split by a door
+  const houseIdx = gameState.getHouses().length;
+  // Tag each wall with houseIdx + houseSide so the client can tear down
+  // windows/door/roof when the corresponding wall segments are destroyed.
   const addSideNS = (y, side) => {
+    const tag = { houseIdx, houseSide: side };
     if (doorSide === side) {
-      // Split into two segments around the door centered on the wall
       const gapStart = cx - DOOR_W / 2;
       const gapEnd = cx + DOOR_W / 2;
       const leftLen = gapStart - left;
       const rightLen = right - gapEnd;
-      if (leftLen > 0) addWall(left, y, leftLen, T);
-      if (rightLen > 0) addWall(gapEnd, y, rightLen, T);
+      if (leftLen > 0) addWall(left, y, leftLen, T, tag);
+      if (rightLen > 0) addWall(gapEnd, y, rightLen, T, tag);
     } else {
-      addWall(left, y, w, T);
+      addWall(left, y, w, T, tag);
     }
   };
   const addSideEW = (x, side) => {
+    const tag = { houseIdx, houseSide: side };
     if (doorSide === side) {
       const gapStart = cy - DOOR_W / 2;
       const gapEnd = cy + DOOR_W / 2;
       const topLen = gapStart - (top + T);
       const botLen = (bot - T) - gapEnd;
-      if (topLen > 0) addWall(x, top + T, T, topLen);
-      if (botLen > 0) addWall(x, gapEnd, T, botLen);
+      if (topLen > 0) addWall(x, top + T, T, topLen, tag);
+      if (botLen > 0) addWall(x, gapEnd, T, botLen, tag);
     } else {
-      // Interior length excludes the corner overlap with N/S walls
-      addWall(x, top + T, T, d - 2 * T);
+      addWall(x, top + T, T, d - 2 * T, tag);
     }
   };
   addSideNS(top, 'N');

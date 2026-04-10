@@ -1,0 +1,18 @@
+{
+  "name": "Cow Gun 3D",
+  "short_name": "CowGun3D",
+  "description": "Multiplayer 3D FPS Battle Royale with cows",
+  "start_url": "/strawberrycow/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#1a0a2e",
+  "theme_color": "#ff88aa",
+  "icons": [
+    {
+      "src": "strawberry-cow-bg.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

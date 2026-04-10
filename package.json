@@ -5,9 +5,9 @@
   "main": "index.js",
   "scripts": {
     "check:dom-ids": "node scripts/check-dom-ids.js",
-    "prebuild:client": "node scripts/check-dom-ids.js",
-    "build:client": "esbuild client/index.js --bundle --outfile=dist/bundle.js --format=esm --external:three --external:three/* --sourcemap=linked",
-    "watch:client": "esbuild client/index.js --bundle --outfile=dist/bundle.js --format=esm --external:three --external:three/* --watch --sourcemap=linked",
+    "build": "node scripts/build.js",
+    "watch": "node scripts/build.js --watch",
+    "build:client": "node scripts/build.js",
     "test:fire-weapon": "node server/tests/fire-weapon.characterization.js",
     "test:terrain": "node server/tests/terrain-determinism.test.js",
     "test:movement": "node server/tests/movement.characterization.js",

@@ -13,6 +13,10 @@ let _mapMeshes = [];
 let _wallBodyIM = null, _wallTrimIM = null, _wallCapIM = null, _wallXBeamIM = null;
 const _wallSlotsById = {}; // wallId → { body, trim, cap, xBeams: [idx...], stains: [mesh...], center: {x,z}, minX, maxX, minZ, maxZ }
 const _HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0); // send an instance off to nowhere
+// House wall→decoration tracking. Populated during buildMap() so
+// destroyWall() can tear down windows/door/roof when walls fall.
+const _houseWallMap = {};   // wallId → { houseIdx, side }
+const _houseParts = {};     // houseIdx → { group, sideDecor: { N: [mesh..], .. }, roof: [mesh..], wallIds: Set, destroyedWallIds: Set }
 const _tmpWallMat4 = new THREE.Matrix4();
 const _tmpWallPos = new THREE.Vector3();
 const _tmpWallQuat = new THREE.Quaternion();
@@ -64,6 +68,17 @@ export function buildMap() {
   [_wallBodyIM, _wallTrimIM, _wallCapIM, _wallXBeamIM].forEach(im => { if (im) { scene.remove(im); im.geometry.dispose(); } });
   _wallBodyIM = _wallTrimIM = _wallCapIM = _wallXBeamIM = null;
   for (const id in _wallSlotsById) delete _wallSlotsById[id];
+  for (const id in _houseWallMap) delete _houseWallMap[id];
+  for (const idx in _houseParts) delete _houseParts[idx];
+  // Register wall→house associations from server-tagged wall data so
+  // we can tear down windows/door/roof when house walls are destroyed.
+  (S.mapFeatures.walls || []).forEach(w => {
+    if (w.houseIdx != null) {
+      _houseWallMap[w.id] = { houseIdx: w.houseIdx, side: w.houseSide };
+      if (!_houseParts[w.houseIdx]) _houseParts[w.houseIdx] = { group: null, sideDecor: {}, roof: [], wallIds: new Set(), destroyedWallIds: new Set() };
+      _houseParts[w.houseIdx].wallIds.add(w.id);
+    }
+  });
   function addMap(m) { scene.add(m); _mapMeshes.push(m); return m; }
   const wm = new THREE.MeshLambertMaterial({ color: 0x7a2a26 });
   const trimMat = new THREE.MeshLambertMaterial({ color: 0xc8c0a8 });
@@ -243,10 +258,12 @@ export function buildMap() {
   // Houses — the 4 wall sides are already in S.mapFeatures.walls (placed by server) so
   // collision "just works" via the existing wall system. Here we only draw the roof,
   // window frames, and door frame that make the structure read as a house.
-  (S.mapFeatures.houses || []).forEach(h => {
+  (S.mapFeatures.houses || []).forEach((h, hIdx) => {
     const th = getTerrainHeight(h.cx, h.cy);
     const wallH = 70;
     const houseGroup = new THREE.Group();
+    const hp = _houseParts[hIdx];
+    if (hp) hp.group = houseGroup;
     const roofMat = new THREE.MeshLambertMaterial({ color: 0x4a301a });
     const frameMat = new THREE.MeshLambertMaterial({ color: 0x3a201a });
     const glassMat = new THREE.MeshLambertMaterial({ color: 0x88ccff, transparent: true, opacity: 0.55 });
@@ -280,12 +297,14 @@ export function buildMap() {
       roofR.position.set(slabCenterOffset, slabHeight, 0);
     }
     houseGroup.add(roofL); houseGroup.add(roofR);
+    if (hp) hp.roof.push(roofL, roofR);
     // Ridge beam
     const ridgeGeo = isLongX
       ? new THREE.BoxGeometry(4, 4, longLen + eaveOverhang * 2)
       : new THREE.BoxGeometry(longLen + eaveOverhang * 2, 4, 4);
     const ridge = new THREE.Mesh(ridgeGeo, roofMat);
     ridge.position.y = wallH + roofLift; houseGroup.add(ridge);
+    if (hp) hp.roof.push(ridge);
 
     // Door frame + door (set into the door-side wall gap)
     const T = 20; // matches server wall thickness
@@ -309,6 +328,7 @@ export function buildMap() {
     door.position.set(dLocalX, doorH / 2, dLocalZ);
     door.rotation.y = dFacingY + ajar;
     houseGroup.add(door);
+    if (hp) hp.sideDecor[h.doorSide] = [frame, door];
 
     // Window frames + glass on the non-door walls — 1 window per side, centered
     const winW = 28, winH = 22, winY = wallH * 0.55;
@@ -325,6 +345,7 @@ export function buildMap() {
       const glass = new THREE.Mesh(new THREE.BoxGeometry(winW, winH, T + 2), glassMat);
       glass.position.set(lx, winY, lz); glass.rotation.y = rot;
       houseGroup.add(glass);
+      if (hp) hp.sideDecor[side] = [winFrame, glass];
     }
 
     houseGroup.position.set(h.cx, th, h.cy);
@@ -414,6 +435,36 @@ function _buildBarricadeTemplate() {
   return g;
 }
 const _BARRICADE_TEMPLATE = _buildBarricadeTemplate();
+
+// When a house wall is destroyed, tear down the corresponding side's
+// decorations (window or door). When ALL walls of the house are gone,
+// tear down the roof too.
+export function onHouseWallDestroyed(wallId) {
+  const ref = _houseWallMap[wallId];
+  if (!ref) return;
+  const hp = _houseParts[ref.houseIdx];
+  if (!hp || !hp.group) return;
+  hp.destroyedWallIds.add(wallId);
+  // Remove side decorations (window or door on this wall's side)
+  const decor = hp.sideDecor[ref.side];
+  if (decor) {
+    for (const m of decor) {
+      hp.group.remove(m);
+      if (m.geometry) m.geometry.dispose();
+      if (m.material) m.material.dispose();
+    }
+    delete hp.sideDecor[ref.side];
+  }
+  // Check if ALL wall segments of this house are gone → remove roof
+  if (hp.destroyedWallIds.size >= hp.wallIds.size && hp.roof.length > 0) {
+    for (const m of hp.roof) {
+      hp.group.remove(m);
+      if (m.geometry) m.geometry.dispose();
+      if (m.material) m.material.dispose();
+    }
+    hp.roof.length = 0;
+  }
+}
 
 export function addBarricade(b) {
   if (_barricadeMeshes[b.id]) return;

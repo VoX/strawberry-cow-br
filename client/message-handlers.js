@@ -16,7 +16,7 @@ import { getTerrainHeight, rebuildTerrain } from './terrain.js';
 import { send, closeActive as closeActiveTransport } from './network.js';
 import { showPerkMenu } from './ui.js';
 import { spawnParts, showChatBubble } from './entities.js';
-import { addBarricade, removeBarricade, clearBarricades, destroyWall } from './map-objects.js';
+import { addBarricade, removeBarricade, clearBarricades, destroyWall, onHouseWallDestroyed } from './map-objects.js';
 import { clearRocketSounds } from './projectiles.js';
 import { spawnParticle, clearParticles, PGEO_SPHERE_LO, PGEO_SPHERE_MED, PGEO_BOX, PGEO_TORUS } from './particles.js';
 import { setArmorSpawns, onArmorSpawn, onArmorPickup, clearPickups } from './pickups.js';
@@ -853,10 +853,11 @@ export const handlers = {
 
   wallDestroyed(msg) {
     destroyWall(msg.id);
+    onHouseWallDestroyed(msg.id);
     removeBulletHolesBySurfaceKey('wall:' + msg.id);
-    // Server also removes it from WALLS, but update client S.mapFeatures for consistency
     if (S.mapFeatures && S.mapFeatures.walls) {
-      S.mapFeatures.walls = S.mapFeatures.walls.filter(w => w.id !== msg.id);
+      const wi = S.mapFeatures.walls.findIndex(w => w.id === msg.id);
+      if (wi >= 0) S.mapFeatures.walls.splice(wi, 1);
     }
   },
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Verify every `document.getElementById('X')` in client/*.js resolves to an
-// `id="X"` in dist/index.html. Catches the class of bug where HTML and JS
+// `id="X"` in public/index.html. Catches the class of bug where HTML and JS
 // drift (e.g. a handler references #nightCheck but the HTML doesn't ship it
 // anymore — ui.js then throws at module init and the whole bundle fails to
 // load, which is exactly how we bricked production earlier today).
@@ -12,7 +12,7 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
-const HTML = path.join(ROOT, 'dist/index.html');
+const HTML = path.join(ROOT, 'public/index.html');
 const CLIENT_DIR = path.join(ROOT, 'client');
 
 // Ids that the HTML doesn't need to ship, because the JS either creates them
@@ -84,17 +84,20 @@ function main() {
   }
 
   if (missing.length === 0) {
-    console.log(`[check-dom-ids] ok — ${calls.size} distinct ids referenced, all resolve against dist/index.html`);
-    process.exit(0);
+    console.log(`[check-dom-ids] ok — ${calls.size} distinct ids referenced, all resolve against public/index.html`);
+    // When required by build.js, return instead of exiting so the build
+    // continues. When run standalone (`node scripts/check-dom-ids.js`),
+    // normal exit at end-of-script is sufficient.
+    return;
   }
 
-  console.error(`[check-dom-ids] FAIL — ${missing.length} dom id(s) referenced in JS but missing from dist/index.html:`);
+  console.error(`[check-dom-ids] FAIL — ${missing.length} dom id(s) referenced in JS but missing from public/index.html:`);
   for (const { id, sites } of missing) {
     console.error(`  #${id}`);
     for (const s of sites) console.error(`    at ${s.file}:${s.line}`);
   }
   console.error('');
-  console.error('Fix: add the element to dist/index.html, or add the id to DYNAMIC_IDS');
+  console.error('Fix: add the element to public/index.html, or add the id to DYNAMIC_IDS');
   console.error('in scripts/check-dom-ids.js if it is legitimately created at runtime.');
   process.exit(1);
 }
