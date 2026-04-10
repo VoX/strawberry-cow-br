@@ -26,16 +26,16 @@ import S from './state.js';
 import { stepPlayerMovement } from '../shared/movement.js';
 import { getTerrainHeight } from './terrain.js';
 import { send } from './network.js';
-import { KNIFE_SPEED_MULT, HIT_SLOW_MULT } from '../shared/constants.js';
+import { KNIFE_SPEED_MULT, HIT_SLOW_MULT, TICK_RATE } from '../shared/constants.js';
 
-// Fixed timestep — must match server/config.js::TICK_RATE.
-const TICK_HZ = 40;
+// Fixed timestep — imported from shared/constants so it stays in sync.
+const TICK_HZ = TICK_RATE;
 const TICK_DT = 1 / TICK_HZ;
 // Divergence threshold before we snap. 1 world unit is ~1cm of visible
 // drift; tighter and floating-point noise triggers spurious snaps.
 const RECONCILE_EPSILON = 1.0;
 // Ring cap for predicted states per input seq. 60 entries = 2 seconds at
-// 30 Hz, plenty of headroom for any reasonable RTT + ack delay.
+// TICK_RATE Hz, plenty of headroom for any reasonable RTT + ack delay.
 const PREDICT_RING_CAP = 60;
 
 // Terrain shim matching the server/terrain.js shape the shared movement
@@ -158,7 +158,7 @@ export function initPrediction() {
   _predictErrorLogged = false;
 }
 
-// Module-level scratch objects so the 30 Hz predict loop doesn't allocate
+// Module-level scratch objects so the 40 Hz predict loop doesn't allocate
 // new world/input/prev objects every step. Field-by-field reuse: zero
 // short-lived allocations on the hot path.
 const _world = { walls: null, barricades: null, mudPatches: null, portals: null, zone: null };
@@ -176,7 +176,7 @@ let _predictErrorLogged = false;
 
 // Previous-tick predicted state used by getRenderedPredicted() to lerp
 // the camera between whole-tick prediction steps so 60 fps render
-// doesn't show the 30 Hz step cadence. Reused in place each tick.
+// doesn't show the 40 Hz step cadence. Reused in place each tick.
 const _prevPredicted = { x: 0, y: 0, z: 0, _set: false };
 // Reusable output object for getRenderedPredicted — caller reads .x/.y/.z
 // once per frame and discards, so a shared module-level object is safe.

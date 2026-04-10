@@ -2,9 +2,9 @@ const MAP_W = 2000;
 const MAP_H = 1500;
 // Server simulation tick rate. Shared with the client so the CSP fixed
 // timestep (client/prediction.js) and the lag-comp interp-delay-ticks
-// math (client/input.js) don't duplicate a 30 literal that would drift
-// if tick/broadcast rates are ever decoupled.
-const TICK_RATE = 30;
+// math don't duplicate a literal that would drift if tick/broadcast
+// rates are ever decoupled.
+const TICK_RATE = 40;
 
 // --- Movement / physics constants ------------------------------------------
 // Lifted out of server/game.js + server/ballistics.js so shared/movement.js

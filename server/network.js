@@ -12,7 +12,7 @@
 
 const transport = require('./transport');
 
-// Unreliable types: tick (30Hz state) + temp entities (cosmetic visuals).
+// Unreliable types: tick (40Hz state) + temp entities (cosmetic visuals).
 // If a packet is lost, game state is unaffected — next tick supersedes
 // state, and missing a visual effect is acceptable.
 // projectileHit is NOT here — it controls client-side projectile mesh

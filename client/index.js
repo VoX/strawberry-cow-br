@@ -114,7 +114,7 @@ function loop(ts) {
     if (curLen > 0) { curMx /= curLen; curMz /= curLen; }
   }
 
-  // Advance client-side prediction at a fixed 30 Hz timestep.
+  // Advance client-side prediction at a fixed 40 Hz timestep.
   // setCurrentInput publishes the current WASD vector to prediction.js
   // — predictStep reads it both for the move emit AND the local
   // integration so the server and client never see different inputs
@@ -135,7 +135,7 @@ function loop(ts) {
 
   // Camera reads the RENDERED predicted position: interpolation between
   // _prevPredicted and S.mePredicted based on the accumulator fraction.
-  // At 60 fps with 30 Hz prediction this hides the fixed-step cadence.
+  // At 60 fps with 40 Hz prediction this hides the fixed-step cadence.
   // `err` is the render-time smoothing offset from reconcile corrections.
   // Hoisted once per frame and shared with the Y-axis block below.
   if (me && me.alive) {

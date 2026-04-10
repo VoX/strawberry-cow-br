@@ -46,7 +46,7 @@ function makeWorld(overrides = {}) {
   }, overrides);
 }
 
-const DT = 1 / 30;
+const DT = 1 / 40;
 let pass = 0, fail = 0;
 
 function runCase(name, fn) {
@@ -74,12 +74,12 @@ runCase('idle player stays put', () => {
 });
 
 // ---- Case 2: forward movement ---------------------------------------------
-// One tick at 108 u/s * 1/30 s = 3.6 u in +y.
+// One tick at 108 u/s * 1/40 s = 2.7 u in +y.
 runCase('forward movement delta', () => {
   const p = makePlayer();
   const w = makeWorld();
   stepPlayerMovement(p, DT, w, { dx: 0, dy: 1, walking: false }, terrain, pushOutOfWalls);
-  assert.strictEqual(Math.abs(p.y - 753.6) < 0.001, true, `y=${p.y}`);
+  assert.strictEqual(Math.abs(p.y - 752.7) < 0.001, true, `y=${p.y}`);
   assert.strictEqual(p.dir, 'south');
 });
 
@@ -88,7 +88,8 @@ runCase('walking halves movement', () => {
   const p = makePlayer();
   const w = makeWorld();
   stepPlayerMovement(p, DT, w, { dx: 0, dy: 1, walking: true }, terrain, pushOutOfWalls);
-  assert.strictEqual(Math.abs(p.y - 751.8) < 0.001, true, `y=${p.y}`);
+  // 108 * 0.5 * 1/40 = 1.35
+  assert.strictEqual(Math.abs(p.y - 751.35) < 0.001, true, `y=${p.y}`);
 });
 
 // ---- Case 4: stun blocks movement -----------------------------------------
@@ -117,8 +118,8 @@ runCase('mud patch applies slowdown', () => {
   const p = makePlayer({ x: 1000, y: 750 });
   const w = makeWorld({ mudPatches: [{ x: 1000, y: 750, r: 100 }] });
   stepPlayerMovement(p, DT, w, { dx: 0, dy: 1, walking: false }, terrain, pushOutOfWalls);
-  // 108 * 0.5 * 1/30 = 1.8
-  assert.strictEqual(Math.abs(p.y - 751.8) < 0.001, true, `y=${p.y}`);
+  // 108 * 0.5 * 1/40 = 1.35
+  assert.strictEqual(Math.abs(p.y - 751.35) < 0.001, true, `y=${p.y}`);
 });
 
 // ---- Case 7: portal teleport ----------------------------------------------
@@ -130,7 +131,7 @@ runCase('portal teleports to paired endpoint', () => {
   stepPlayerMovement(p, DT, w, { dx: 0, dy: 0, walking: false }, terrain, pushOutOfWalls);
   assert.strictEqual(p.x, 1800);
   assert.strictEqual(p.y, 1400);
-  // Portal sets cooldown to 2 then the same tick decrements by dt → 2 - 1/30.
+  // Portal sets cooldown to 2 then the same tick decrements by dt → 2 - 1/40.
   assert(Math.abs(p._portalCooldown - (2 - DT)) < 1e-9, `cooldown=${p._portalCooldown}`);
 });
 

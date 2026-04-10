@@ -251,7 +251,7 @@ export const handlers = {
     clearBulletHoles();
   },
 
-  // 30 Hz tick broadcast with full player state (mutable + sticky fields).
+  // 40 Hz tick broadcast with full player state (mutable + sticky fields).
   // Merges into serverPlayers in-place. Position rendering for remote players
   // comes from SI interpolation; this merge keeps HUD/kill-feed data current.
   tick(msg) {

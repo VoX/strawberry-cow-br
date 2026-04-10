@@ -68,7 +68,7 @@ function init(httpServer) {
   _wss = new WebSocketServer({
     server: httpServer,
     // Deflate was saving bandwidth but coalesces small frames and adds
-    // per-send latency. Latency matters more than bandwidth for a 30 Hz
+    // per-send latency. Latency matters more than bandwidth for a 40 Hz
     // action game; inchworming at the player end traced to deflate
     // backpressure + Nagle batching.
     perMessageDeflate: false,

@@ -426,7 +426,7 @@ export function updateCows(time, dt) {
     if (smooth.aim !== undefined) {
       // Snap directly to the interpolated aim — the sampler already handles
       // the -π/+π shortest-arc wraparound so we don't need the per-frame
-      // smoothing lerp here anymore (it was covering for the 30 Hz step).
+      // smoothing lerp here anymore (it was covering for the 40 Hz step).
       cm.rotation.y = smooth.aim;
     }
     // Debug hitboxes — only shown for alive cows. Body height comes from scale.y

@@ -4,7 +4,7 @@ import { cam, ren } from './renderer.js';
 import { initAudio } from './audio.js';
 import { send } from './network.js';
 import { getServerTime } from './snapshot.js';
-import { TICK_RATE, BURST_FAMILY, JUMP_VZ } from '../shared/constants.js';
+import { BURST_FAMILY, JUMP_VZ } from '../shared/constants.js';
 
 // Jump prediction: server applies vz=200 + onGround=false on receipt of
 // the jump message ONLY IF player.onGround was true. Mirror that gate

@@ -11,7 +11,7 @@ function assignColor() {
 }
 
 // Full player state for start/spectate sync. Uses the same getPlayerTick()
-// that the 30Hz broadcast uses — no separate snapshot shape needed.
+// that the 40Hz broadcast uses — no separate snapshot shape needed.
 function getPlayerStates() {
   const arr = [];
   for (const [, p] of gameState.getPlayers()) {
@@ -82,7 +82,7 @@ function applyArmorDelta(p, delta) {
 // Full player state per tick — mutable + sticky fields combined.
 // Previously sticky fields (name/color/weapon/perks) were sent via a
 // separate playerSnapshot message on event. Now everything rides the
-// 30Hz tick so dropped ticks are harmless and there's no stale-sticky bug.
+// 40Hz tick so dropped ticks are harmless and there's no stale-sticky bug.
 function getPlayerTick(p) {
   const perks = p.perks || {};
   return {
