@@ -7,7 +7,6 @@
 // single-shot UDP fire-and-forget.
 
 import geckosClient from '@geckos.io/client';
-import { decodeTick } from '../../shared/snapshot-schema.js';
 
 const RELIABLE_OPTS = Object.freeze({ reliable: true, interval: 150, runs: 10 });
 const MSG_EVENT = 'msg';
@@ -65,19 +64,10 @@ function connect(opts) {
     if (_onOpen) _onOpen();
   });
 
-  // Messages arrive as plain objects (reliable) or potentially ArrayBuffer
-  // (unreliable tick data encoded with typed-array-buffer-schema).
+  // All messages arrive as plain objects — geckos handles serialization.
   _channel.on(MSG_EVENT, data => {
     if (!_onMessage) return;
-    try {
-      if (data instanceof ArrayBuffer) {
-        _onMessage(decodeTick(data));
-      } else if (data instanceof Uint8Array) {
-        _onMessage(decodeTick(data.buffer));
-      } else {
-        _onMessage(data);
-      }
-    } catch (err) { /* never let a handler crash kill the transport */ }
+    try { _onMessage(data); } catch (err) { /* never let a handler crash kill the transport */ }
   });
 
   _channel.onDisconnect(() => fireClose(null));

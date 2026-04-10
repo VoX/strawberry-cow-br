@@ -1,7 +1,8 @@
 const { TICK_RATE, MAP_W, MAP_H } = require('./config');
 const { KNIFE_SPEED_MULT, JUMP_VZ } = require('../shared/constants');
 const { SnapshotInterpolation } = require('@geckos.io/snapshot-interpolation');
-const { encodeTick } = require('../shared/snapshot-schema');
+// typed-array-buffer-schema encoding disabled for now — player IDs are
+// numbers but the schema expects strings. Revisit after stabilizing SI.
 
 // Server-side SI — creates timestamped snapshots and stores them in a vault
 // for lag-compensated hit detection (time rewind).
@@ -311,16 +312,12 @@ function gameTick() {
     zone: gameState.getZone(),
     gameTime: Math.floor(gameState.getGameTime()),
   };
-  // Encode the full tick into a compact binary buffer via typed-array-buffer-schema.
-  // ~80% smaller than JSON. The transport sends this as raw binary (WS) or
-  // passes it to geckos.io's data channel.
-  const tickBuffer = encodeTick(tickPayload);
   const currentTick = gameState.getTickNum();
   for (const [, p] of gameState.getPlayers()) {
     if (p.isBot || !p.ws) continue;
     const stride = Math.max(1, Math.round(TICK_RATE / (p.updateRate || TICK_RATE)));
     if (currentTick % stride !== 0) continue;
-    transport.sendUnreliable(p.ws, tickBuffer);
+    transport.sendUnreliable(p.ws, tickPayload);
   }
 }
 
