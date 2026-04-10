@@ -11,7 +11,7 @@
 import * as THREE from 'three';
 import S from './state.js';
 import { sfx, sfxShoot, sfxBolty, sfxShotgun, sfxRocket, sfxLR, sfxExplosion, sfxHit, sfxEat, sfxLevelUp, sfxDeath, sfxEmptyMag, sfxReloadLR, sfxReloadBolty, sfxShellLoad, sfxMoo, sfxMeleeSwing, sfxMeleeHit, setMusicPlaying, resetMusic, getAudioCtx, startMenuMusic, stopMenuMusic, initAudio } from './audio.js';
-import { scene, cam, setNightMode } from './renderer.js';
+import { scene, cam, setNightMode, setDayNightFactor } from './renderer.js';
 import { getTerrainHeight, rebuildTerrain } from './terrain.js';
 import { send, closeActive as closeActiveTransport } from './network.js';
 import { showPerkMenu } from './ui.js';
@@ -351,6 +351,16 @@ export const handlers = {
     }
     if (msg.zone) S.serverZone = msg.zone;
     if (S.pingLast > 0) { const pd = performance.now() - S.pingLast; if (pd < 2000) S.pingVal = S.pingVal * 0.7 + pd * 0.3; S.pingLast = 0; }
+    // Day/night cycle: 1200s period. Day=0-600s, dusk=600-720, night=720-1080, dawn=1080-1200
+    if (msg.gameTime != null) {
+      const t = msg.gameTime % 1200;
+      let nightFactor;
+      if (t < 600) nightFactor = 0;
+      else if (t < 720) nightFactor = (t - 600) / 120;
+      else if (t < 1080) nightFactor = 1;
+      else nightFactor = 1 - (t - 1080) / 120;
+      setDayNightFactor(nightFactor);
+    }
   },
 
   // Low-rate (~6 Hz) echo of the server's highest-applied input seq for

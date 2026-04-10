@@ -70,17 +70,30 @@ scene.add(sky);
 
 // Night mode toggle — updates lights, sky shader, and cloud opacity
 export function setNightMode(enabled) {
-  skyMat.uniforms.uNight.value = enabled ? 1 : 0;
-  if (enabled) {
-    ambient.color.setHex(0x2233aa); ambient.intensity = 0.18;
-    sun.color.setHex(0x99aadd); sun.intensity = 0.22;
-    hemi.color.setHex(0x0a0a30); hemi.groundColor.setHex(0x050510); hemi.intensity = 0.15;
+  setDayNightFactor(enabled ? 1 : 0);
+}
+
+// Smooth day/night cycle — factor is 0 (full day) to 1 (full night).
+// Called per-frame from the tick handler based on server gameTime.
+export function setDayNightFactor(f) {
+  const n = Math.max(0, Math.min(1, f));
+  skyMat.uniforms.uNight.value = n;
+  // Lerp lighting between day and night values
+  ambient.intensity = 0.6 - n * 0.42;
+  sun.intensity = 0.8 - n * 0.58;
+  hemi.intensity = 0.3 - n * 0.15;
+  if (n > 0.5) {
+    ambient.color.setHex(0x2233aa);
+    sun.color.setHex(0x99aadd);
+    hemi.color.setHex(0x0a0a30);
+    hemi.groundColor.setHex(0x050510);
   } else {
-    ambient.color.setHex(0xffffff); ambient.intensity = 0.6;
-    sun.color.setHex(0xffffff); sun.intensity = 0.8;
-    hemi.color.setHex(0x87CEEB); hemi.groundColor.setHex(0x44aa44); hemi.intensity = 0.3;
+    ambient.color.setHex(0xffffff);
+    sun.color.setHex(0xffffff);
+    hemi.color.setHex(0x87CEEB);
+    hemi.groundColor.setHex(0x44aa44);
   }
-  cloudPlanes.forEach(c => { c.material.opacity = enabled ? 0.15 : 0.7; });
+  cloudPlanes.forEach(c => { c.material.opacity = 0.7 - n * 0.55; });
 }
 
 // Cloud planes with procedural texture
