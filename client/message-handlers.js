@@ -309,8 +309,6 @@ export const handlers = {
     // Delta merge: if this is a delta tick (no keyframe flag), the state
     // array contains only changed fields per entity. Merge onto cached
     // S.serverPlayers. If keyframe, replace entirely.
-    const byId = new Map();
-    for (const sp of S.serverPlayers) byId.set(sp.id, sp);
     const tickPlayers = msg.snapshot ? msg.snapshot.state : (msg.players || []);
     const isKeyframe = !!msg.keyframe;
 
@@ -319,9 +317,9 @@ export const handlers = {
       S.serverPlayers = tickPlayers.map(t => ({ ...t }));
     } else {
       // Delta — merge changed fields onto existing cached state.
-      const seen = new Set();
+      const byId = new Map();
+      for (const sp of S.serverPlayers) byId.set(sp.id, sp);
       for (const t of tickPlayers) {
-        seen.add(t.id);
         const existing = byId.get(t.id);
         if (!existing) {
           // New player (or _full flag) — append.
@@ -335,10 +333,11 @@ export const handlers = {
           Object.assign(existing, t);
         }
       }
-      // On keyframes we replaced entirely. On deltas, players omitted from
-      // the delta are UNCHANGED (not removed). Only remove players that
-      // the server explicitly stopped including — detected by comparing
-      // against a full-state tick. For deltas, we keep everyone.
+      // Remove players the server says left since the baseline.
+      if (msg.removedIds) {
+        const removed = new Set(msg.removedIds);
+        S.serverPlayers = S.serverPlayers.filter(p => !removed.has(p.id));
+      }
     }
 
     // Sync server-only movement gates onto predicted player.

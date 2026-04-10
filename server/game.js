@@ -321,8 +321,8 @@ function gameTick() {
     if (currentTick % stride !== 0) continue;
 
     const seq = p._snapSeq++;
-    // Store current full state in the ring for future deltas.
-    p._snapRing[seq % SNAP_RING_SIZE] = { seq, state: players };
+    // Store a shallow copy so ring entries aren't aliased across ticks.
+    p._snapRing[seq % SNAP_RING_SIZE] = { seq, state: players.map(p => ({ ...p })) };
 
     // Find the acked baseline.
     let baseline = null;
@@ -358,11 +358,19 @@ function gameTick() {
         }
         if (changed) delta.push(d);
       }
+      // Detect players present in baseline but missing from current tick.
+      const currentIds = new Set();
+      for (const cur of players) currentIds.add(cur.id);
+      const removedIds = [];
+      for (const bp of baseline) {
+        if (!currentIds.has(bp.id)) removedIds.push(bp.id);
+      }
       tickPayload = {
         type: 'tick', tickNum: currentTick, snapSeq: seq,
         snapshot: { id: snapshot.id, time: snapshot.time, state: delta },
         zone: tickZone, gameTime,
       };
+      if (removedIds.length) tickPayload.removedIds = removedIds;
     }
     transport.sendUnreliable(p.ws, tickPayload);
   }
