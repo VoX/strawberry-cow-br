@@ -20,7 +20,10 @@ const TICK_HZ = 30;
 const TICK_DT = 1 / TICK_HZ;
 
 // Reconciliation thresholds
-const RECONCILE_EPSILON = 1.0;  // below this, prediction matched — no correction
+const RECONCILE_EPSILON = 5.0;  // below this, prediction matched — no correction
+// Raised from 1.0 because the latest-tick comparison (not time-matched)
+// always has a few units of latency-induced drift that's normal and
+// shouldn't trigger corrections.
 const SNAP_THRESHOLD = 40;      // above this, hard teleport (respawn/portal)
 const ERR_DEAD_ZONE = 0.05;     // render offset below this zeroed out
 
@@ -186,38 +189,38 @@ export function predictStep(frameDt) {
   reconcile();
 }
 
-// Time-based server reconciliation using SI vault.
-// Snap logical position to server state when drift exceeds epsilon,
-// then fold the visual delta into the render offset smoother.
+// Reconciliation using latest server tick position for our player.
+// Compares the CURRENT predicted position against the server's latest
+// position for us. Simpler than time-based vault matching — avoids the
+// approximate timestamp alignment that causes spurious Z corrections
+// on hills. The server position is always "the latest authoritative
+// state" and the predicted position is "where we think we are now."
+//
+// This is less precise than the old seq-based system (we're comparing
+// latest-tick vs current-prediction, not matching specific inputs) but
+// the render smoother absorbs small drifts visually.
+let _lastReconcileServerX = 0;
+let _lastReconcileServerY = 0;
+let _lastReconcileServerZ = 0;
+
+// Called from the tick handler when we receive our own position.
+export function onServerPositionUpdate(x, y, z) {
+  _lastReconcileServerX = x;
+  _lastReconcileServerY = y;
+  _lastReconcileServerZ = z;
+}
+
 function reconcile() {
   if (!S.mePredicted || !S.myId) return;
+  // Only reconcile if we have a server position to compare against.
+  if (_lastReconcileServerX === 0 && _lastReconcileServerY === 0) return;
 
-  const serverSnapshot = SI.vault.get();
-  if (!serverSnapshot || !serverSnapshot.state) return;
-
-  // Find our entity in the server snapshot.
-  let serverMe = null;
-  for (let i = 0; i < serverSnapshot.state.length; i++) {
-    if (serverSnapshot.state[i].id === S.myId) { serverMe = serverSnapshot.state[i]; break; }
-  }
-  if (!serverMe) return;
-
-  // Find our predicted state closest to the server snapshot's time.
-  const clientTime = serverSnapshot.time + (SI.timeOffset || 0);
-  const predicted = playerVault.get(clientTime, true);
-  if (!predicted || !predicted.state) return;
-
-  let predMe = null;
-  for (let i = 0; i < predicted.state.length; i++) {
-    if (predicted.state[i].id === S.myId) { predMe = predicted.state[i]; break; }
-  }
-  if (!predMe) return;
-
-  // Calculate drift between predicted and server at the same time.
-  const dx = predMe.x - serverMe.x;
-  const dy = predMe.y - serverMe.y;
-  const dz = (predMe.z || 0) - (serverMe.z || 0);
-  const drift = Math.hypot(dx, dy, dz);
+  const dx = S.mePredicted.x - _lastReconcileServerX;
+  const dy = S.mePredicted.y - _lastReconcileServerY;
+  // Skip Z in the drift check — terrain height differences between
+  // client and server are the main source of false positives on hills.
+  // Z corrections only trigger on hard snaps (teleport/respawn).
+  const drift = Math.hypot(dx, dy);
 
   // Net stats.
   const ns = S.netStats;
@@ -229,21 +232,15 @@ function reconcile() {
 
   if (drift <= RECONCILE_EPSILON) return; // prediction matched
 
-  // Capture pre-correction position for the render smoother.
   const preX = S.mePredicted.x;
   const preY = S.mePredicted.y;
-  const preZ = S.mePredicted.z;
 
-  // Snap logical position to server state.
-  S.mePredicted.x = serverMe.x;
-  S.mePredicted.y = serverMe.y;
-  S.mePredicted.z = serverMe.z;
+  // Snap XY to server. Keep predicted Z — terrain height is deterministic
+  // from shared/movement.js so client Z is authoritative.
+  S.mePredicted.x = _lastReconcileServerX;
+  S.mePredicted.y = _lastReconcileServerY;
 
-  // Fold the visual delta into the render offset smoother.
-  // Camera sees (mePredicted + renderOffset), so offsetting by
-  // (pre - post) keeps the camera in place visually while the
-  // logical position jumps. The offset decays over 150ms.
-  foldError(preX - S.mePredicted.x, preY - S.mePredicted.y, preZ - S.mePredicted.z);
+  foldError(preX - S.mePredicted.x, preY - S.mePredicted.y, 0);
 }
 
 // No longer used — kept as no-op for any call sites that haven't been updated.

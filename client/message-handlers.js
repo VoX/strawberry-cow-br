@@ -26,6 +26,7 @@ import { S2C } from '../shared/messages.js';
 import { BURST_FAMILY, HIT_SLOW_DURATION_MS } from '../shared/constants.js';
 import { COL_HEX } from './config.js';
 import { addSnapshot, getInterpolatedEntity } from './snapshot.js';
+import { onServerPositionUpdate } from './prediction.js';
 import { spawnBulletHole, clearBulletHoles, removeBulletHolesBySurfaceKey } from './bullet-holes.js';
 
 // Reusable temp vector for the projectile muzzle-offset transform.
@@ -330,6 +331,8 @@ export const handlers = {
       if (existing.id === S.myId) {
         const { aimAngle, dir, ...rest } = t;
         Object.assign(existing, rest);
+        // Feed server position to the reconciler.
+        onServerPositionUpdate(t.x, t.y, t.z || 0);
         // Sync server-only movement gates onto predicted player.
         if (S.mePredicted) {
           S.mePredicted.stunTimer = existing.stunTimer || 0;
