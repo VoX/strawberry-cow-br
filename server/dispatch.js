@@ -15,7 +15,7 @@ const { broadcast, sendTo } = require('./network');
 const { assignColor, getPlayerStates, serializeFood, eliminatePlayer, broadcastPlayerSnapshot } = require('./player');
 const { handlePerk } = require('./perks');
 const { handleDropWeapon } = require('./weapons');
-const { handleAttack, handleMelee, handleDash, handleReload, placeBarricadeForPlayer } = require('./combat');
+const { handleAttack, handleMelee, handleDash, handleReload, cancelReload, placeBarricadeForPlayer } = require('./combat');
 const { checkAllReady, getLobbyPlayers, startLobby } = require('./lobby');
 const { checkWinner } = require('./game');
 const transport = require('./transport');
@@ -222,8 +222,7 @@ function dispatchMessage(player, msg) {
       player.weapon = 'knife';
       player.dualWield = false;
       player.ammo = -1;
-      player.reloading = 0;
-      if (player.reloadTimer) { clearTimeout(player.reloadTimer); player.reloadTimer = null; }
+      cancelReload(player);
       broadcastPlayerSnapshot(player);
     } else if (target === 'primary' && player.weapon === 'knife' && player._primaryWeapon) {
       player.weapon = player._primaryWeapon;
@@ -254,7 +253,7 @@ function dispatchMessage(player, msg) {
 
 function handleDisconnect(player) {
   if (!player || !player._joined) return;
-  if (player.reloadTimer) { clearTimeout(player.reloadTimer); player.reloadTimer = null; }
+  cancelReload(player);
   const projs = gameState.getProjectiles();
   for (let i = projs.length - 1; i >= 0; i--) {
     if (projs[i].ownerId === player.id) gameState.removeProjectileAt(i);

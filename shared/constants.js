@@ -40,6 +40,18 @@ const KNIFE_MELEE_CD_MS = 500;
 // scattered string OR-checks.
 const BURST_FAMILY = new Set(['burst', 'aug']);
 
+// Weapons that benefit from the dual-wield perk (two pistols / two Benellis /
+// dual M16A2). Used by hud.js mag display, combat.js ammo calc, and the
+// weapon-pickup path in weapons.js to decide whether a second copy counts.
+const DUAL_WIELD_FAMILY = new Set(['normal', 'shotgun', 'burst']);
+
+// Base magazine capacity by weapon. Single source of truth for hud.js,
+// server/weapon-fire.js, and server/combat.js reload/extMag math.
+const MAG_SIZES = { normal: 15, burst: 20, shotgun: 6, bolty: 5, aug: 30 };
+// Extended-mag perk grants these capacities instead; dual-wield multiplies
+// by 2 further.
+const EXT_MAG_SIZES = { normal: 19, burst: 25, shotgun: 8, bolty: 7, aug: 38 };
+
 // Client input types that carry a monotonic seq number for CSP reconciliation.
 // The client stamps seq on every stateful send; the server tracks the highest
 // seen per player and echoes it back via `inputAck`. Each seq MUST correspond
@@ -73,6 +85,6 @@ module.exports = {
   KNIFE_SPEED_MULT, HIT_SLOW_MULT, HIT_SLOW_DURATION_MS,
   SPEED_MULT_MIN, SPEED_MULT_MAX,
   KNIFE_MELEE_RANGE, KNIFE_MELEE_CONE_COS, KNIFE_MELEE_DAMAGE, KNIFE_MELEE_CD_MS,
-  STATEFUL_INPUT_TYPES, BURST_FAMILY,
+  STATEFUL_INPUT_TYPES, BURST_FAMILY, DUAL_WIELD_FAMILY, MAG_SIZES, EXT_MAG_SIZES,
   COLORS, FOOD_TYPES, WEAPON_TYPES,
 };

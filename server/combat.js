@@ -1,15 +1,11 @@
 const { MAP_W, MAP_H } = require('./config');
-const { broadcast } = require('./network');
+const { broadcast, sendTo } = require('./network');
 const gameState = require('./game-state');
 const { getTerrainHeight, getGroundHeight, WALL_HEIGHT } = require('./terrain');
 const ballistics = require('./ballistics');
 const weaponFire = require('./weapon-fire');
 const { applyHungerDelta, applyArmorDelta, broadcastPlayerSnapshot } = require('./player');
-const { KNIFE_MELEE_RANGE, KNIFE_MELEE_CONE_COS, KNIFE_MELEE_DAMAGE, KNIFE_MELEE_CD_MS } = require('../shared/constants');
-
-const MAG_SIZES = weaponFire.MAG_SIZES;
-// Extended-mag perk values — specific per weapon (dual-wield multiplies these by 2)
-const EXT_MAG_SIZES = { normal: 19, burst: 25, shotgun: 8, bolty: 7, aug: 38 };
+const { MAG_SIZES, EXT_MAG_SIZES, DUAL_WIELD_FAMILY, KNIFE_MELEE_RANGE, KNIFE_MELEE_CONE_COS, KNIFE_MELEE_DAMAGE, KNIFE_MELEE_CD_MS } = require('../shared/constants');
 
 
 const BASE_EYE_HEIGHT = 35;
@@ -34,7 +30,6 @@ function handleAttack(player, msg) {
   }
   const magSize = MAG_SIZES[weapon];
   if (magSize && player.ammo <= 0) {
-    const { sendTo } = require('./network');
     sendTo(player.ws, { type: 'emptyMag' });
     player.attackCooldown = 0.3;
     handleReload(player);
@@ -72,17 +67,8 @@ function handleAttack(player, msg) {
   });
   if (!fired) return;
 
-  // Cowtank is single-use — drop back to normal weapon after firing. Sticky
-  // fields (weapon, dualWield, ammo) changed, so emit a snapshot or the
-  // client viewmodel/HUD will stay on the cowtank until the next unrelated event.
-  if (weapon === 'cowtank') {
-    player.weapon = 'normal';
-    player.dualWield = false;
-    player.ammo = Math.ceil(15 * (player.extMagMult || 1));
-    player.reloading = 0;
-    broadcast({ type: 'weaponDrop', playerId: player.id, name: player.name });
-    broadcastPlayerSnapshot(player);
-  }
+  // Cowtank is single-use — drop back to normal weapon after firing.
+  if (weapon === 'cowtank') weaponFire.resetAfterCowtank(player);
 }
 
 function applyExplosion(pr, excludeId) {
@@ -359,7 +345,7 @@ function handleDash(player) {
       if (!blocked) {
         for (const b of gameState.getBarricades()) {
           const dxB = player.x - b.cx, dyB = player.y - b.cy;
-          const cosA = Math.cos(b.angle), sinA = Math.sin(b.angle);
+          const cosA = b._cosA, sinA = b._sinA;
           const lx = cosA * dxB + sinA * dyB;
           const ly = -sinA * dxB + cosA * dyB;
           if (Math.abs(lx) < b.h / 2 + 15 && Math.abs(ly) < b.w / 2 + 15) { blocked = true; break; }
@@ -381,8 +367,7 @@ function getMaxAmmo(player, weapon) {
   const base = MAG_SIZES[weapon];
   if (!base) return 0;
   const extBase = player._hasExtMag ? (EXT_MAG_SIZES[weapon] || base) : base;
-  // Dual-wielded M16A2/benelli get 2x magazine
-  const dualMult = (player.dualWield && (weapon === 'burst' || weapon === 'shotgun')) ? 2 : 1;
+  const dualMult = (player.dualWield && DUAL_WIELD_FAMILY.has(weapon)) ? 2 : 1;
   return extBase * dualMult;
 }
 
@@ -400,16 +385,16 @@ function handleReload(player) {
     const loadShell = () => {
       if (!player.alive || player.weapon !== 'shotgun' || player.ammo >= getMaxAmmo(player, 'shotgun')) {
         player.reloading = 0;
-        broadcast({ type: 'reloaded', playerId: player.id, weapon: 'shotgun' });
+        sendTo(player.ws, { type: 'reloaded', playerId: player.id, weapon: 'shotgun' });
         return;
       }
       player.ammo++;
-      broadcast({ type: 'shellLoaded', playerId: player.id, ammo: player.ammo });
+      sendTo(player.ws, { type: 'shellLoaded', playerId: player.id, ammo: player.ammo });
       if (player.ammo < getMaxAmmo(player, 'shotgun')) {
         player.reloadTimer = gameState.scheduleRoundTimer(loadShell, shellMs);
       } else {
         player.reloading = 0;
-        broadcast({ type: 'reloaded', playerId: player.id, weapon: 'shotgun' });
+        sendTo(player.ws, { type: 'reloaded', playerId: player.id, weapon: 'shotgun' });
       }
     };
     player.reloadTimer = gameState.scheduleRoundTimer(loadShell, shellMs);
@@ -419,7 +404,7 @@ function handleReload(player) {
     player.reloadTimer = gameState.scheduleRoundTimer(() => {
       player.ammo = getMaxAmmo(player, player.weapon);
       player.reloading = 0;
-      broadcast({ type: 'reloaded', playerId: player.id, weapon });
+      sendTo(player.ws, { type: 'reloaded', playerId: player.id, weapon });
     }, reloadTime);
   }
 }
@@ -497,4 +482,9 @@ function handleMelee(player) {
   broadcast({ type: 'meleeHit', attackerId: player.id, targetId: hit.id, x: hit.x, y: hit.y, dmg: Math.round(KNIFE_MELEE_DAMAGE) });
 }
 
-module.exports = { handleAttack, handleMelee, updateProjectiles, handleDash, handleReload, getMaxAmmo, placeBarricadeForPlayer, eyeHeight };
+function cancelReload(player) {
+  player.reloading = 0;
+  if (player.reloadTimer) { clearTimeout(player.reloadTimer); player.reloadTimer = null; }
+}
+
+module.exports = { handleAttack, handleMelee, updateProjectiles, handleDash, handleReload, cancelReload, getMaxAmmo, placeBarricadeForPlayer, eyeHeight };

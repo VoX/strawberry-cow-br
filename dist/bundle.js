@@ -50,6 +50,9 @@ var require_constants = __commonJS({
     var KNIFE_MELEE_DAMAGE = 55;
     var KNIFE_MELEE_CD_MS = 500;
     var BURST_FAMILY4 = /* @__PURE__ */ new Set(["burst", "aug"]);
+    var DUAL_WIELD_FAMILY2 = /* @__PURE__ */ new Set(["normal", "shotgun", "burst"]);
+    var MAG_SIZES2 = { normal: 15, burst: 20, shotgun: 6, bolty: 5, aug: 30 };
+    var EXT_MAG_SIZES2 = { normal: 19, burst: 25, shotgun: 8, bolty: 7, aug: 38 };
     var STATEFUL_INPUT_TYPES2 = /* @__PURE__ */ new Set([
       "move"
     ]);
@@ -86,6 +89,9 @@ var require_constants = __commonJS({
       KNIFE_MELEE_CD_MS,
       STATEFUL_INPUT_TYPES: STATEFUL_INPUT_TYPES2,
       BURST_FAMILY: BURST_FAMILY4,
+      DUAL_WIELD_FAMILY: DUAL_WIELD_FAMILY2,
+      MAG_SIZES: MAG_SIZES2,
+      EXT_MAG_SIZES: EXT_MAG_SIZES2,
       COLORS,
       FOOD_TYPES,
       WEAPON_TYPES
@@ -94,7 +100,7 @@ var require_constants = __commonJS({
 });
 
 // client/config.js
-var import_constants, MW, MH, CH, COL, WPCOL, PERKS;
+var import_constants, MW, MH, CH, COL, COL_HEX, WPCOL, PERKS;
 var init_config = __esm({
   "client/config.js"() {
     import_constants = __toESM(require_constants());
@@ -102,6 +108,7 @@ var init_config = __esm({
     MH = import_constants.MAP_H;
     CH = 35;
     COL = { pink: 16746666, blue: 8956671, green: 8978312, gold: 16768324, purple: 13404415, red: 16729156, orange: 16746564, cyan: 4521949 };
+    COL_HEX = { pink: "#ff88aa", blue: "#88aaff", green: "#88ff88", gold: "#ffdd44", purple: "#cc88ff", red: "#ff4444", orange: "#ff8844", cyan: "#44ffdd" };
     WPCOL = { shotgun: 16729156, burst: 4500223, bolty: 16755200, cowtank: 4521796, aug: 11158783 };
     PERKS = [
       { id: "speed", name: "Swift Hooves", desc: "+15% speed" },
@@ -184,6 +191,12 @@ var init_state = __esm({
       // performance.now() ms — local on-hit slowdown timer (client-authoritative)
       localPrimaryWeapon: null,
       // last-held primary stashed when switching to knife
+      _hudTick: 0,
+      // 10 Hz throttle accumulator for HUD chat/minimap
+      _reloadStart: null,
+      // performance.now() when current reload began
+      _reloadDuration: null,
+      // expected reload duration in ms
       // Network monitoring (debug-mode only). Sliding 1-second windows.
       netStats: {
         tickArrivals: [],
@@ -4766,7 +4779,6 @@ function updateCows(time, dt) {
     if (!state_default.cowMeshes[pid]) {
       const m = buildCow(p.color, p.personality);
       scene.add(m);
-      const colHex = { pink: "#ff88aa", blue: "#88aaff", green: "#88ff88", gold: "#ffdd44", purple: "#cc88ff", red: "#ff4444", orange: "#ff8844", cyan: "#44ffdd" };
       const nameStr = p.name || "Cow";
       if (!_nameMeasureCtx) _nameMeasureCtx = document.createElement("canvas").getContext("2d");
       _nameMeasureCtx.font = "bold 32px Segoe UI";
@@ -4782,7 +4794,7 @@ function updateCows(time, dt) {
       const circleX = cw / 2 - nameW / 2 - 16;
       nctx.beginPath();
       nctx.arc(circleX, 34, 10, 0, Math.PI * 2);
-      nctx.fillStyle = colHex[p.color] || "#aaa";
+      nctx.fillStyle = COL_HEX[p.color] || "#aaa";
       nctx.fill();
       nctx.fillStyle = "rgba(0,0,0,0.5)";
       nctx.fillText(nameStr, cw / 2 + 9, 39);
@@ -6355,17 +6367,23 @@ var init_pickups = __esm({
 
 // client/projectiles.js
 import * as THREE11 from "three";
-function clearRocketSounds() {
-  for (const id in rocketSounds) {
-    try {
-      rocketSounds[id].osc.stop();
-      rocketSounds[id].osc.disconnect();
-      rocketSounds[id].gain.disconnect();
-      if (rocketSounds[id].panner) rocketSounds[id].panner.disconnect();
-    } catch (e) {
-    }
-    delete rocketSounds[id];
+function disposeRocketSound(id) {
+  const s = rocketSounds[id];
+  if (!s) return;
+  try {
+    s.osc.stop();
+  } catch (e) {
   }
+  try {
+    s.osc.disconnect();
+    s.gain.disconnect();
+    if (s.panner) s.panner.disconnect();
+  } catch (e) {
+  }
+  delete rocketSounds[id];
+}
+function clearRocketSounds() {
+  for (const id in rocketSounds) disposeRocketSound(id);
 }
 function updateProjectiles(dt) {
   for (const p of state_default.projData) {
@@ -6475,7 +6493,7 @@ function updateProjectiles(dt) {
     if (p.y3d < terrH + 56) {
       for (const b of state_default.barricades) {
         const dxB = p.x - b.cx, dyB = p.y - b.cy;
-        const cosA = Math.cos(b.angle), sinA = Math.sin(b.angle);
+        const cosA = b._cosA, sinA = b._sinA;
         const lx = cosA * dxB + sinA * dyB;
         const ly = -sinA * dxB + cosA * dyB;
         if (Math.abs(lx) < b.h / 2 && Math.abs(ly) < b.w / 2) {
@@ -6499,26 +6517,12 @@ function updateProjectiles(dt) {
         disposeMeshTree(state_default.projMeshes[p.id]);
         delete state_default.projMeshes[p.id];
       }
-      if (rocketSounds[p.id]) {
-        try {
-          rocketSounds[p.id].osc.stop();
-          if (rocketSounds[p.id].panner) rocketSounds[p.id].panner.disconnect();
-        } catch (e) {
-        }
-        delete rocketSounds[p.id];
-      }
+      disposeRocketSound(p.id);
       state_default.projData.splice(i, 1);
     }
   }
   for (const id in rocketSounds) {
-    if (!state_default.projMeshes[id]) {
-      try {
-        rocketSounds[id].osc.stop();
-        if (rocketSounds[id].panner) rocketSounds[id].panner.disconnect();
-      } catch (e) {
-      }
-      delete rocketSounds[id];
-    }
+    if (!state_default.projMeshes[id]) disposeRocketSound(id);
   }
 }
 var rocketSounds;
@@ -6676,7 +6680,7 @@ function updateHud(me, time, dt) {
         if (c.system) {
           return '<div style="margin-bottom:2px;opacity:' + opacity + ';color:#ddd">' + c.text + "</div>";
         }
-        const col = _CHAT_COL_HEX[c.color] || "#ff88aa";
+        const col = COL_HEX[c.color] || "#ff88aa";
         return '<div style="margin-bottom:2px;opacity:' + opacity + '"><span style="color:' + col + ';font-weight:bold">' + _escapeHtml(c.name) + ":</span> " + _escapeHtml(c.text) + "</div>";
       }).join("");
     }
@@ -6696,11 +6700,9 @@ function updateHud(me, time, dt) {
   if (wep === "cowtank") {
     ammoTxt = " 1/1";
   } else if (me.ammo >= 0) {
-    const BASE_MAG = { normal: 15, burst: 20, shotgun: 6, bolty: 5, aug: 30 };
-    const EXT_MAG = { normal: 19, burst: 25, shotgun: 8, bolty: 7, aug: 38 };
     const hasExt = (me.extMagMult || 1) > 1;
-    const baseMag = (hasExt ? EXT_MAG[wep] : BASE_MAG[wep]) || 0;
-    const dualMult = me.dualWield && (wep === "burst" || wep === "shotgun") ? 2 : 1;
+    const baseMag = (hasExt ? import_constants8.EXT_MAG_SIZES[wep] : import_constants8.MAG_SIZES[wep]) || 0;
+    const dualMult = me.dualWield && import_constants8.DUAL_WIELD_FAMILY.has(wep) ? 2 : 1;
     const maxMag = baseMag * dualMult;
     ammoTxt = " " + me.ammo + "/" + maxMag;
     if (me.reloading) {
@@ -6875,13 +6877,12 @@ function updateHud(me, time, dt) {
     }
   }
 }
-var import_constants8, _CHAT_COL_HEX, _escapeHtml, H;
+var import_constants8, _escapeHtml, H;
 var init_hud = __esm({
   "client/hud.js"() {
     init_config();
     init_state();
     import_constants8 = __toESM(require_constants());
-    _CHAT_COL_HEX = { pink: "#ff88aa", blue: "#88aaff", green: "#88ff88", gold: "#ffdd44", purple: "#cc88ff", red: "#ff4444", orange: "#ff8844", cyan: "#44ffdd" };
     _escapeHtml = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     H = null;
   }
@@ -7463,6 +7464,7 @@ var init_message_handlers = __esm({
     init_three_utils();
     import_messages = __toESM(require_messages());
     import_constants10 = __toESM(require_constants());
+    init_config();
     init_interp();
     init_prediction();
     init_bullet_holes();
@@ -7528,11 +7530,10 @@ var init_message_handlers = __esm({
         const readyTxt = msg.allReady ? "All ready! Starting" + cd : "Waiting for cows to ready up";
         if (!state_default._botRevealTime) state_default._botRevealTime = Date.now() + 3e3;
         const botsRevealed = Date.now() > state_default._botRevealTime;
-        const colMap = { pink: "#ff88aa", blue: "#88aaff", green: "#88ff88", gold: "#ffdd44", purple: "#cc88ff", red: "#ff4444", orange: "#ff8844", cyan: "#44ffdd" };
         const isHost = state_default.hostId === state_default.myId;
         const pList = msg.players.map((p) => {
           if (p.isBot && !botsRevealed) return '<div style="color:#ff8888;padding:2px 0"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#555;margin-right:6px;vertical-align:middle"></span><span style="display:inline-block;width:120px;text-align:left">Connecting<span style="display:inline-block;width:18px;text-align:left">' + ".".repeat(1 + Math.floor(Date.now() / 500) % 3) + "</span></span> \u23F3</div>";
-          const dot = '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + (colMap[p.color] || "#aaa") + ';margin-right:6px;vertical-align:middle"></span>';
+          const dot = '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + (COL_HEX[p.color] || "#aaa") + ';margin-right:6px;vertical-align:middle"></span>';
           const crown = p.id === state_default.hostId && !p.isBot ? " \u{1F451}" : "";
           const canKick = isHost && !p.isBot && p.id !== state_default.myId;
           const kickBtn = canKick ? ' <span onclick="window.kickPlayer(' + p.id + ')" style="cursor:pointer;color:#ff4444;float:right;font-weight:bold" title="Kick">\u2715</span>' : "";
@@ -7683,10 +7684,12 @@ var init_message_handlers = __esm({
           if (iw.gapsCount < 120) iw.gapsCount++;
         }
         iw.lastStateTs = iwNow;
+        const byId = /* @__PURE__ */ new Map();
+        for (const sp of state_default.serverPlayers) byId.set(sp.id, sp);
         const seen = /* @__PURE__ */ new Set();
         for (const t of msg.players) {
           seen.add(t.id);
-          const existing = state_default.serverPlayers.find((sp) => sp.id === t.id);
+          const existing = byId.get(t.id);
           if (!existing) continue;
           if (existing.id === state_default.myId) {
             const { aimAngle, dir, ...rest } = t;
@@ -7711,7 +7714,7 @@ var init_message_handlers = __esm({
         for (let i = state_default.serverPlayers.length - 1; i >= 0; i--) {
           if (!seen.has(state_default.serverPlayers[i].id)) state_default.serverPlayers.splice(i, 1);
         }
-        state_default.me = state_default.serverPlayers.find((p) => p.id === state_default.myId) || null;
+        state_default.me = byId.get(state_default.myId) || null;
         if (state_default.me) {
           const dx = state_default.me.x - iw.lastMeX, dy = state_default.me.y - iw.lastMeY;
           iw.deltas[iw.deltasIdx] = Math.sqrt(dx * dx + dy * dy);
@@ -7772,7 +7775,8 @@ var init_message_handlers = __esm({
         state_default.serverFoods.push({ id: f.id, x: f.x, y: f.y, type: f.type || f.typeName });
       },
       eat(msg) {
-        state_default.serverFoods = state_default.serverFoods.filter((f) => f.id !== msg.foodId);
+        const fi = state_default.serverFoods.findIndex((f) => f.id === msg.foodId);
+        if (fi >= 0) state_default.serverFoods.splice(fi, 1);
         spawnParts(msg.playerId);
         if (msg.playerId === state_default.myId) sfxEat();
       },

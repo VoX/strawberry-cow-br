@@ -1,9 +1,7 @@
-import { MW, MH } from './config.js';
+import { MW, MH, COL_HEX } from './config.js';
 import S from './state.js';
-import { BURST_FAMILY } from '../shared/constants.js';
+import { BURST_FAMILY, DUAL_WIELD_FAMILY, MAG_SIZES, EXT_MAG_SIZES } from '../shared/constants.js';
 
-// Hoisted: chat color map and HTML escaper, reused every chat rebuild.
-const _CHAT_COL_HEX = { pink: '#ff88aa', blue: '#88aaff', green: '#88ff88', gold: '#ffdd44', purple: '#cc88ff', red: '#ff4444', orange: '#ff8844', cyan: '#44ffdd' };
 const _escapeHtml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 // Cache all HUD element refs at first invocation instead of calling getElementById every frame
@@ -85,7 +83,7 @@ export function updateHud(me, time, dt) {
         if (c.system) {
           return '<div style="margin-bottom:2px;opacity:' + opacity + ';color:#ddd">' + c.text + '</div>';
         }
-        const col = _CHAT_COL_HEX[c.color] || '#ff88aa';
+        const col = COL_HEX[c.color] || '#ff88aa';
         return '<div style="margin-bottom:2px;opacity:' + opacity + '"><span style="color:' + col + ';font-weight:bold">' + _escapeHtml(c.name) + ':</span> ' + _escapeHtml(c.text) + '</div>';
       }).join('');
     }
@@ -110,11 +108,9 @@ export function updateHud(me, time, dt) {
     // M72 LAW is a single-shot disposable weapon
     ammoTxt = ' 1/1';
   } else if (me.ammo >= 0) {
-    const BASE_MAG = {normal: 15, burst: 20, shotgun: 6, bolty: 5, aug: 30};
-    const EXT_MAG = {normal: 19, burst: 25, shotgun: 8, bolty: 7, aug: 38};
     const hasExt = (me.extMagMult || 1) > 1;
-    const baseMag = (hasExt ? EXT_MAG[wep] : BASE_MAG[wep]) || 0;
-    const dualMult = (me.dualWield && (wep === 'burst' || wep === 'shotgun')) ? 2 : 1;
+    const baseMag = (hasExt ? EXT_MAG_SIZES[wep] : MAG_SIZES[wep]) || 0;
+    const dualMult = (me.dualWield && DUAL_WIELD_FAMILY.has(wep)) ? 2 : 1;
     const maxMag = baseMag * dualMult;
     ammoTxt = ' ' + me.ammo + '/' + maxMag;
     // Reload progress bar — track start time and expected duration client-side

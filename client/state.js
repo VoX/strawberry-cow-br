@@ -49,6 +49,9 @@ const S = {
   mePredicted: null, // Phase 4 predicted local player state (x/y/z/vz/dir/...). Camera reads from here; reconciled against S.me on every inputAck.
   localHitSlowEndsAt: 0, // performance.now() ms — local on-hit slowdown timer (client-authoritative)
   localPrimaryWeapon: null, // last-held primary stashed when switching to knife
+  _hudTick: 0,              // 10 Hz throttle accumulator for HUD chat/minimap
+  _reloadStart: null,       // performance.now() when current reload began
+  _reloadDuration: null,    // expected reload duration in ms
   // Network monitoring (debug-mode only). Sliding 1-second windows.
   netStats: {
     tickArrivals: [], // performance.now() of each tick recv

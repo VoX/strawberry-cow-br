@@ -23,6 +23,7 @@ import { setArmorSpawns, onArmorSpawn, onArmorPickup, clearPickups } from './pic
 import { disposeMeshTree } from './three-utils.js';
 import { S2C } from '../shared/messages.js';
 import { BURST_FAMILY, HIT_SLOW_DURATION_MS } from '../shared/constants.js';
+import { COL_HEX } from './config.js';
 import { INTERP_HIST_CAP, interpSamplePlayer } from './interp.js';
 import { reconcilePrediction } from './prediction.js';
 import { spawnBulletHole, clearBulletHoles, removeBulletHolesBySurfaceKey } from './bullet-holes.js';
@@ -146,11 +147,10 @@ export const handlers = {
     const readyTxt = msg.allReady ? 'All ready! Starting' + cd : 'Waiting for cows to ready up';
     if (!S._botRevealTime) S._botRevealTime = Date.now() + 3000;
     const botsRevealed = Date.now() > S._botRevealTime;
-    const colMap = {pink:'#ff88aa',blue:'#88aaff',green:'#88ff88',gold:'#ffdd44',purple:'#cc88ff',red:'#ff4444',orange:'#ff8844',cyan:'#44ffdd'};
     const isHost = S.hostId === S.myId;
     const pList = msg.players.map(p => {
       if (p.isBot && !botsRevealed) return '<div style="color:#ff8888;padding:2px 0"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#555;margin-right:6px;vertical-align:middle"></span><span style="display:inline-block;width:120px;text-align:left">Connecting<span style="display:inline-block;width:18px;text-align:left">' + '.'.repeat(1 + Math.floor(Date.now() / 500) % 3) + '</span></span> ⏳</div>';
-      const dot = '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + (colMap[p.color] || '#aaa') + ';margin-right:6px;vertical-align:middle"></span>';
+      const dot = '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + (COL_HEX[p.color] || '#aaa') + ';margin-right:6px;vertical-align:middle"></span>';
       const crown = (p.id === S.hostId && !p.isBot) ? ' 👑' : '';
       const canKick = isHost && !p.isBot && p.id !== S.myId;
       const kickBtn = canKick ? ' <span onclick="window.kickPlayer(' + p.id + ')" style="cursor:pointer;color:#ff4444;float:right;font-weight:bold" title="Kick">✕</span>' : '';
@@ -298,10 +298,14 @@ export const handlers = {
     // reads from the ring INTERP_DELAY_MS in the past so motion is smooth
     // instead of stepping once per tick. Local player keeps the direct
     // Object.assign path since phase 4 replaces that with CSP.
+    // Build a one-shot id→player map so the merge loop is O(n) instead of
+    // O(n²) per tick on `S.serverPlayers.find(...)`.
+    const byId = new Map();
+    for (const sp of S.serverPlayers) byId.set(sp.id, sp);
     const seen = new Set();
     for (const t of msg.players) {
       seen.add(t.id);
-      const existing = S.serverPlayers.find(sp => sp.id === t.id);
+      const existing = byId.get(t.id);
       if (!existing) continue; // race: no snapshot yet, skip until one arrives
       if (existing.id === S.myId) {
         // Camera owns aim/dir for the local player; the server's values
@@ -335,7 +339,7 @@ export const handlers = {
     for (let i = S.serverPlayers.length - 1; i >= 0; i--) {
       if (!seen.has(S.serverPlayers[i].id)) S.serverPlayers.splice(i, 1);
     }
-    S.me = S.serverPlayers.find(p => p.id === S.myId) || null;
+    S.me = byId.get(S.myId) || null;
     if (S.me) {
       const dx = S.me.x - iw.lastMeX, dy = S.me.y - iw.lastMeY;
       iw.deltas[iw.deltasIdx] = Math.sqrt(dx * dx + dy * dy);
@@ -398,7 +402,8 @@ export const handlers = {
   },
 
   eat(msg) {
-    S.serverFoods = S.serverFoods.filter(f => f.id !== msg.foodId);
+    const fi = S.serverFoods.findIndex(f => f.id === msg.foodId);
+    if (fi >= 0) S.serverFoods.splice(fi, 1);
     spawnParts(msg.playerId);
     if (msg.playerId === S.myId) sfxEat();
   },

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { COL } from './config.js';
+import { COL, COL_HEX } from './config.js';
 import S from './state.js';
 import { scene } from './renderer.js';
 import { getTerrainHeight } from './terrain.js';
@@ -312,7 +312,6 @@ export function updateCows(time, dt) {
     const pid = String(p.id);
     if (!S.cowMeshes[pid]) {
       const m = buildCow(p.color, p.personality); scene.add(m);
-      const colHex = {pink:'#ff88aa',blue:'#88aaff',green:'#88ff88',gold:'#ffdd44',purple:'#cc88ff',red:'#ff4444',orange:'#ff8844',cyan:'#44ffdd'};
       const nameStr = p.name || 'Cow';
       // Auto-fit the name canvas to the actual text width so long names
       // (e.g. "Inchworm Survivor") aren't truncated. Canvas width grows
@@ -327,7 +326,7 @@ export function updateCows(time, dt) {
       const nctx = nc.getContext('2d'); nctx.font = 'bold 32px Segoe UI'; nctx.textAlign = 'center';
       const circleX = cw / 2 - nameW / 2 - 16;
       nctx.beginPath(); nctx.arc(circleX, 34, 10, 0, Math.PI * 2);
-      nctx.fillStyle = colHex[p.color] || '#aaa'; nctx.fill();
+      nctx.fillStyle = COL_HEX[p.color] || '#aaa'; nctx.fill();
       nctx.fillStyle = 'rgba(0,0,0,0.5)'; nctx.fillText(nameStr, cw / 2 + 9, 39);
       nctx.fillStyle = '#ffffff'; nctx.fillText(nameStr, cw / 2 + 8, 38);
       const ntex = new THREE.CanvasTexture(nc); ntex.minFilter = THREE.LinearFilter;

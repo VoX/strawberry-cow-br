@@ -12,10 +12,11 @@ const { broadcast } = require('./network');
 const lobbyState = require('./lobby-state');
 const gameState = require('./game-state');
 const { handleDash, handleReload, placeBarricadeForPlayer, eyeHeight } = require('./combat');
+const { resetAfterCowtank } = require('./weapon-fire');
 const { decideBotTurn, PERSONALITIES } = require('./bot-ai');
 const { assignColor, broadcastPlayerSnapshot } = require('./player');
 const weaponFire = require('./weapon-fire');
-const { MAG_SIZES } = weaponFire;
+const { MAG_SIZES } = require('../shared/constants');
 
 function botMaybeChat(bot) {
   if (!bot._lastChatT) bot._lastChatT = 0;
@@ -149,15 +150,7 @@ function fireBot(bot, ax, ay, target) {
   });
   if (!fired) return;
 
-  // Cowtank one-shot drop — same as player handleAttack post-fire cleanup.
-  if (weapon === 'cowtank') {
-    bot.weapon = 'normal';
-    bot.dualWield = false;
-    bot.ammo = Math.ceil(15 * (bot.extMagMult || 1));
-    bot.reloading = 0;
-    broadcast({ type: 'weaponDrop', playerId: bot.id, name: bot.name });
-    broadcastPlayerSnapshot(bot);
-  }
+  if (weapon === 'cowtank') resetAfterCowtank(bot);
 }
 
 module.exports = { spawnBots, updateBots };

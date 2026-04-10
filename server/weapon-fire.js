@@ -18,11 +18,8 @@
 
 const gameState = require('./game-state');
 const { broadcast } = require('./network');
-const { applyHungerDelta } = require('./player');
-const { BURST_FAMILY } = require('../shared/constants');
-
-// Shared mag sizes — re-exported so combat.js reload logic can reference them.
-const MAG_SIZES = { normal: 15, burst: 20, shotgun: 6, bolty: 5, aug: 30 };
+const { applyHungerDelta, broadcastPlayerSnapshot } = require('./player');
+const { BURST_FAMILY, MAG_SIZES } = require('../shared/constants');
 
 // --- Player base stats ----------------------------------------------------
 // Every cost/gate has the shape (minFloor, base) so `Math.max(minFloor, base - hungerDiscount)`
@@ -362,4 +359,16 @@ function fireWeapon(shooter, weapon, aim, stats, opts = {}) {
 
 // PLAYER_STATS_BASE is intentionally NOT exported — external callers go through
 // resolvePlayerStats so the hungerDiscount perk is always applied consistently.
-module.exports = { fireWeapon, resolvePlayerStats, extractShooterModifiers, BOT_STATS, MAG_SIZES };
+// Single-shot disposables (cowtank) revert to normal pistol + refund the
+// pistol mag after firing. Used by both player and bot fire paths so the
+// client viewmodel/HUD swap stays consistent across shooter types.
+function resetAfterCowtank(shooter) {
+  shooter.weapon = 'normal';
+  shooter.dualWield = false;
+  shooter.ammo = Math.ceil(15 * (shooter.extMagMult || 1));
+  shooter.reloading = 0;
+  broadcast({ type: 'weaponDrop', playerId: shooter.id, name: shooter.name });
+  broadcastPlayerSnapshot(shooter);
+}
+
+module.exports = { fireWeapon, resolvePlayerStats, extractShooterModifiers, BOT_STATS, resetAfterCowtank };

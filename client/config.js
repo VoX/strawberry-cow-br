@@ -2,6 +2,9 @@ import { MAP_W, MAP_H } from '../shared/constants.js';
 
 export const MW=MAP_W,MH=MAP_H,CH=35;
 export const COL={pink:0xff88aa,blue:0x88aaff,green:0x88ff88,gold:0xffdd44,purple:0xcc88ff,red:0xff4444,orange:0xff8844,cyan:0x44ffdd};
+// CSS hex strings for the same palette — used by chat bubbles, HUD chat,
+// name plates, and anywhere canvas drawing needs a fillStyle.
+export const COL_HEX={pink:'#ff88aa',blue:'#88aaff',green:'#88ff88',gold:'#ffdd44',purple:'#cc88ff',red:'#ff4444',orange:'#ff8844',cyan:'#44ffdd'};
 export const WPCOL={shotgun:0xff4444,burst:0x44aaff,bolty:0xffaa00,cowtank:0x44ff44,aug:0xaa44ff};
 export const PERKS=[
   {id:'speed',name:'Swift Hooves',desc:'+15% speed'},

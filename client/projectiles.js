@@ -10,16 +10,16 @@ import { disposeMeshTree } from './three-utils.js';
 // Looping rocket sounds keyed by projectile id
 const rocketSounds = {};
 
+function disposeRocketSound(id) {
+  const s = rocketSounds[id];
+  if (!s) return;
+  try { s.osc.stop(); } catch(e) {}
+  try { s.osc.disconnect(); s.gain.disconnect(); if (s.panner) s.panner.disconnect(); } catch(e) {}
+  delete rocketSounds[id];
+}
+
 export function clearRocketSounds() {
-  for (const id in rocketSounds) {
-    try {
-      rocketSounds[id].osc.stop();
-      rocketSounds[id].osc.disconnect();
-      rocketSounds[id].gain.disconnect();
-      if (rocketSounds[id].panner) rocketSounds[id].panner.disconnect();
-    } catch(e) {}
-    delete rocketSounds[id];
-  }
+  for (const id in rocketSounds) disposeRocketSound(id);
 }
 
 export function updateProjectiles(dt) {
@@ -124,11 +124,13 @@ export function updateProjectiles(dt) {
         life: 0.6, peakOpacity: 1, growth: 5, side: THREE.DoubleSide,
       });
     }
-    // Client-side barricade collision prediction (blocks everything incl. L96)
+    // Client-side barricade collision prediction (blocks everything incl. L96).
+    // map-objects.js caches _cosA/_sinA on each barricade at add time; use
+    // those instead of per-frame trig recomputation.
     if (p.y3d < terrH + 56) {
       for (const b of S.barricades) {
         const dxB = p.x - b.cx, dyB = p.y - b.cy;
-        const cosA = Math.cos(b.angle), sinA = Math.sin(b.angle);
+        const cosA = b._cosA, sinA = b._sinA;
         const lx = cosA * dxB + sinA * dyB;
         const ly = -sinA * dxB + cosA * dyB;
         if (Math.abs(lx) < b.h / 2 && Math.abs(ly) < b.w / 2) {
@@ -151,24 +153,12 @@ export function updateProjectiles(dt) {
     const p = S.projData[i];
     if (p.y3d === -999 || p.x < -100 || p.x > MW + 100 || p.y < -100 || p.y > MH + 100) {
       if (S.projMeshes[p.id]) { disposeMeshTree(S.projMeshes[p.id]); delete S.projMeshes[p.id]; }
-      if (rocketSounds[p.id]) {
-        try {
-          rocketSounds[p.id].osc.stop();
-          if (rocketSounds[p.id].panner) rocketSounds[p.id].panner.disconnect();
-        } catch(e){}
-        delete rocketSounds[p.id];
-      }
+      disposeRocketSound(p.id);
       S.projData.splice(i, 1);
     }
   }
   // Clean up rocket sounds for projectiles removed elsewhere (e.g. projectileHit)
   for (const id in rocketSounds) {
-    if (!S.projMeshes[id]) {
-      try {
-        rocketSounds[id].osc.stop();
-        if (rocketSounds[id].panner) rocketSounds[id].panner.disconnect();
-      } catch(e){}
-      delete rocketSounds[id];
-    }
+    if (!S.projMeshes[id]) disposeRocketSound(id);
   }
 }

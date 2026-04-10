@@ -1,7 +1,7 @@
 const { broadcast } = require('./network');
 const gameState = require('./game-state');
 const combat = require('./combat');
-const { MAG_SIZES } = require('./weapon-fire');
+const { MAG_SIZES } = require('../shared/constants');
 const { broadcastPlayerSnapshot, applyArmorDelta } = require('./player');
 
 function handleWeaponPickups(dt) {
@@ -39,8 +39,7 @@ function handleWeaponPickups(dt) {
           p.weaponTimer = 0;
           p.ammo = combat.getMaxAmmo(p, p.weapon);
         }
-        p.reloading = 0;
-        if (p.reloadTimer) { clearTimeout(p.reloadTimer); p.reloadTimer = null; }
+        combat.cancelReload(p);
         broadcast({ type: 'weaponPickup', playerId: p.id, name: p.name, weapon: p.weapon, dualWield: !!p.dualWield, pickupId: w.id });
         // Sticky fields changed — ship a snapshot so clients update
         // viewmodel + HUD next frame instead of waiting for a tick.
@@ -78,7 +77,7 @@ function handleDropWeapon(player) {
     gameState.addWeaponPickup({ id: dropId, x: player.x + 20, y: player.y, weapon: stashed });
     broadcast({ type: 'weaponSpawn', id: dropId, x: player.x + 20, y: player.y, weapon: stashed });
     player._primaryWeapon = 'normal';
-    player._primaryAmmo = Math.ceil((MAG_SIZES['normal'] || 15) * (player.extMagMult || 1));
+    player._primaryAmmo = combat.getMaxAmmo(player, 'normal');
     player._primaryDualWield = false;
     player.pickupCooldown = 2; player._ignorePickupId = dropId;
     broadcast({ type: 'weaponDrop', playerId: player.id, name: player.name });
@@ -98,10 +97,9 @@ function handleDropWeapon(player) {
   } else {
     player.weapon = 'normal'; player.pickupCooldown = 2; player._ignorePickupId = dropId;
     player.dualWield = false;
-    player.ammo = Math.ceil((MAG_SIZES['normal'] || 15) * (player.extMagMult || 1));
+    player.ammo = combat.getMaxAmmo(player, 'normal');
   }
-  player.reloading = 0;
-  if (player.reloadTimer) { clearTimeout(player.reloadTimer); player.reloadTimer = null; }
+  combat.cancelReload(player);
   broadcast({ type: 'weaponDrop', playerId: player.id, name: player.name });
   broadcastPlayerSnapshot(player);
 }
