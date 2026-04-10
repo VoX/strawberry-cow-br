@@ -68,6 +68,7 @@ const S2C = Object.freeze({
   lootBagSpawn: 'lootBagSpawn',
   lootBagPickup: 'lootBagPickup',
   lootBagDespawn: 'lootBagDespawn',
+  wallUpgraded: 'wallUpgraded',
 });
 
 // --- client -> server ------------------------------------------------------
@@ -94,6 +95,7 @@ const C2S = Object.freeze({
   moo: 'moo',
   meleeAttack: 'meleeAttack',
   craft: 'craft',
+  upgradeWall: 'upgradeWall',
 });
 
 const MSG = Object.freeze({ ...S2C, ...C2S });

@@ -323,6 +323,9 @@ addEventListener('keydown', e => {
     const meC = S.me;
     if (meC && meC.alive) S.crouching = !S.crouching;
   }
+  if (e.code === 'KeyE' && S.state === 'playing' && S.me && S.me.alive) {
+    send({ type: 'upgradeWall' });
+  }
   if (e.code === 'Tab' && S.state === 'playing') {
     e.preventDefault();
     toggleCraftMenu();

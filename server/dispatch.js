@@ -105,6 +105,40 @@ function dispatchMessage(player, msg) {
   if (msg.type === 'dropWeapon') {
     handleDropWeapon(player);
   }
+  // --- Wall upgrade (E key) — find nearest owned barricade in front,
+  // upgrade wood→stone→metal if player has resources.
+  if (msg.type === 'upgradeWall' && player._joined && player.alive) {
+    const aim = player.aimAngle || 0;
+    const fx = Math.sin(aim), fy = Math.cos(aim);
+    const barricades = gameState.getBarricades();
+    let best = null, bestDist = Infinity;
+    for (const b of barricades) {
+      if (b.ownerId !== player.id) continue;
+      const dx = b.cx - player.x, dy = b.cy - player.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist > 80) continue; // must be close
+      if (dist > 0.1) {
+        const dot = (dx * fx + dy * fy) / dist;
+        if (dot < 0.5) continue; // must be roughly in front
+      }
+      if (dist < bestDist) { best = b; bestDist = dist; }
+    }
+    if (best) {
+      const tier = best.material || 'wood';
+      if (tier === 'wood' && player.resources && (player.resources.stone || 0) >= 50) {
+        player.resources.stone -= 50;
+        best.material = 'stone';
+        best.hp = 500;
+        broadcast({ type: 'wallUpgraded', id: best.id, material: 'stone', hp: 500 });
+      } else if (tier === 'stone' && player.resources && (player.resources.metal || 0) >= 50) {
+        player.resources.metal -= 50;
+        best.material = 'metal';
+        best.hp = 1000;
+        broadcast({ type: 'wallUpgraded', id: best.id, material: 'metal', hp: 1000 });
+      }
+    }
+  }
+
   // --- Crafting ---
   if (msg.type === 'craft' && player._joined && player.alive && msg.recipeId) {
     const recipe = CRAFTING_RECIPES[msg.recipeId];

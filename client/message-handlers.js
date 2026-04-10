@@ -880,6 +880,12 @@ export const handlers = {
     removeLootBag(msg.id);
   },
 
+  wallUpgraded(msg) {
+    S.chatLog.push({ name: '', color: '', text: 'Wall upgraded to ' + msg.material, t: 3, system: true });
+    if (S.chatLog.length > 10) S.chatLog.shift();
+    sfx(400, 0.12, 'sine', 0.08);
+  },
+
   crafted(msg) {
     S.chatLog.push({ name: '', color: '', text: 'Crafted: ' + msg.recipeId, t: 3, system: true });
     if (S.chatLog.length > 10) S.chatLog.shift();
