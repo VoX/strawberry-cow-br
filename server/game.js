@@ -1,6 +1,7 @@
 const { TICK_RATE, MAP_W, MAP_H } = require('./config');
 const { stepPlayerMovement } = require('../shared/movement');
 const { broadcast, sendTo } = require('./network');
+const transport = require('./transport');
 const lobbyState = require('./lobby-state');
 const gameState = require('./game-state');
 const { generateMap } = require('./map');
@@ -22,8 +23,13 @@ function startGame() {
   clearPendingDeaths();
   // Reset per-player input seq counters — CSP (Phase 4) replays inputs-since-ack,
   // and carrying seqs across a round boundary would reference sim state that
-  // no longer exists. Client mirrors this reset in the `start` handler.
-  for (const [, p] of gameState.getPlayers()) { p.lastInputSeq = 0; }
+  // no longer exists. Client mirrors this reset in the `start` handler. The
+  // ackSnapshot follows the same lifecycle — clear it so the first inputAck
+  // of the new round doesn't ship a stale-round position to the client.
+  for (const [, p] of gameState.getPlayers()) {
+    p.lastInputSeq = 0;
+    p._ackSnapshot = null;
+  }
   gameState.setGameTime(0);
   gameState.setZone({ x: 0, y: 0, w: MAP_W, h: MAP_H });
   generateTerrain(Math.random() * 10000);
@@ -160,6 +166,25 @@ function gameTick() {
     // input buffer to produce an identical result.
     stepPlayerMovement(p, dt, moveWorld, { dx: p.dx, dy: p.dy, walking: p.walking }, moveTerrain);
 
+    // Snapshot post-integration position the FIRST tick we see a new
+    // lastInputSeq. The CSP reconcile pairs "client predicted state at
+    // seq=N's first integrated step" against "server position at seq=N's
+    // first integrated tick". Capturing only on advance (not every tick)
+    // freezes the snapshot at that exact moment so the comparison is
+    // symmetric — without this, the server reports its CURRENT position
+    // many ticks past seq=N's processing, the client compares against an
+    // earlier predicted state, drift accumulates linearly with idle ticks
+    // since the last input, and every inputAck snaps. This is the smoking
+    // gun for the rubberband-on-quick-turns regression.
+    if (!p.isBot && (p._ackSnapshot == null || p.lastInputSeq > p._ackSnapshot.seq)) {
+      p._ackSnapshot = {
+        seq: p.lastInputSeq || 0,
+        x: p.x, y: p.y, z: p.z,
+        vz: p.vz || 0,
+        onGround: !!p.onGround,
+      };
+    }
+
     // Skip the remaining per-player work (hunger, food, cooldowns) for
     // spawn-protected players just like the old inline code did.
     if (wasSpawnProtected) continue;
@@ -274,27 +299,16 @@ function gameTick() {
   // (name/color/weapon/perks/xpToNext/sizeMult/recoilMult/extMagMult) travel
   // on the 'playerSnapshot' message emitted at weapon pickup / perk /
   // level up / armor / dual-wield events. Zone is 4 numbers, sent every tick.
-  // Phase 7: build the tick payload once, then per-client sendTo with a
-  // stride gate so each client sees their chosen updateRate. A player
-  // with updateRate=15 gets every 2nd tick (stride=2); updateRate=30
-  // gets every tick (stride=1). The payload bytes are identical across
-  // clients so we can JSON.stringify once.
+  // Phase 7: build the tick payload once, then per-client sendUnreliable
+  // with a stride gate so each client sees their chosen updateRate. A
+  // player with updateRate=15 gets every 2nd tick; updateRate=30 gets
+  // every tick. `tick` is unreliable — on WebSocket this drops under
+  // backpressure; on geckos.io it goes out as fire-and-forget UDP.
   //
   // KNOWN LATENT ISSUES — safe today because no client UI changes
   // updateRate from the default 30 (stride always = 1). Fix together
-  // BEFORE shipping a client-side rate control:
-  //   1. `client/interp.js::INTERP_DELAY_MS` is 100 ms fixed — at
-  //      updateRate<20 the interp buffer collapses because new tick
-  //      arrivals are sparser than the render delay. Scale with rate.
-  //   2. `client/input.js::doAttack` computes displayTick assuming
-  //      30 Hz tick arrival. At low rates the client renders further
-  //      in the past than displayTick reflects → wrong rewind target
-  //      for lag comp.
-  //   3. `inputAck` fires every 5 server ticks (~6 Hz) regardless of
-  //      the recipient's updateRate. Reconcile compares predict ring
-  //      against a potentially stale `S.me.x` → spurious snap-backs.
-  //      Either send inputAck only alongside actual tick payloads, or
-  //      piggyback position into the ack.
+  // BEFORE shipping a client-side rate control: interp delay, displayTick
+  // math, and inputAck cadence all assume 30 Hz tick arrival.
   const tickPayload = {
     type: 'tick',
     tickNum: gameState.getTickNum(),
@@ -302,31 +316,31 @@ function gameTick() {
     zone: gameState.getZone(),
     gameTime: Math.floor(gameState.getGameTime()),
   };
-  const tickStr = JSON.stringify(tickPayload);
   const currentTick = gameState.getTickNum();
   for (const [, p] of gameState.getPlayers()) {
-    if (p.isBot || !p.ws || p.ws.readyState !== 1) continue;
+    if (p.isBot || !p.ws) continue;
     const stride = Math.max(1, Math.round(TICK_RATE / (p.updateRate || TICK_RATE)));
     if (currentTick % stride !== 0) continue;
-    // Backpressure drop: same as network.js::broadcast for droppable types.
-    if (p.ws.bufferedAmount > 256 * 1024) continue;
-    p.ws.send(tickStr);
+    transport.sendUnreliable(p.ws, tickPayload);
   }
 
   // Phase 2 input ack — echo each human player's last-applied input seq
-  // plus the server-authoritative position AT THIS TICK. CSP reconcile
-  // (Phase 4) compares predicted-at-seq against this embedded position
-  // instead of S.me (which is the latest tick, not the seq-tick, and
-  // races with the next tick broadcast causing spurious snap-backs).
+  // plus the server-authoritative position AT THE TICK THAT FIRST PROCESSED
+  // THAT SEQ. CSP reconcile pairs predicted-at-seq against this snapshot;
+  // sending the LATEST position would let drift accumulate linearly with
+  // idle ticks past the input and snap on every ack. The snapshot is
+  // captured in the per-player movement loop above when lastInputSeq
+  // first advances.
   if (gameState.getTickNum() % 5 === 0) {
     for (const [, p] of gameState.getPlayers()) {
-      if (p.isBot || !p.ws) continue;
+      if (p.isBot || !p.ws || !p._ackSnapshot) continue;
+      const snap = p._ackSnapshot;
       sendTo(p.ws, {
         type: 'inputAck',
-        seq: p.lastInputSeq || 0,
-        x: p.x, y: p.y, z: p.z,
-        vz: p.vz || 0,
-        onGround: !!p.onGround,
+        seq: snap.seq,
+        x: snap.x, y: snap.y, z: snap.z,
+        vz: snap.vz,
+        onGround: snap.onGround,
       });
     }
   }

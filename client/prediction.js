@@ -259,10 +259,14 @@ export function reconcilePrediction(ackedState) {
   while (predictRing.length > 0 && predictRing[0].seq < S.lastAckedInput) {
     predictRing.shift();
   }
-  // Find the LAST entry matching the acked seq (multiple prediction steps
-  // can push the same seq when predictStep runs faster than send()).
+  // Find the FIRST entry matching the acked seq. The server's snapshot
+  // is captured the FIRST tick that integrates each new lastInputSeq, so
+  // we pair against the FIRST predict step that ran with that seq tag —
+  // both sides represent "one integration step into the new input." Using
+  // the LAST matching entry would compare an N-steps-deep prediction
+  // against a 1-tick-deep server snapshot and snap on every ack.
   let ackedIdx = -1;
-  for (let i = predictRing.length - 1; i >= 0; i--) {
+  for (let i = 0; i < predictRing.length; i++) {
     if (predictRing[i].seq === S.lastAckedInput) { ackedIdx = i; break; }
   }
   const serverX = ackedState.x, serverY = ackedState.y, serverZ = ackedState.z;

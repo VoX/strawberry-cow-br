@@ -13,7 +13,7 @@ import S from './state.js';
 import { sfx, sfxShoot, sfxBolty, sfxShotgun, sfxRocket, sfxLR, sfxExplosion, sfxHit, sfxEat, sfxLevelUp, sfxDeath, sfxEmptyMag, sfxReloadLR, sfxReloadBolty, sfxShellLoad, setMusicPlaying, resetMusic, getAudioCtx, startMenuMusic, stopMenuMusic, initAudio } from './audio.js';
 import { scene, cam, setNightMode } from './renderer.js';
 import { getTerrainHeight, rebuildTerrain } from './terrain.js';
-import { send } from './network.js';
+import { send, closeActive as closeActiveTransport } from './network.js';
 import { showPerkMenu } from './ui.js';
 import { spawnParts } from './entities.js';
 import { addBarricade, removeBarricade, clearBarricades, destroyWall } from './map-objects.js';
@@ -112,7 +112,7 @@ export const handlers = {
   kicked(msg) {
     document.getElementById('joinScreen').style.display = 'flex';
     document.getElementById('joinScreen').querySelector('h2').textContent = 'You were kicked from the lobby';
-    if (S.ws) try { S.ws.close(); } catch(e) {}
+    try { closeActiveTransport(); } catch (e) {}
   },
 
   lobby(msg) {

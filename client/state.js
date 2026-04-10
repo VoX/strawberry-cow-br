@@ -2,7 +2,6 @@ import { MW, MH } from './config.js';
 
 // Mutable client state — all modules import and mutate this directly
 const S = {
-  ws: null,
   myId: null,
   myColor: 'pink',
   state: 'join',

@@ -111,7 +111,6 @@ var init_state = __esm({
   "client/state.js"() {
     init_config();
     S = {
-      ws: null,
       myId: null,
       myColor: "pink",
       state: "join",
@@ -2465,68 +2464,940 @@ var init_terrain = __esm({
   }
 });
 
+// client/transports/ws.js
+function connect(opts) {
+  _onMessage = opts && opts.onMessage;
+  _onOpen = opts && opts.onOpen;
+  _onClose = opts && opts.onClose;
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  _ws = new WebSocket(proto + "://" + location.host + "/strawberrycow-fps-ws/");
+  _ws.onopen = () => {
+    if (_onOpen) _onOpen();
+  };
+  _ws.onmessage = (e) => {
+    if (!_onMessage) return;
+    try {
+      _onMessage(JSON.parse(e.data));
+    } catch (err) {
+    }
+  };
+  _ws.onclose = () => {
+    if (_onClose) _onClose();
+  };
+  _ws.onerror = () => {
+  };
+}
+function sendReliable(msg) {
+  if (!_ws || _ws.readyState !== 1) return;
+  _ws.send(typeof msg === "string" ? msg : JSON.stringify(msg));
+}
+function sendUnreliable(msg) {
+  sendReliable(msg);
+}
+function close() {
+  if (_ws) {
+    try {
+      _ws.close();
+    } catch (e) {
+    }
+  }
+  _ws = null;
+}
+var _ws, _onMessage, _onOpen, _onClose, ws_default;
+var init_ws = __esm({
+  "client/transports/ws.js"() {
+    _ws = null;
+    _onMessage = null;
+    _onOpen = null;
+    _onClose = null;
+    ws_default = {
+      connect,
+      sendReliable,
+      sendUnreliable,
+      close
+    };
+  }
+});
+
+// node_modules/@yandeu/events/lib/version.js
+var VERSION;
+var init_version = __esm({
+  "node_modules/@yandeu/events/lib/version.js"() {
+    VERSION = "0.0.7";
+  }
+});
+
+// node_modules/@yandeu/events/lib/index.js
+var EE, addListener, clearEvent, Events;
+var init_lib = __esm({
+  "node_modules/@yandeu/events/lib/index.js"() {
+    init_version();
+    EE = class {
+      fn;
+      context;
+      once;
+      constructor(fn, context, once = false) {
+        this.fn = fn;
+        this.context = context;
+        this.once = once;
+      }
+    };
+    addListener = (emitter, event, fn, context, once) => {
+      if (typeof fn !== "function") {
+        throw new TypeError("The listener must be a function");
+      }
+      const listener = new EE(fn, context || emitter, once);
+      if (!emitter._events.has(event))
+        emitter._events.set(event, listener), emitter._eventsCount++;
+      else if (!emitter._events.get(event).fn)
+        emitter._events.get(event).push(listener);
+      else
+        emitter._events.set(event, [emitter._events.get(event), listener]);
+      return emitter;
+    };
+    clearEvent = (emitter, event) => {
+      if (--emitter._eventsCount === 0)
+        emitter._events = /* @__PURE__ */ new Map();
+      else
+        emitter._events.delete(event);
+    };
+    Events = class {
+      static get VERSION() {
+        return VERSION;
+      }
+      _events = /* @__PURE__ */ new Map();
+      _eventsCount = 0;
+      eventNames() {
+        return Array.from(this._events.keys());
+      }
+      listeners(event) {
+        const handlers2 = this._events.get(event);
+        if (!handlers2)
+          return [];
+        if (handlers2.fn)
+          return [handlers2.fn];
+        for (var i = 0, l = handlers2.length, ee = new Array(l); i < l; i++) {
+          ee[i] = handlers2[i].fn;
+        }
+        return ee;
+      }
+      listenerCount(event) {
+        const listeners = this._events.get(event);
+        if (!listeners)
+          return 0;
+        if (listeners.fn)
+          return 1;
+        return listeners.length;
+      }
+      emit(event, ...args) {
+        if (!this._events.has(event))
+          return false;
+        const listeners = this._events.get(event);
+        let i;
+        if (listeners.fn) {
+          if (listeners.once)
+            this.removeListener(event, listeners.fn, void 0, true);
+          return listeners.fn.call(listeners.context, ...args), true;
+        } else {
+          const length = listeners.length;
+          for (i = 0; i < length; i++) {
+            if (listeners[i].once)
+              this.removeListener(event, listeners[i].fn, void 0, true);
+            listeners[i].fn.call(listeners[i].context, ...args);
+          }
+        }
+        return true;
+      }
+      on(event, fn, context) {
+        return addListener(this, event, fn, context, false);
+      }
+      once(event, fn, context) {
+        return addListener(this, event, fn, context, true);
+      }
+      removeListener(event, fn, context, once) {
+        if (!this._events.has(event))
+          return this;
+        if (!fn) {
+          clearEvent(this, event);
+          return this;
+        }
+        const listeners = this._events.get(event);
+        if (listeners.fn) {
+          if (listeners.fn === fn && (!once || listeners.once) && (!context || listeners.context === context)) {
+            clearEvent(this, event);
+          }
+        } else {
+          for (var i = 0, events = [], length = listeners.length; i < length; i++) {
+            if (listeners[i].fn !== fn || once && !listeners[i].once || context && listeners[i].context !== context) {
+              events.push(listeners[i]);
+            }
+          }
+          if (events.length)
+            this._events.set(event, events.length === 1 ? events[0] : events);
+          else
+            clearEvent(this, event);
+        }
+        return this;
+      }
+      removeAllListeners(event) {
+        if (event) {
+          if (this._events.delete(event))
+            clearEvent(this, event);
+        } else {
+          this._events = /* @__PURE__ */ new Map();
+          this._eventsCount = 0;
+        }
+        return this;
+      }
+      // alias
+      get off() {
+        return this.removeListener;
+      }
+      // alias
+      get addListener() {
+        return this.on;
+      }
+    };
+  }
+});
+
+// node_modules/@geckos.io/common/lib/bridge.js
+var Bridge, bridge;
+var init_bridge = __esm({
+  "node_modules/@geckos.io/common/lib/bridge.js"() {
+    init_lib();
+    Bridge = class {
+      constructor() {
+        this.eventEmitter = new Events();
+      }
+      emit(eventName, data, connection = {}) {
+        this.eventEmitter.emit(eventName, data, connection);
+      }
+      on(eventName, cb) {
+        return this.eventEmitter.on(eventName, (data, options) => {
+          cb(data, options);
+        });
+      }
+      removeAllListeners() {
+        this.eventEmitter.removeAllListeners();
+      }
+    };
+    bridge = new Bridge();
+  }
+});
+
+// node_modules/@geckos.io/common/lib/constants.js
+var EVENTS, ERRORS;
+var init_constants = __esm({
+  "node_modules/@geckos.io/common/lib/constants.js"() {
+    EVENTS = {
+      CONNECT: "connect",
+      CONNECTION: "connection",
+      DATA_CHANNEL_IS_OPEN: "dataChannelIsOpen",
+      DISCONNECT: "disconnect",
+      DISCONNECTED: "disconnected",
+      DROP: "dropped",
+      ERROR: "error",
+      RAW_MESSAGE: "rawMessage",
+      RECEIVED_FROM_DATA_CHANNEL: "receiveFromDataChannel",
+      SEND_OVER_DATA_CHANNEL: "sendOverDataChannel"
+    };
+    ERRORS = {
+      BROWSER_NOT_SUPPORTED: "BROWSER_NOT_SUPPORTED",
+      COULD_NOT_PARSE_MESSAGE: "COULD_NOT_PARSE_MESSAGE",
+      DROPPED_FROM_BUFFERING: "DROPPED_FROM_BUFFERING",
+      MAX_MESSAGE_SIZE_EXCEEDED: "MAX_MESSAGE_SIZE_EXCEEDED"
+    };
+  }
+});
+
+// node_modules/@geckos.io/common/lib/types.js
+var ArrayBufferView;
+var init_types = __esm({
+  "node_modules/@geckos.io/common/lib/types.js"() {
+    ArrayBufferView = Object.getPrototypeOf(Object.getPrototypeOf(new Uint8Array())).constructor;
+  }
+});
+
+// node_modules/@geckos.io/common/lib/helpers.js
+var tick, isStringMessage, isBufferMessage, isJSONMessage;
+var init_helpers = __esm({
+  "node_modules/@geckos.io/common/lib/helpers.js"() {
+    init_types();
+    tick = typeof Promise == "function" ? Promise.prototype.then.bind(Promise.resolve()) : setTimeout;
+    isStringMessage = (data) => {
+      return typeof data === "string";
+    };
+    isBufferMessage = (data) => {
+      return data instanceof ArrayBuffer || data instanceof ArrayBufferView;
+    };
+    isJSONMessage = (data) => {
+      try {
+        if (typeof data !== "string")
+          return false;
+        if (!isNaN(parseInt(data)))
+          return false;
+        JSON.parse(data);
+        return true;
+      } catch (error) {
+        return false;
+      }
+    };
+  }
+});
+
+// node_modules/@geckos.io/common/lib/parseMessage.js
+var ParseMessage;
+var init_parseMessage = __esm({
+  "node_modules/@geckos.io/common/lib/parseMessage.js"() {
+    init_constants();
+    init_helpers();
+    ParseMessage = (ev) => {
+      let { data } = ev;
+      if (!data)
+        data = ev;
+      const isBuffer = isBufferMessage(data);
+      const isJson = isJSONMessage(data);
+      const isString = isStringMessage(data);
+      if (isJson) {
+        const object = JSON.parse(data);
+        const key = Object.keys(object)[0];
+        const value = object[key];
+        return { key, data: value };
+      }
+      if (isBuffer) {
+        return { key: EVENTS.RAW_MESSAGE, data };
+      }
+      if (isString) {
+        return { key: EVENTS.RAW_MESSAGE, data };
+      }
+      return { key: "error", data: new Error(ERRORS.COULD_NOT_PARSE_MESSAGE) };
+    };
+  }
+});
+
+// node_modules/@geckos.io/common/lib/sendMessage.js
+var SendMessage;
+var init_sendMessage = __esm({
+  "node_modules/@geckos.io/common/lib/sendMessage.js"() {
+    init_helpers();
+    init_constants();
+    SendMessage = (dataChannel, maxMessageSize, eventName, data = null) => {
+      var _a;
+      const send2 = (data2, isBuffer) => {
+        var _a2;
+        const bytes = (_a2 = data2.byteLength) !== null && _a2 !== void 0 ? _a2 : data2.length * 2;
+        if (typeof maxMessageSize === "number" && bytes > maxMessageSize) {
+          throw new Error(`maxMessageSize of ${maxMessageSize} exceeded`);
+        } else {
+          Promise.resolve().then(() => {
+            if (dataChannel.send)
+              dataChannel.send(data2);
+            else {
+              if (!isBuffer)
+                dataChannel.sendMessage(data2);
+              else
+                dataChannel.sendMessageBinary(Buffer.from(data2));
+            }
+          }).catch((error) => {
+            console.log("error", error);
+          });
+        }
+      };
+      if (!dataChannel)
+        return;
+      if (dataChannel.readyState === "open" || ((_a = dataChannel.isOpen) === null || _a === void 0 ? void 0 : _a.call(dataChannel))) {
+        try {
+          if (eventName === EVENTS.RAW_MESSAGE && data !== null && (isStringMessage(data) || isBufferMessage(data))) {
+            send2(data, isBufferMessage(data));
+          } else {
+            send2(JSON.stringify({ [eventName]: data }), false);
+          }
+        } catch (error) {
+          console.error("Error in sendMessage.ts: ", error.message);
+          return error;
+        }
+      }
+    };
+  }
+});
+
+// node_modules/@geckos.io/client/lib/wrtc/connectionsManager.js
+var ConnectionsManagerClient;
+var init_connectionsManager = __esm({
+  "node_modules/@geckos.io/client/lib/wrtc/connectionsManager.js"() {
+    init_bridge();
+    init_parseMessage();
+    init_sendMessage();
+    ConnectionsManagerClient = class {
+      emit(eventName, data = null) {
+        SendMessage(this.dataChannel, this.maxMessageSize, eventName, data);
+      }
+      constructor(url, authorization, label, rtcConfiguration) {
+        this.url = url;
+        this.authorization = authorization;
+        this.label = label;
+        this.rtcConfiguration = rtcConfiguration;
+        this.bridge = new Bridge();
+        this.onDataChannel = (ev) => {
+          const { channel } = ev;
+          if (channel.label !== this.label)
+            return;
+          this.dataChannel = channel;
+          this.dataChannel.binaryType = "arraybuffer";
+          this.dataChannel.onmessage = (ev2) => {
+            const { key, data } = ParseMessage(ev2);
+            this.bridge.emit(key, data);
+          };
+        };
+      }
+      // fetch additional candidates
+      async fetchAdditionalCandidates(host, id) {
+        var _a;
+        if (((_a = this.dataChannel) === null || _a === void 0 ? void 0 : _a.readyState) === "closed")
+          return;
+        const res = await fetch(`${host}/connections/${id}/additional-candidates`, {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json"
+          }
+        });
+        if (res.ok) {
+          const candidates = await res.json();
+          candidates.forEach((c) => {
+            this.localPeerConnection.addIceCandidate(c);
+          });
+        }
+      }
+      async connect() {
+        const host = `${this.url}/.wrtc/v2`;
+        let headers = { "Content-Type": "application/json" };
+        if (this.authorization)
+          headers = { ...headers, ["Authorization"]: this.authorization };
+        let userData = {};
+        try {
+          const res = await fetch(`${host}/connections`, {
+            method: "POST",
+            headers
+          });
+          if (res.status >= 300) {
+            throw {
+              name: "Error",
+              message: `Connection failed with status code ${res.status}.`,
+              status: res.status,
+              statusText: res.statusText
+            };
+          }
+          const json = await res.json();
+          userData = json.userData;
+          this.remotePeerConnection = json;
+        } catch (error) {
+          console.error(error.message);
+          return { error };
+        }
+        const { id, localDescription } = this.remotePeerConnection;
+        const configuration = {
+          // @ts-ignore
+          sdpSemantics: "unified-plan",
+          ...this.rtcConfiguration
+        };
+        const RTCPc = RTCPeerConnection || webkitRTCPeerConnection;
+        this.localPeerConnection = new RTCPc(configuration);
+        const showBackOffIntervals = (attempts = 10, initial = 50, factor = 1.8, jitter = 20) => Array(attempts).fill(0).map((_, index) => parseInt((initial * factor ** index).toString()) + parseInt((Math.random() * jitter).toString()));
+        showBackOffIntervals().forEach((ms) => {
+          setTimeout(() => {
+            this.fetchAdditionalCandidates(host, id).catch(() => {
+            });
+          }, ms);
+        });
+        try {
+          await this.localPeerConnection.setRemoteDescription(localDescription);
+          this.localPeerConnection.addEventListener("datachannel", this.onDataChannel, { once: true });
+          const originalAnswer = await this.localPeerConnection.createAnswer();
+          const updatedAnswer = new RTCSessionDescription({
+            type: "answer",
+            sdp: originalAnswer.sdp
+          });
+          await this.localPeerConnection.setLocalDescription(updatedAnswer);
+          try {
+            await fetch(`${host}/connections/${id}/remote-description`, {
+              method: "POST",
+              body: JSON.stringify(this.localPeerConnection.localDescription),
+              headers: {
+                "Content-Type": "application/json"
+              }
+            });
+          } catch (error) {
+            console.error(error.message);
+            return { error };
+          }
+          const waitForDataChannel = () => {
+            return new Promise((resolve) => {
+              this.localPeerConnection.addEventListener("datachannel", () => {
+                resolve();
+              }, { once: true });
+            });
+          };
+          if (!this.dataChannel)
+            await waitForDataChannel();
+          return {
+            userData,
+            localPeerConnection: this.localPeerConnection,
+            dataChannel: this.dataChannel,
+            id
+          };
+        } catch (error) {
+          console.error(error.message);
+          this.localPeerConnection.close();
+          return { error };
+        }
+      }
+    };
+  }
+});
+
+// node_modules/@geckos.io/client/lib/wrtc/peerConnection.js
+var PeerConnection;
+var init_peerConnection = __esm({
+  "node_modules/@geckos.io/client/lib/wrtc/peerConnection.js"() {
+    init_constants();
+    PeerConnection = class {
+      async connect(connectionsManager) {
+        const webRTCPcSupported = RTCPeerConnection || webkitRTCPeerConnection;
+        if (webRTCPcSupported) {
+          const { localPeerConnection, dataChannel, id, userData, error } = await connectionsManager.connect();
+          if (error)
+            return { error };
+          if (!localPeerConnection || !dataChannel || !id || !userData)
+            return { error: new Error('Something went wrong in "await connectionsManager.connect()"') };
+          this.localPeerConnection = localPeerConnection;
+          this.dataChannel = dataChannel;
+          this.id = id;
+          return { userData };
+        } else {
+          const error = new Error(ERRORS.BROWSER_NOT_SUPPORTED);
+          console.error(error.message);
+          return { error };
+        }
+      }
+    };
+  }
+});
+
+// node_modules/@geckos.io/common/lib/makeRandomId.js
+var makeRandomId;
+var init_makeRandomId = __esm({
+  "node_modules/@geckos.io/common/lib/makeRandomId.js"() {
+    makeRandomId = (length = 24) => {
+      const possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+      let id = "";
+      for (let i = 0; i < length; i++) {
+        id += possible.charAt(Math.floor(Math.random() * possible.length));
+      }
+      return id;
+    };
+  }
+});
+
+// node_modules/@geckos.io/common/lib/runInterval.js
+var runInterval;
+var init_runInterval = __esm({
+  "node_modules/@geckos.io/common/lib/runInterval.js"() {
+    runInterval = (interval = 200, runs = 1, cb) => {
+      let counter = 0;
+      if (typeof cb !== "function") {
+        console.error("You have to define your callback function!");
+        return;
+      }
+      const i = setInterval(() => {
+        cb();
+        counter++;
+        if (counter === runs - 1) {
+          clearInterval(i);
+        }
+      }, interval);
+      cb();
+    };
+  }
+});
+
+// node_modules/@geckos.io/common/lib/reliableMessage.js
+var makeReliable;
+var init_reliableMessage = __esm({
+  "node_modules/@geckos.io/common/lib/reliableMessage.js"() {
+    init_makeRandomId();
+    init_runInterval();
+    makeReliable = (options, cb) => {
+      const { interval = 150, runs = 10 } = options;
+      const id = makeRandomId(24);
+      runInterval(interval, runs, () => {
+        cb(id);
+      });
+    };
+  }
+});
+
+// node_modules/@geckos.io/client/lib/geckos/channel.js
+var ClientChannel, geckosClient, channel_default;
+var init_channel = __esm({
+  "node_modules/@geckos.io/client/lib/geckos/channel.js"() {
+    init_connectionsManager();
+    init_constants();
+    init_peerConnection();
+    init_reliableMessage();
+    ClientChannel = class {
+      constructor(url, authorization, port, label, rtcConfiguration) {
+        this.userData = {};
+        this.receivedReliableMessages = [];
+        this.url = port ? `${url}:${port}` : url;
+        this.connectionsManager = new ConnectionsManagerClient(this.url, authorization, label, rtcConfiguration);
+        this.bridge = this.connectionsManager.bridge;
+        this.bridge.on(EVENTS.DISCONNECTED, () => this.bridge.removeAllListeners());
+      }
+      onconnectionstatechange() {
+        const lpc = this.peerConnection.localPeerConnection;
+        lpc.onconnectionstatechange = () => {
+          if (lpc.connectionState === "disconnected" || lpc.connectionState === "closed")
+            this.bridge.emit(EVENTS.DISCONNECTED);
+        };
+      }
+      /** Get the channel's id. */
+      get id() {
+        return this.peerConnection.id;
+      }
+      /** Close the WebRTC connection */
+      close() {
+        this.peerConnection.localPeerConnection.close();
+        this.bridge.emit(EVENTS.DISCONNECTED);
+        try {
+          const host = `${this.url}/.wrtc/v2`;
+          fetch(`${host}/connections/${this.id}/close`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            }
+          });
+        } catch (error) {
+          console.error(error.message);
+        }
+      }
+      /** Emit a message to the server. */
+      emit(eventName, data = null, options) {
+        if (options && options.reliable) {
+          makeReliable(options, (id) => this.connectionsManager.emit(eventName, {
+            MESSAGE: data,
+            RELIABLE: 1,
+            ID: id
+          }));
+        } else {
+          this.connectionsManager.emit(eventName, data);
+        }
+      }
+      /** Emit a raw message to the server */
+      get raw() {
+        return {
+          /**
+           * Emit a raw message.
+           * @param rawMessage The raw message. Can be of type 'USVString | ArrayBuffer | ArrayBufferView'
+           */
+          emit: (rawMessage) => this.emit(EVENTS.RAW_MESSAGE, rawMessage)
+        };
+      }
+      /**
+       * Listen for a raw message from the server.
+       * @param callback The event callback.
+       */
+      onRaw(callback) {
+        this.bridge.on(EVENTS.RAW_MESSAGE, (rawMessage) => {
+          const cb = (rawMessage2) => callback(rawMessage2);
+          cb(rawMessage);
+        });
+      }
+      /**
+       * Listen for the connect event.
+       * @param callback The event callback.
+       */
+      async onConnect(callback) {
+        var _a;
+        this.peerConnection = new PeerConnection();
+        const response = await this.peerConnection.connect(this.connectionsManager);
+        if (response.error)
+          callback(response.error);
+        else {
+          if (response.userData)
+            this.userData = response.userData;
+          this.maxMessageSize = this.connectionsManager.maxMessageSize = (_a = this.peerConnection.localPeerConnection.sctp) === null || _a === void 0 ? void 0 : _a.maxMessageSize;
+          this.onconnectionstatechange();
+          callback();
+        }
+      }
+      /**
+       * Listen for the disconnect event.
+       * @param callback The event callback.
+       */
+      onDisconnect(callback) {
+        this.bridge.on(EVENTS.DISCONNECTED, callback);
+      }
+      /**
+       * Listen for a message from the server.
+       * @param eventName The event name.
+       * @param callback The event callback.
+       */
+      on(eventName, callback) {
+        this.bridge.on(eventName, (data) => {
+          const isReliableMessage = data && data.RELIABLE === 1 && data.ID !== "undefined";
+          const expireTime = 15e3;
+          const deleteExpiredReliableMessages = () => {
+            const currentTime = (/* @__PURE__ */ new Date()).getTime();
+            this.receivedReliableMessages.forEach((msg, index, object) => {
+              if (msg.expire <= currentTime) {
+                object.splice(index, 1);
+              }
+            });
+          };
+          if (isReliableMessage) {
+            deleteExpiredReliableMessages();
+            if (this.receivedReliableMessages.filter((obj) => obj.id === data.ID).length === 0) {
+              this.receivedReliableMessages.push({
+                id: data.ID,
+                timestamp: /* @__PURE__ */ new Date(),
+                expire: (/* @__PURE__ */ new Date()).getTime() + expireTime
+              });
+              callback(data.MESSAGE);
+            } else {
+            }
+          } else {
+            callback(data);
+          }
+        });
+      }
+    };
+    geckosClient = (options = {}) => {
+      const { authorization = void 0, iceServers = [], iceTransportPolicy = "all", label = "geckos.io", port = 9208, url = `${location.protocol}//${location.hostname}` } = options;
+      return new ClientChannel(url, authorization, port, label, { iceServers, iceTransportPolicy });
+    };
+    channel_default = geckosClient;
+  }
+});
+
+// node_modules/@geckos.io/client/lib/index.js
+var lib_default;
+var init_lib2 = __esm({
+  "node_modules/@geckos.io/client/lib/index.js"() {
+    init_channel();
+    lib_default = channel_default;
+  }
+});
+
+// client/transports/geckos.js
+function connect2(opts) {
+  _onMessage2 = opts && opts.onMessage;
+  _onOpen2 = opts && opts.onOpen;
+  _onClose2 = opts && opts.onClose;
+  _closed = false;
+  _channel = lib_default({
+    url: location.protocol + "//" + location.host,
+    // Default geckos signaling port is 9208 but we proxy through Caddy on
+    // 443 by virtue of the URL routing — leave port unset so the library
+    // uses the standard URL.
+    port: null
+  });
+  const fireClose = (reason) => {
+    if (_closed) return;
+    _closed = true;
+    if (_connectTimer) {
+      clearTimeout(_connectTimer);
+      _connectTimer = null;
+    }
+    if (_channel) {
+      try {
+        _channel.close();
+      } catch (e) {
+      }
+      _channel = null;
+    }
+    if (reason) console.warn("[transport:geckos] " + reason);
+    if (_onClose2) _onClose2();
+  };
+  _connectTimer = setTimeout(
+    () => fireClose("connect timeout after " + CONNECT_TIMEOUT_MS + " ms"),
+    CONNECT_TIMEOUT_MS
+  );
+  _channel.onConnect((err) => {
+    if (_connectTimer) {
+      clearTimeout(_connectTimer);
+      _connectTimer = null;
+    }
+    if (err) {
+      fireClose("onConnect error: " + (err && err.message));
+      return;
+    }
+    if (_onOpen2) _onOpen2();
+  });
+  _channel.on(MSG_EVENT, (data) => {
+    if (!_onMessage2) return;
+    try {
+      _onMessage2(data);
+    } catch (err) {
+    }
+  });
+  _channel.onDisconnect(() => fireClose(null));
+}
+function sendReliable2(msg) {
+  if (!_channel) return;
+  try {
+    _channel.emit(MSG_EVENT, msg, RELIABLE_OPTS);
+  } catch (e) {
+  }
+}
+function sendUnreliable2(msg) {
+  if (!_channel) return;
+  try {
+    _channel.emit(MSG_EVENT, msg);
+  } catch (e) {
+  }
+}
+function close2() {
+  _closed = true;
+  if (_connectTimer) {
+    clearTimeout(_connectTimer);
+    _connectTimer = null;
+  }
+  if (_channel) {
+    try {
+      _channel.close();
+    } catch (e) {
+    }
+  }
+  _channel = null;
+}
+var RELIABLE_OPTS, MSG_EVENT, CONNECT_TIMEOUT_MS, _channel, _onMessage2, _onOpen2, _onClose2, _connectTimer, _closed, geckos_default;
+var init_geckos = __esm({
+  "client/transports/geckos.js"() {
+    init_lib2();
+    RELIABLE_OPTS = Object.freeze({ reliable: true, interval: 150, runs: 10 });
+    MSG_EVENT = "msg";
+    CONNECT_TIMEOUT_MS = 5e3;
+    _channel = null;
+    _onMessage2 = null;
+    _onOpen2 = null;
+    _onClose2 = null;
+    _connectTimer = null;
+    _closed = false;
+    geckos_default = {
+      connect: connect2,
+      sendReliable: sendReliable2,
+      sendUnreliable: sendUnreliable2,
+      close: close2
+    };
+  }
+});
+
+// client/transport.js
+var _params, _override, transportKind, userPickedTransport;
+var init_transport = __esm({
+  "client/transport.js"() {
+    init_ws();
+    init_geckos();
+    _params = new URLSearchParams(location.search);
+    _override = _params.get("transport");
+    transportKind = _override === "ws" ? "ws" : "geckos";
+    userPickedTransport = _params.has("transport");
+    console.log("[transport] initial pick:", transportKind);
+  }
+});
+
 // client/network.js
 function setMessageHandler(fn) {
   msgHandler = fn;
 }
-function connect() {
-  const proto = location.protocol === "https:" ? "wss" : "ws";
-  state_default.ws = new WebSocket(proto + "://" + location.host + "/strawberrycow-fps-ws/");
-  state_default.ws.onopen = () => {
-    console.log("connected");
-    const ss = document.getElementById("serverStatus");
-    if (ss) {
-      ss.textContent = "\u2705 meadow online";
-      ss.style.color = "#88ff88";
+function _showStatus(text, color) {
+  const ss = document.getElementById("serverStatus");
+  if (ss) {
+    ss.textContent = text;
+    ss.style.color = color;
+  }
+}
+function _showDisconnectOverlay() {
+  let dc = document.getElementById("disconnectMsg");
+  if (!dc) {
+    dc = document.createElement("div");
+    dc.id = "disconnectMsg";
+    dc.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:200;background:rgba(0,0,0,0.8);padding:30px 50px;border-radius:12px;border:2px solid #ff4444;text-align:center;font-family:Segoe UI,sans-serif";
+    dc.innerHTML = '<div style="color:#ff4444;font-size:24px;font-weight:bold;margin-bottom:8px">DISCONNECTED</div><div style="color:#aaa;font-size:14px">Reconnecting to meadow...</div>';
+    document.body.appendChild(dc);
+  }
+  dc.style.display = "block";
+}
+function _hideDisconnectOverlay() {
+  const dc = document.getElementById("disconnectMsg");
+  if (dc) dc.style.display = "none";
+}
+function _scheduleReconnect() {
+  if (_reconnectTimer) return;
+  _reconnectTimer = setTimeout(() => {
+    _reconnectTimer = null;
+    connect3();
+  }, RECONNECT_DELAY_MS);
+}
+function connect3() {
+  if (_reconnectTimer) {
+    clearTimeout(_reconnectTimer);
+    _reconnectTimer = null;
+  }
+  _receivedSinceConnect = false;
+  _active.connect({
+    onOpen: () => {
+      console.log("[transport] open via", _activeKind);
+      _showStatus("\u2705 meadow online", "#88ff88");
+      _hideDisconnectOverlay();
+    },
+    onMessage: (msg) => {
+      _receivedSinceConnect = true;
+      if (msgHandler) msgHandler(msg);
+    },
+    onClose: () => {
+      if (_activeKind === "geckos" && !_receivedSinceConnect && !userPickedTransport) {
+        console.warn("[transport] geckos failed to deliver any message \u2014 falling back to ws");
+        _active = ws_default;
+        _activeKind = "ws";
+        _showStatus("\u26A0 falling back to ws", "#ffaa44");
+        connect3();
+        return;
+      }
+      _showStatus("\u274C meadow offline", "#ff6666");
+      if (state_default.state === "join" || state_default.state === "lobby") _hideDisconnectOverlay();
+      else _showDisconnectOverlay();
+      _scheduleReconnect();
     }
-    const dc = document.getElementById("disconnectMsg");
-    if (dc) dc.style.display = "none";
-  };
-  state_default.ws.onmessage = (e) => {
-    if (msgHandler) msgHandler(JSON.parse(e.data));
-  };
-  state_default.ws.onclose = () => {
-    const ss = document.getElementById("serverStatus");
-    if (ss) {
-      ss.textContent = "\u274C meadow offline";
-      ss.style.color = "#ff6666";
-    }
-    let dc = document.getElementById("disconnectMsg");
-    if (state_default.state === "join" || state_default.state === "lobby") {
-      if (dc) dc.style.display = "none";
-      setTimeout(connect, 2e3);
-      return;
-    }
-    if (!dc) {
-      dc = document.createElement("div");
-      dc.id = "disconnectMsg";
-      dc.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:200;background:rgba(0,0,0,0.8);padding:30px 50px;border-radius:12px;border:2px solid #ff4444;text-align:center;font-family:Segoe UI,sans-serif";
-      dc.innerHTML = '<div style="color:#ff4444;font-size:24px;font-weight:bold;margin-bottom:8px">DISCONNECTED</div><div style="color:#aaa;font-size:14px">Reconnecting to meadow...</div>';
-      document.body.appendChild(dc);
-    }
-    dc.style.display = "block";
-    setTimeout(connect, 2e3);
-  };
-  state_default.ws.onerror = () => {
-    const ss = document.getElementById("serverStatus");
-    if (ss) {
-      ss.textContent = "\u274C meadow offline";
-      ss.style.color = "#ff6666";
-    }
-  };
+  });
+}
+function closeActive() {
+  try {
+    _active.close();
+  } catch (e) {
+  }
 }
 function send(m) {
-  if (!state_default.ws || state_default.ws.readyState !== 1) return;
-  if (m && import_constants2.STATEFUL_INPUT_TYPES.has(m.type)) {
+  if (!m) return;
+  if (import_constants6.STATEFUL_INPUT_TYPES.has(m.type)) {
     m.seq = ++state_default.inputSeq;
   }
-  state_default.ws.send(JSON.stringify(m));
+  if (UNRELIABLE_TYPES.has(m.type)) _active.sendUnreliable(m);
+  else _active.sendReliable(m);
 }
-var import_constants2, msgHandler;
+var import_constants6, UNRELIABLE_TYPES, RECONNECT_DELAY_MS, _active, _activeKind, _receivedSinceConnect, _reconnectTimer, msgHandler;
 var init_network = __esm({
   "client/network.js"() {
     init_state();
-    import_constants2 = __toESM(require_constants());
+    import_constants6 = __toESM(require_constants());
+    init_transport();
+    UNRELIABLE_TYPES = /* @__PURE__ */ new Set(["move"]);
+    RECONNECT_DELAY_MS = 2e3;
+    _active = transportKind === "geckos" ? geckos_default : ws_default;
+    _activeKind = transportKind;
+    _receivedSinceConnect = false;
+    _reconnectTimer = null;
     msgHandler = null;
   }
 });
@@ -2653,7 +3524,7 @@ function closeChat(doSend) {
   chatInputWrap.style.display = "none";
   chatInput.blur();
 }
-var import_constants3, INTERP_DELAY_TICKS, isMobile, vmGroupRef, _inputDir, mouseDown, autoFireActive, nextFireTime, AUTO_FIRE_INTERVAL, chatInput, chatInputWrap;
+var import_constants7, INTERP_DELAY_TICKS, isMobile, vmGroupRef, _inputDir, mouseDown, autoFireActive, nextFireTime, AUTO_FIRE_INTERVAL, chatInput, chatInputWrap;
 var init_input = __esm({
   "client/input.js"() {
     init_state();
@@ -2661,8 +3532,8 @@ var init_input = __esm({
     init_audio();
     init_network();
     init_interp();
-    import_constants3 = __toESM(require_constants());
-    INTERP_DELAY_TICKS = Math.round(INTERP_DELAY_MS * import_constants3.TICK_RATE / 1e3);
+    import_constants7 = __toESM(require_constants());
+    INTERP_DELAY_TICKS = Math.round(INTERP_DELAY_MS * import_constants7.TICK_RATE / 1e3);
     isMobile = "ontouchstart" in window || navigator.maxTouchPoints > 0;
     vmGroupRef = null;
     _inputDir = new THREE3.Vector3();
@@ -3130,8 +4001,8 @@ function borrowEntry() {
   return { mesh, mat };
 }
 function spawnParticle(opts) {
-  if (_active.length >= MAX_ACTIVE_PARTICLES) {
-    const old = _active.shift();
+  if (_active2.length >= MAX_ACTIVE_PARTICLES) {
+    const old = _active2.shift();
     releaseEntry(old.entry);
   }
   const entry = borrowEntry();
@@ -3143,7 +4014,7 @@ function spawnParticle(opts) {
   entry.mesh.scale.set(opts.sx || 1, opts.sy || opts.sx || 1, opts.sz || opts.sx || 1);
   entry.mesh.rotation.set(opts.rotX || 0, opts.rotY || 0, opts.rotZ || 0);
   scene.add(entry.mesh);
-  _active.push({
+  _active2.push({
     entry,
     life: opts.life,
     lifeMax: opts.life,
@@ -3158,12 +4029,12 @@ function spawnParticle(opts) {
   });
 }
 function updateParticles(dt) {
-  for (let i = _active.length - 1; i >= 0; i--) {
-    const p = _active[i];
+  for (let i = _active2.length - 1; i >= 0; i--) {
+    const p = _active2[i];
     p.life -= dt;
     if (p.life <= 0) {
       releaseEntry(p.entry);
-      _active.splice(i, 1);
+      _active2.splice(i, 1);
       continue;
     }
     const m = p.entry.mesh;
@@ -3183,11 +4054,11 @@ function updateParticles(dt) {
   }
 }
 function clearParticles() {
-  for (const p of _active) releaseEntry(p.entry);
-  _active.length = 0;
+  for (const p of _active2) releaseEntry(p.entry);
+  _active2.length = 0;
   while (_freePool.length > MAX_FREE_POOL) _freePool.pop().mat.dispose();
 }
-var PGEO_SPHERE_LO, PGEO_SPHERE_MED, PGEO_BOX, PGEO_TORUS, MAX_FREE_POOL, MAX_ACTIVE_PARTICLES, _freePool, _active;
+var PGEO_SPHERE_LO, PGEO_SPHERE_MED, PGEO_BOX, PGEO_TORUS, MAX_FREE_POOL, MAX_ACTIVE_PARTICLES, _freePool, _active2;
 var init_particles = __esm({
   "client/particles.js"() {
     init_renderer();
@@ -3199,7 +4070,7 @@ var init_particles = __esm({
     MAX_FREE_POOL = 600;
     MAX_ACTIVE_PARTICLES = 600;
     _freePool = [];
-    _active = [];
+    _active2 = [];
   }
 });
 
@@ -5699,7 +6570,7 @@ function reconcilePrediction(ackedState) {
     predictRing.shift();
   }
   let ackedIdx = -1;
-  for (let i = predictRing.length - 1; i >= 0; i--) {
+  for (let i = 0; i < predictRing.length; i++) {
     if (predictRing[i].seq === state_default.lastAckedInput) {
       ackedIdx = i;
       break;
@@ -5886,8 +6757,8 @@ var init_message_handlers = __esm({
       kicked(msg) {
         document.getElementById("joinScreen").style.display = "flex";
         document.getElementById("joinScreen").querySelector("h2").textContent = "You were kicked from the lobby";
-        if (state_default.ws) try {
-          state_default.ws.close();
+        try {
+          closeActive();
         } catch (e) {
         }
       },
@@ -7142,9 +8013,24 @@ var require_index = __commonJS({
       const h = handlers[msg.type];
       if (h) h(msg);
     });
-    connect();
+    connect3();
     requestAnimationFrame(loop);
   }
 });
 export default require_index();
+/*! Bundled license information:
+
+@yandeu/events/lib/index.js:
+  (**
+   * @package      npmjs.com/package/@yandeu/events (events.min.js)
+   *
+   * @author       Arnout Kazemier (https://github.com/3rd-Eden)
+   * @copyright    Copyright (c) 2014 Arnout Kazemier
+   * @license      {@link https://github.com/primus/eventemitter3/blob/master/LICENSE|MIT}
+   *
+   * @author       Yannick Deubel (https://github.com/yandeu)
+   * @copyright    Copyright (c) 2021 Yannick Deubel; Project Url: https://github.com/yandeu/events
+   * @license      {@link https://github.com/yandeu/events/blob/master/LICENSE|MIT}
+   *)
+*/
 //# sourceMappingURL=bundle.js.map
