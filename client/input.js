@@ -6,6 +6,18 @@ import { send } from './network.js';
 import { INTERP_DELAY_MS } from './interp.js';
 import { TICK_RATE } from '../shared/constants.js';
 
+// Jump prediction: server applies vz=200 + onGround=false on receipt of
+// the jump message ONLY IF player.onGround was true. Mirror that gate
+// locally so the client predicts the jump immediately, before the
+// inputAck would arrive — otherwise pressing Space leaves the camera
+// glued to the ground for ~50-200 ms before snapping upward.
+function predictJump() {
+  const mp = S.mePredicted;
+  if (!mp || !mp.onGround) return;
+  mp.vz = 200;
+  mp.onGround = false;
+}
+
 // Phase 6 lag comp: the tick offset between the newest server tick and the
 // one the client is actually rendering (due to the interpolation delay).
 // Attack messages carry `displayTick = S.lastTickNum - INTERP_DELAY_TICKS`
@@ -233,7 +245,7 @@ addEventListener('keydown', e => {
     if (e.code === 'ArrowLeft' || e.code === 'KeyA') { cycleSpectate(-1); return; }
   }
   if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && S.state === 'playing') doDash();
-  if (e.code === 'Space') { e.preventDefault(); send({ type: 'jump' }); }
+  if (e.code === 'Space') { e.preventDefault(); send({ type: 'jump' }); predictJump(); }
   if (e.code === 'KeyQ' && S.state === 'playing') send({ type: 'dropWeapon' });
   if (e.code === 'KeyP') { S.debugMode = !S.debugMode; }
   if (e.code === 'KeyO') { toggleFullscreen(); }

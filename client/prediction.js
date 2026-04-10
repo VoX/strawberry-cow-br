@@ -37,6 +37,7 @@
 import S from './state.js';
 import { stepPlayerMovement } from '../shared/movement.js';
 import { getTerrainHeight } from './terrain.js';
+import { send } from './network.js';
 
 // Fixed timestep — must match server/config.js::TICK_RATE.
 const TICK_HZ = 30;
@@ -200,7 +201,12 @@ export function getRenderedPredicted() {
 // Advance prediction by `frameDt` seconds. Reads the live input vector
 // from the module-level `currentInput` (set by the render loop each frame
 // via setCurrentInput). Called from the main render loop once per frame.
-// Runs 0 or more fixed-timestep iterations.
+// Runs 0 or more fixed-timestep iterations. Each iteration sends a move
+// message to the server and advances local prediction in lockstep — so
+// every ring entry has its own unique seq and the server processes
+// exactly one move per tick. This is what eliminates the "tether"
+// rubberband: send and predict cadences MUST match or the client drifts
+// ahead of the server within each throttle window.
 export function predictStep(frameDt) {
   if (!S.mePredicted || !S.me) return;
   accumulator += frameDt;
@@ -214,12 +220,18 @@ export function predictStep(frameDt) {
     // reads a lerp between _prevPredicted and S.mePredicted using the
     // remaining accumulator as the fraction.
     _prevPredicted = { x: S.mePredicted.x, y: S.mePredicted.y, z: S.mePredicted.z };
-    const seqAtStep = S.inputSeq;
     // Snapshot the input BEFORE stepPlayerMovement. Reconcile replay reads
     // this per-seq stored input from the ring — Bernier's paper is explicit
     // that replay must re-simulate with the exact cmds each slot was
     // originally computed with, not whatever input is live at replay time.
     const stepInput = { dx: currentInput.dx, dy: currentInput.dy, walking: !!currentInput.walking };
+    // Send the move with this exact input. send() increments S.inputSeq
+    // so the seq we capture immediately after is the one the server will
+    // see for this step's input. One move per step → server processes one
+    // input per tick → client predicts one step per input → no asymmetry.
+    send({ type: 'move', dx: stepInput.dx, dy: stepInput.dy, walking: stepInput.walking });
+    if (S.pingLast === 0) S.pingLast = performance.now();
+    const seqAtStep = S.inputSeq;
     // Guard the shared integrator call so a regression in stepPlayerMovement
     // (or in the synthesized world/perks shape above) doesn't propagate
     // out, kill the rest of the render loop, and leave camera/render

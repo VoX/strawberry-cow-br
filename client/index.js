@@ -80,10 +80,12 @@ function loop(ts) {
     }
   }
 
-  // Build the current input vector from the WASD key state. We use it
-  // both for the outgoing `move` message (throttled to 20 Hz) and for
-  // the local prediction step (every frame, fixed 30 Hz accumulator).
-  let curMx = 0, curMz = 0, curLen = 0;
+  // Build the current input vector from the WASD key state. predictStep
+  // reads it via setCurrentInput and emits the matching `move` message
+  // to the server in lockstep with each fixed-timestep iteration — so
+  // there's no separate throttled-send path here, send/predict cadences
+  // are inherently synchronized at TICK_RATE.
+  let curMx = 0, curMz = 0;
   const curWalking = !!(S.crouching);
   if (me && me.alive) {
     _tmpFwd.set(0, 0, -1).applyQuaternion(cam.quaternion);
@@ -93,20 +95,15 @@ function loop(ts) {
     if (S.keys['KeyS'] || S.keys['ArrowDown']) { curMx -= _tmpFwd.x; curMz -= _tmpFwd.z; }
     if (S.keys['KeyA'] || S.keys['ArrowLeft']) { curMx -= _tmpRight.x; curMz -= _tmpRight.z; }
     if (S.keys['KeyD'] || S.keys['ArrowRight']) { curMx += _tmpRight.x; curMz += _tmpRight.z; }
-    curLen = Math.hypot(curMx, curMz);
+    const curLen = Math.hypot(curMx, curMz);
     if (curLen > 0) { curMx /= curLen; curMz /= curLen; }
-  }
-
-  if (me && me.alive && now - S.lastMoveMsg > 50) {
-    S.lastMoveMsg = now;
-    if (curLen > 0) { send({ type: 'move', dx: curMx, dy: curMz, walking: curWalking }); S.pingLast = performance.now(); }
-    else send({ type: 'move', dx: 0, dy: 0, walking: curWalking });
   }
 
   // Phase 4: advance client-side prediction at a fixed 30 Hz timestep.
   // setCurrentInput publishes the current WASD vector to prediction.js
-  // — both predictStep and reconcilePrediction read from that shared
-  // module state, so there's one input source and no footgun.
+  // — predictStep reads it both for the move emit AND the local
+  // integration so the server and client never see different inputs
+  // for the same seq.
   if (me && me.alive) {
     setCurrentInput(curMx, curMz, curWalking);
     if (!S.mePredicted) initPrediction();

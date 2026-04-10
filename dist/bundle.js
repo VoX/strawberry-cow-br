@@ -40,14 +40,7 @@ var require_constants = __commonJS({
     var BARRICADE_HEIGHT = 55;
     var PLAYER_WALL_INFLATE = 15;
     var STATEFUL_INPUT_TYPES2 = /* @__PURE__ */ new Set([
-      "move",
-      "attack",
-      "dash",
-      "jump",
-      "reload",
-      "dropWeapon",
-      "placeBarricade",
-      "perk"
+      "move"
     ]);
     var COLORS = ["pink", "blue", "green", "gold", "purple", "red", "orange", "cyan"];
     var FOOD_TYPES = [
@@ -3440,6 +3433,12 @@ var init_interp = __esm({
 
 // client/input.js
 import * as THREE3 from "three";
+function predictJump() {
+  const mp = state_default.mePredicted;
+  if (!mp || !mp.onGround) return;
+  mp.vz = 200;
+  mp.onGround = false;
+}
 function setVmGroupRef(getter) {
   vmGroupRef = getter;
 }
@@ -3749,6 +3748,7 @@ var init_input = __esm({
       if (e.code === "Space") {
         e.preventDefault();
         send({ type: "jump" });
+        predictJump();
       }
       if (e.code === "KeyQ" && state_default.state === "playing") send({ type: "dropWeapon" });
       if (e.code === "KeyP") {
@@ -6546,8 +6546,10 @@ function predictStep(frameDt) {
   while (accumulator >= TICK_DT) {
     accumulator -= TICK_DT;
     _prevPredicted = { x: state_default.mePredicted.x, y: state_default.mePredicted.y, z: state_default.mePredicted.z };
-    const seqAtStep = state_default.inputSeq;
     const stepInput = { dx: currentInput.dx, dy: currentInput.dy, walking: !!currentInput.walking };
+    send({ type: "move", dx: stepInput.dx, dy: stepInput.dy, walking: stepInput.walking });
+    if (state_default.pingLast === 0) state_default.pingLast = performance.now();
+    const seqAtStep = state_default.inputSeq;
     try {
       (0, import_movement.stepPlayerMovement)(state_default.mePredicted, TICK_DT, world, stepInput, terrain);
     } catch (e) {
@@ -6643,6 +6645,7 @@ var init_prediction = __esm({
     init_state();
     import_movement = __toESM(require_movement());
     init_terrain();
+    init_network();
     TICK_HZ = 30;
     TICK_DT = 1 / TICK_HZ;
     RECONCILE_EPSILON = 1;
@@ -6910,6 +6913,10 @@ var init_message_handlers = __esm({
           if (!existing) continue;
           if (existing.id === state_default.myId) {
             Object.assign(existing, t);
+            if (state_default.mePredicted) {
+              state_default.mePredicted.stunTimer = existing.stunTimer || 0;
+              state_default.mePredicted.spawnProtection = existing.spawnProt ? 1 : 0;
+            }
           } else {
             Object.assign(existing, t);
             if (!existing._histBuf) existing._histBuf = [];
@@ -6950,6 +6957,10 @@ var init_message_handlers = __esm({
         if (typeof msg.seq !== "number" || msg.seq <= state_default.lastAckedInput) return;
         if (typeof msg.x !== "number" || typeof msg.y !== "number" || typeof msg.z !== "number") return;
         state_default.lastAckedInput = msg.seq;
+        if (state_default.mePredicted) {
+          if (typeof msg.stunTimer === "number") state_default.mePredicted.stunTimer = msg.stunTimer;
+          if (typeof msg.spawnProt === "boolean") state_default.mePredicted.spawnProtection = msg.spawnProt ? 1 : 0;
+        }
         reconcilePrediction({
           x: msg.x,
           y: msg.y,
@@ -7858,7 +7869,7 @@ var require_index = __commonJS({
           cam.lookAt(smooth.x, targetH, smooth.y);
         }
       }
-      let curMx = 0, curMz = 0, curLen = 0;
+      let curMx = 0, curMz = 0;
       const curWalking = !!state_default.crouching;
       if (me && me.alive) {
         _tmpFwd.set(0, 0, -1).applyQuaternion(cam.quaternion);
@@ -7882,18 +7893,11 @@ var require_index = __commonJS({
           curMx += _tmpRight.x;
           curMz += _tmpRight.z;
         }
-        curLen = Math.hypot(curMx, curMz);
+        const curLen = Math.hypot(curMx, curMz);
         if (curLen > 0) {
           curMx /= curLen;
           curMz /= curLen;
         }
-      }
-      if (me && me.alive && now - state_default.lastMoveMsg > 50) {
-        state_default.lastMoveMsg = now;
-        if (curLen > 0) {
-          send({ type: "move", dx: curMx, dy: curMz, walking: curWalking });
-          state_default.pingLast = performance.now();
-        } else send({ type: "move", dx: 0, dy: 0, walking: curWalking });
       }
       if (me && me.alive) {
         setCurrentInput(curMx, curMz, curWalking);

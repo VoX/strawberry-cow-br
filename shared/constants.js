@@ -18,12 +18,16 @@ const BARRICADE_HEIGHT = 55;            // barricades are 55 units tall
 const PLAYER_WALL_INFLATE = 15;         // AABB inflation matching capsule radius
 
 // Client input types that carry a monotonic seq number for CSP reconciliation
-// (Phase 4) and lag compensation (Phase 6). The client stamps seq on every
-// stateful send; the server tracks the highest seen per player and echoes it
-// back via `inputAck`. Lobby/host-control messages (chat, toggleBots, ready,
-// kick, join, setName) are not sim inputs and are excluded.
+// (Phase 4). The client stamps seq on every stateful send; the server tracks
+// the highest seen per player and echoes it back via `inputAck`. Each seq
+// must correspond 1:1 with a client predict step — `move` is the only type
+// that runs the integrator, so it's the only type in this set. Including
+// non-move types here would inject "invisible" seq gaps between predict
+// steps (a shot fired between two predict steps would bump the seq the next
+// step inherits, breaking the symmetry between client predict cadence and
+// server tick cadence and causing per-shot rubberband while strafe-firing).
 const STATEFUL_INPUT_TYPES = new Set([
-  'move', 'attack', 'dash', 'jump', 'reload', 'dropWeapon', 'placeBarricade', 'perk',
+  'move',
 ]);
 
 const COLORS = ['pink','blue','green','gold','purple','red','orange','cyan'];

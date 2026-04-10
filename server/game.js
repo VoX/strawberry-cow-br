@@ -182,6 +182,13 @@ function gameTick() {
         x: p.x, y: p.y, z: p.z,
         vz: p.vz || 0,
         onGround: !!p.onGround,
+        // Include the gates that skip the integrator so reconcile can
+        // restore them on the predicted player. The tick handler also
+        // syncs these from the broadcast, but inputAck can arrive
+        // between ticks; without these fields a freshly-stunned client
+        // could keep predicting forward through the gap.
+        stunTimer: p.stunTimer || 0,
+        spawnProt: p.spawnProtection > 0,
       };
     }
 

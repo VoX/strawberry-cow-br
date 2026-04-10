@@ -243,6 +243,18 @@ export const handlers = {
       if (!existing) continue; // race: no snapshot yet, skip until one arrives
       if (existing.id === S.myId) {
         Object.assign(existing, t);
+        // Sync server-only movement gates (stun + spawn protection) into
+        // the predicted player. Both make stepPlayerMovement skip the
+        // movement integration entirely, but the client has no way to
+        // predict them — getting hit is server-authoritative, so the
+        // local CSP loop just charges forward into the stun window and
+        // builds up drift until the next reconcile snaps it back. Keeping
+        // these in lockstep with the tick broadcast means the next predict
+        // step after the hit also respects the stun.
+        if (S.mePredicted) {
+          S.mePredicted.stunTimer = existing.stunTimer || 0;
+          S.mePredicted.spawnProtection = existing.spawnProt ? 1 : 0;
+        }
       } else {
         // Merge everything EXCEPT position/aim — those ride the interp ring.
         // Stats like hunger/ammo/score still want to snap to latest.
@@ -282,6 +294,13 @@ export const handlers = {
     // state and rubberband the player to NaN-land.
     if (typeof msg.x !== 'number' || typeof msg.y !== 'number' || typeof msg.z !== 'number') return;
     S.lastAckedInput = msg.seq;
+    // Snap server-only movement gates onto the predicted player too.
+    // The tick handler also syncs these, but inputAck can arrive between
+    // ticks and we want the very next predict step to respect the gates.
+    if (S.mePredicted) {
+      if (typeof msg.stunTimer === 'number') S.mePredicted.stunTimer = msg.stunTimer;
+      if (typeof msg.spawnProt === 'boolean') S.mePredicted.spawnProtection = msg.spawnProt ? 1 : 0;
+    }
     reconcilePrediction({
       x: msg.x, y: msg.y, z: msg.z,
       vz: msg.vz || 0,
