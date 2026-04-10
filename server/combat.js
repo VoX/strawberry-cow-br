@@ -5,7 +5,7 @@ const { getTerrainHeight, getGroundHeight, WALL_HEIGHT } = require('./terrain');
 const ballistics = require('./ballistics');
 const weaponFire = require('./weapon-fire');
 const { applyHungerDelta, applyArmorDelta, broadcastPlayerSnapshot } = require('./player');
-const { MAG_SIZES, EXT_MAG_SIZES, DUAL_WIELD_FAMILY, KNIFE_MELEE_RANGE, KNIFE_MELEE_CONE_COS, KNIFE_MELEE_DAMAGE, KNIFE_MELEE_CD_MS, RESOURCE_TYPES, RESOURCE_CAP } = require('../shared/constants');
+const { MAG_SIZES, EXT_MAG_SIZES, DUAL_WIELD_FAMILY, KNIFE_MELEE_RANGE, KNIFE_MELEE_CONE_COS, KNIFE_MELEE_DAMAGE, KNIFE_MELEE_CD_MS, RESOURCE_TYPES, RESOURCE_CAP, TOOL_CUPBOARD_RADIUS } = require('../shared/constants');
 
 
 const BASE_EYE_HEIGHT = 35;
@@ -427,6 +427,12 @@ function placeBarricadeForPlayer(player, aimX, aimY) {
   // expiry timer). HP is 200 for wood tier. Bots use the legacy free path.
   if (!player.isBot) {
     if (!player.resources || (player.resources.wood || 0) < 25) return false;
+    // Tool cupboard build protection — can't build near someone else's TC
+    for (const tc of gameState.getToolCupboards()) {
+      if (tc.ownerId !== player.id && Math.hypot(cx - tc.x, cy - tc.y) < TOOL_CUPBOARD_RADIUS) {
+        return false; // blocked by another player's tool cupboard
+      }
+    }
     player.resources.wood -= 25;
   }
   const bid = gameState.nextBarricadeId();

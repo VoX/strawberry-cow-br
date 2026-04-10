@@ -8,7 +8,7 @@
 // here is a verbatim move from the old inline ws.on('message') handler.
 
 const { MAP_W, MAP_H } = require('./config');
-const { STATEFUL_INPUT_TYPES, JUMP_VZ, SPEED_MULT_MIN, SPEED_MULT_MAX, CRAFTING_RECIPES, MAG_SIZES } = require('../shared/constants');
+const { STATEFUL_INPUT_TYPES, JUMP_VZ, SPEED_MULT_MIN, SPEED_MULT_MAX, CRAFTING_RECIPES, MAG_SIZES, TOOL_CUPBOARD_RADIUS } = require('../shared/constants');
 const lobbyState = require('./lobby-state');
 const gameState = require('./game-state');
 const { broadcast, sendTo } = require('./network');
@@ -173,6 +173,10 @@ function dispatchMessage(player, msg) {
     } else if (give.heal) {
       const { applyHungerDelta } = require('./player');
       applyHungerDelta(player, give.heal);
+    } else if (give.toolCupboard) {
+      const tc = { id: gameState.nextEntityId(), x: player.x, y: player.y, ownerId: player.id };
+      gameState.addToolCupboard(tc);
+      broadcast({ type: 'barricadePlaced', id: tc.id, cx: player.x, cy: player.y, w: 16, h: 16, angle: 0, ownerId: player.id });
     } else if (give.sleepingBag) {
       // Remove old sleeping bag if any
       const oldBag = gameState.getSleepingBag(player.id);

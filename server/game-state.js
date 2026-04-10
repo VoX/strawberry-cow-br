@@ -35,6 +35,7 @@ class GameState {
     this._resourceNodes = [];
     this._sleepingBags = new Map(); // playerId → { id, x, y, ownerId }
     this._lootBags = [];            // [{ id, x, y, resources, weapon, ammo, spawnTime }]
+    this._toolCupboards = [];       // [{ id, x, y, ownerId }]
 
     // static round features (rebuilt each round in generateMap)
     this._walls = [];
@@ -192,6 +193,8 @@ class GameState {
   getLootBags() { return this._lootBags; }
   addLootBag(bag) { this._lootBags.push(bag); }
   removeLootBagAt(idx) { this._lootBags.splice(idx, 1); }
+  getToolCupboards() { return this._toolCupboards; }
+  addToolCupboard(tc) { this._toolCupboards.push(tc); }
   removeBarricade(id) {
     const idx = this._barricades.findIndex(b => b.id === id);
     if (idx >= 0) this._barricades.splice(idx, 1);

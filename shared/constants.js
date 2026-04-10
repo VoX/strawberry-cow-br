@@ -95,7 +95,10 @@ const CRAFTING_RECIPES = {
   hay_bale:     { label: 'Hay Bale',       cost: { grass: 20 }, give: { heal: 30 } },
   smoothie:     { label: 'Grass Smoothie', cost: { grass: 40, wood: 10 }, give: { heal: 60 } },
   sleeping_bag: { label: 'Sleeping Bag',  cost: { grass: 30, wood: 20 }, give: { sleepingBag: true } },
+  tool_cupboard:{ label: 'Tool Cupboard', cost: { wood: 50, metal: 20 }, give: { toolCupboard: true } },
 };
+
+const TOOL_CUPBOARD_RADIUS = 120; // units — build protection zone
 
 const COLORS = ['pink','blue','green','gold','purple','red','orange','cyan'];
 const FOOD_TYPES = [
@@ -117,7 +120,7 @@ module.exports = {
   SPEED_MULT_MIN, SPEED_MULT_MAX,
   KNIFE_MELEE_RANGE, KNIFE_MELEE_CONE_COS, KNIFE_MELEE_DAMAGE, KNIFE_MELEE_CD_MS,
   RESOURCE_TYPES, RESOURCE_SPAWN_COUNTS, RESOURCE_CAP,
-  CRAFTING_RECIPES,
+  CRAFTING_RECIPES, TOOL_CUPBOARD_RADIUS,
   STATEFUL_INPUT_TYPES, BURST_FAMILY, DUAL_WIELD_FAMILY, MAG_SIZES, EXT_MAG_SIZES,
   COLORS, FOOD_TYPES, WEAPON_TYPES,
 };
