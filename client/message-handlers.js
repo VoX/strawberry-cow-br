@@ -789,18 +789,31 @@ export const handlers = {
   },
 
   eliminated(msg) {
-    addKillFeed(msg.name + ' eliminated (#' + (msg.rank || '?') + ')', 5);
+    addKillFeed(msg.name + ' eliminated', 5);
     if (msg.playerId === S.myId) {
       sfxDeath();
-      // Hide perk menu on death
       S.perkMenuOpen = false;
       S.pendingLevelUps = 0;
       const pm = document.getElementById('perkMenu'); if (pm) pm.style.display = 'none';
-      // If we have a tracked killer, lock spectate to them. Otherwise pick any alive player.
       if (S.killerId) S.spectateTargetId = S.killerId;
       else {
         const firstAlive = S.serverPlayers.find(p => p.alive && p.id !== S.myId);
         if (firstAlive) S.spectateTargetId = firstAlive.id;
+      }
+      // Death screen with respawn countdown
+      const ds = document.getElementById('deathScreen');
+      if (ds) {
+        ds.style.display = 'flex';
+        const killerTxt = S.killerName ? 'Killed by ' + S.killerName : 'You died';
+        document.getElementById('deathText').textContent = killerTxt;
+        let cd = 5;
+        const cdEl = document.getElementById('deathCountdown');
+        if (cdEl) cdEl.textContent = 'Respawning in ' + cd + '...';
+        const cdTimer = setInterval(() => {
+          cd--;
+          if (cdEl) cdEl.textContent = cd > 0 ? 'Respawning in ' + cd + '...' : 'Respawning...';
+          if (cd <= 0) { clearInterval(cdTimer); ds.style.display = 'none'; }
+        }, 1000);
       }
     }
   },
