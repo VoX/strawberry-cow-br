@@ -16,8 +16,8 @@ const { assignColor, getPlayerStates, serializeFood, eliminatePlayer, broadcastP
 const { handlePerk } = require('./perks');
 const { handleDropWeapon } = require('./weapons');
 const { handleAttack, handleMelee, handleDash, handleReload, cancelReload, placeBarricadeForPlayer } = require('./combat');
-const { checkAllReady, getLobbyPlayers, startLobby } = require('./lobby');
-const { checkWinner } = require('./game');
+const { spawnPlayerIntoWorld, buildWorldSnapshot } = require('./game');
+const gameFsm = require('./game-fsm');
 const transport = require('./transport');
 
 // Create a fresh player object. Called from the transport's onConnect
@@ -69,48 +69,24 @@ function dispatchMessage(player, msg) {
     player._lastRecvMoveSeq = msg.seq;
   }
 
-  if (msg.type === 'setName' && player._joined && player.inLobby) {
-    const name = String(msg.name || '').slice(0, 12).trim();
-    if (name) {
-      player.name = name;
-      broadcast({ type: 'lobby', players: getLobbyPlayers(), countdown: lobbyState.isReadyCountdownActive() ? lobbyState.getLobbyCountdown() : -1, allReady: checkAllReady() });
-    }
-  }
-
   if (msg.type === 'join' && !player._joined) {
     player.name = String(msg.name || 'Cow').slice(0, 12);
     player.color = assignColor();
     player._joined = true;
     gameState.addPlayer(player.id, player);
     if (lobbyState.getHostId() === null) lobbyState.setHost(player.id);
+    // Ensure world is initialised (first join generates terrain + starts tick loop)
+    gameFsm.ensureWorldReady();
+    // Spawn into the live world immediately — no lobby, no ready-up
+    spawnPlayerIntoWorld(player);
     sendTo(player.ws, {
       type: 'joined', id: player.id, color: player.color,
       botsEnabled: gameState.isBotsEnabled(), botsFreeWill: gameState.isBotsFreeWill(),
       nightMode: gameState.isNightMode(), hostId: lobbyState.getHostId(),
     });
-    if (lobbyState.isInLobby()) {
-      broadcast({ type: 'lobby', players: getLobbyPlayers(), countdown: lobbyState.getLobbyCountdown() });
-    } else if (lobbyState.isPlaying()) {
-      const { getSeed } = require('./terrain');
-      sendTo(player.ws, {
-        type: 'spectate',
-        terrainSeed: getSeed(),
-        players: getPlayerStates(),
-        foods: gameState.getFoods().map(serializeFood),
-        zone: gameState.getZone(),
-        map: {
-          walls: gameState.getWalls(), mud: gameState.getMudPatches(),
-          ponds: gameState.getHealPonds(), portals: gameState.getPortals(),
-          shelters: gameState.getShelters(), houses: gameState.getHouses(),
-        },
-        barricades: gameState.getBarricades(),
-        weapons: gameState.getWeaponPickups().map(w => ({ id: w.id, x: w.x, y: w.y, weapon: w.weapon, spawnTime: w.spawnTime })),
-        armorPickups: gameState.getArmorPickups().map(a => ({ id: a.id, x: a.x, y: a.y })),
-      });
-    }
-    if (!lobbyState.getLobbyTimer() && !lobbyState.isPlaying() && !lobbyState.isEnding()) {
-      startLobby();
-    }
+    // Full world snapshot so the client can build terrain + entities
+    sendTo(player.ws, buildWorldSnapshot());
+    broadcastPlayerSnapshot(player);
     return;
   }
 
@@ -129,34 +105,7 @@ function dispatchMessage(player, msg) {
   if (msg.type === 'dropWeapon') {
     handleDropWeapon(player);
   }
-  if (msg.type === 'ready' && player._joined && player.inLobby) {
-    player.ready = !player.ready;
-    let anyReady = false;
-    for (const [, pp] of gameState.getPlayers()) { if (pp.inLobby && !pp.isBot && pp.ready) { anyReady = true; break; } }
-    if (anyReady && !lobbyState.isReadyCountdownActive()) {
-      lobbyState.startReadyCountdown(20);
-    } else if (!anyReady && lobbyState.isReadyCountdownActive()) {
-      lobbyState.cancelReadyCountdown(20);
-    }
-    if (lobbyState.isReadyCountdownActive() && checkAllReady() && lobbyState.getLobbyCountdown() > 4) {
-      lobbyState.setLobbyCountdown(4);
-    }
-    broadcast({ type: 'lobby', players: getLobbyPlayers(), countdown: lobbyState.isReadyCountdownActive() ? lobbyState.getLobbyCountdown() : -1, allReady: checkAllReady() });
-  }
-  if (msg.type === 'kick' && player._joined && lobbyState.isHost(player.id) && lobbyState.isInLobby()) {
-    const target = gameState.getPlayer(msg.targetId);
-    if (target && !target.isBot && target.id !== lobbyState.getHostId()) {
-      sendTo(target.ws, { type: 'kicked' });
-      // Drop the joined flag so the pre-join gate blocks any messages
-      // the kicked client sends during the geckos close-flush window
-      // (closePlayer defers the actual channel teardown to give the
-      // reliable retransmit of `kicked` time to land).
-      target._joined = false;
-      transport.closePlayer(target.ws);
-      gameState.removePlayer(msg.targetId);
-      broadcast({ type: 'lobby', players: getLobbyPlayers(), countdown: lobbyState.isReadyCountdownActive() ? lobbyState.getLobbyCountdown() : -1, allReady: checkAllReady() });
-    }
-  }
+  // Lobby-specific handlers (ready/kick) removed — survival mode has no lobby.
   if (msg.type === 'move' && player._joined && player.alive) {
     // Enqueue the move for the next tick's drain instead of overwriting
     // dx/dy directly. Each queue entry carries its OWN seq + input —

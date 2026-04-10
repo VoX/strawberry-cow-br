@@ -114,16 +114,13 @@ export const handlers = {
   },
 
   joined(msg) {
-    S.myId = msg.id; S.myColor = msg.color; S.state = 'lobby';
+    S.myId = msg.id; S.myColor = msg.color;
     S.hostId = msg.hostId;
-    window.kickPlayer = (id) => { send({ type: 'kick', targetId: id }); };
-    document.getElementById('joinScreen').querySelector('h2').textContent = 'Waiting for cows...';
-    document.getElementById('botsCheck').checked = msg.botsEnabled;
-    document.getElementById('botsFreeWillCheck').checked = msg.botsFreeWill;
-    document.getElementById('nightCheck').checked = !!msg.nightMode;
-    setNightMode(!!msg.nightMode);
-    updateHostControls();
-    initAudio(); startMenuMusic();
+    if (msg.nightMode) setNightMode(true);
+    initAudio();
+    // Survival mode: world snapshot (`start` msg) arrives immediately
+    // after this — no lobby wait. The join screen stays visible until
+    // the start handler hides it.
   },
 
   nightToggled(msg) {

@@ -15,61 +15,55 @@ const { updateProjectiles } = require('./combat');
 const { rand } = require('./utils');
 const gameFsm = require('./game-fsm');
 
-function startGame() {
-  lobbyState.transitionToPlaying();
-  // Clear all round-scoped collections BEFORE map/food/bot generation refills them
+// Default stats applied to every player on spawn/respawn. Kept here so
+// initWorld and spawnPlayerIntoWorld use the same shape.
+const FRESH_PLAYER_STATS = {
+  z: 0, vz: 0, onGround: true, hunger: 100, score: 0, alive: true,
+  inLobby: false, dir: 'south', eating: false, eatTimer: 0,
+  foodEaten: 0, xp: 0, level: 0, xpToNext: 50, kills: 0,
+  dashCooldown: 0, attackCooldown: 0, stunTimer: 0, lastAttacker: null,
+  perks: { speedMult: 1, maxHunger: 100, sizeMult: 1, damage: 1 },
+  weaponPerks: { cooldown: 1, hungerDiscount: 0, damageMult: 1 },
+  weapon: 'normal', weaponTimer: 0,
+  ammo: 15, reloading: 0,
+  spawnProtection: 2,
+  barricadeReadyAt: 0, mooReadyAt: 0, meleeReadyAt: 0,
+};
+
+function randomSpawnPos() {
+  return { x: rand(200, MAP_W - 200), y: rand(200, MAP_H - 200) };
+}
+
+// Spawn a player into the live world (first join or respawn).
+function spawnPlayerIntoWorld(p) {
+  const sp = randomSpawnPos();
+  Object.assign(p, JSON.parse(JSON.stringify(FRESH_PLAYER_STATS)));
+  p.x = sp.x; p.y = sp.y;
+  p.lastInputSeq = 0;
+  p._lastRecvMoveSeq = 0;
+  p._moveQueue = null;
+  p._lastMoveSpeedMult = 1;
+  p._ackSnapshot = null;
+}
+
+// One-time world initialization — terrain, map, initial food/weapons/bots.
+// Called once on first player join via game-fsm.ensureWorldReady().
+function initWorld() {
   gameState.resetRound();
-  // Drop any hunger-death ids that late-firing cowstrike callbacks (or any
-  // end-of-round death path) may have left in the set while the round was ending.
   clearPendingDeaths();
-  // Reset per-player input seq counters — CSP (Phase 4) replays inputs-since-ack,
-  // and carrying seqs across a round boundary would reference sim state that
-  // no longer exists. Client mirrors this reset in the `start` handler. The
-  // ackSnapshot follows the same lifecycle — clear it so the first inputAck
-  // of the new round doesn't ship a stale-round position to the client.
-  for (const [, p] of gameState.getPlayers()) {
-    p.lastInputSeq = 0;
-    p._lastRecvMoveSeq = 0;
-    p._moveQueue = null;
-    p._lastMoveSpeedMult = 1;
-    p._ackSnapshot = null;
-  }
   gameState.setGameTime(0);
   gameState.setZone({ x: 0, y: 0, w: MAP_W, h: MAP_H });
   generateTerrain(Math.random() * 10000);
   generateMap();
   spawnInitialFood();
   spawnBots();
+  gameState.clearTickInterval();
+  gameState.setTickInterval(setInterval(gameTick, 1000 / TICK_RATE));
+}
 
-  let i = 0;
-  const spawnPoints = [];
-  const cx = MAP_W / 2, cy = MAP_H / 2, radius = 400;
-  const count = gameState.countInLobby();
-  for (let j = 0; j < count; j++) {
-    const angle = (j / count) * Math.PI * 2;
-    spawnPoints.push({ x: cx + Math.cos(angle) * radius, y: cy + Math.sin(angle) * radius });
-  }
-
-  for (const [, p] of gameState.getPlayers()) {
-    if (p.inLobby) {
-      const sp = spawnPoints[i % spawnPoints.length];
-      Object.assign(p, {
-        x: sp.x, y: sp.y, z: 0, vz: 0, onGround: true, hunger: 100, score: 0, alive: true,
-        inLobby: false, dir: 'south', eating: false, eatTimer: 0,
-        foodEaten: 0, xp: 0, level: 0, xpToNext: 50, kills: 0,
-        dashCooldown: 0, attackCooldown: 0, stunTimer: 0, lastAttacker: null,
-        perks: { speedMult: 1, maxHunger: 100, sizeMult: 1, damage: 1 },
-        weaponPerks: { cooldown: 1, hungerDiscount: 0, damageMult: 1 },
-        weapon: 'normal', weaponTimer: 0,
-        ammo: 15, reloading: 0,
-        spawnProtection: 1,
-      });
-      i++;
-    }
-  }
-
-  for (const [, p] of gameState.getPlayers()) { p.barricadeReadyAt = 0; p.mooReadyAt = 0; p.meleeReadyAt = 0; }
-  broadcast({
+// Build the full world-state message for a newly joining client.
+function buildWorldSnapshot() {
+  return {
     type: 'start',
     terrainSeed: getSeed(),
     players: getPlayerStates(),
@@ -79,11 +73,7 @@ function startGame() {
     barricades: gameState.getBarricades(),
     armorPickups: gameState.getArmorPickups().map(a => ({ id: a.id, x: a.x, y: a.y })),
     weapons: gameState.getWeaponPickups().map(w => ({ id: w.id, x: w.x, y: w.y, weapon: w.weapon, spawnTime: w.spawnTime })),
-  });
-  broadcast(buildServerStatus());
-
-  gameState.clearTickInterval();
-  gameState.setTickInterval(setInterval(gameTick, 1000 / TICK_RATE));
+  };
 }
 
 function gameTick() {
@@ -107,14 +97,15 @@ function gameTick() {
       gameState.removeBarricadeAt(i);
     }
   }
-  // Reap player corpses after 15 seconds (removes from state so client cleans up mesh)
+  // Respawn dead players after 5 seconds (survival mode — no permadeath).
+  // Bots just get removed; humans respawn at a random location with fresh stats.
   for (const [id, p] of gameState.getPlayers()) {
-    if (!p.alive && p.deathTime && nowMs - p.deathTime > 15000 && !p.inLobby) {
+    if (!p.alive && p.deathTime && nowMs - p.deathTime > 5000) {
       if (p.isBot) {
         gameState.removePlayer(id);
       } else {
-        // Keep humans in state so they can spectate, but mark corpse as gone
-        p.corpseReaped = true;
+        spawnPlayerIntoWorld(p);
+        broadcastPlayerSnapshot(p);
       }
     }
   }
@@ -132,15 +123,8 @@ function gameTick() {
     }
   }
 
-  // Shrinking zone after 60 seconds
+  // Zone is static in survival mode — no shrinking.
   const zone = gameState.getZone();
-  if (gameState.getGameTime() > 60) {
-    const shrinkRate = 15 * dt;
-    zone.x += shrinkRate / 2;
-    zone.y += shrinkRate / 2;
-    zone.w = Math.max(400, zone.w - shrinkRate);
-    zone.h = Math.max(300, zone.h - shrinkRate);
-  }
 
   const walls = gameState.getWalls();
   const mudPatches = gameState.getMudPatches();
@@ -215,14 +199,10 @@ function gameTick() {
       }
     }
 
-    // Zone damage
-    if (p.x <= zone.x + 5 || p.x >= zone.x + zone.w - 5 || p.y <= zone.y + 5 || p.y >= zone.y + zone.h - 5) {
-      applyHungerDelta(p, -8 * dt);
-    }
-
-    // Hunger drain (skip for bots when free will is off)
+    // Passive hunger drain — survival mechanic. 0.5/sec base (200s to
+    // starve from full). Skip bots when free will is off.
     if (!(p.isBot && !gameState.isBotsFreeWill())) {
-      applyHungerDelta(p, -2 * dt);
+      applyHungerDelta(p, -0.5 * dt);
     }
 
     // Cooldowns
@@ -312,7 +292,7 @@ function gameTick() {
   // applyHungerDelta, which enqueues the victim if hunger fell to ≤0. Drain
   // the queue now so eliminations happen BEFORE the tick broadcast — stops
   // "dead" players from appearing alive for another 33 ms.
-  if (resolveDeaths() > 0) checkWinner();
+  resolveDeaths();
 
   // Broadcast tick — mutable-per-tick player fields only. Sticky fields
   // (name/color/weapon/perks/xpToNext/sizeMult/recoilMult/extMagMult) travel
@@ -372,22 +352,6 @@ function gameTick() {
   }
 }
 
-function checkWinner() {
-  // Single pass counts both totals and picks the first alive player as winner
-  // candidate — avoids two separate countAlive() iterations per tick.
-  const players = gameState.getPlayers();
-  let aliveTotal = 0, aliveHumans = 0, winner = null;
-  for (const [, p] of players) {
-    if (!p.alive) continue;
-    aliveTotal++;
-    if (!p.isBot) aliveHumans++;
-    if (!winner) winner = p;
-  }
-  if ((aliveTotal <= 1 || aliveHumans === 0) && lobbyState.isPlaying()) {
-    gameFsm.endRound(winner);
-  }
-}
+gameFsm.registerInitWorld(initWorld);
 
-gameFsm.registerStartGame(startGame);
-
-module.exports = { startGame, gameTick, checkWinner };
+module.exports = { initWorld, gameTick, spawnPlayerIntoWorld, buildWorldSnapshot };
