@@ -114,7 +114,7 @@ Large snapshots exceeding ~1400 bytes are fragmented across multiple UDP packets
 | Prediction | Full client-side, shared simulation | Full client-side, shared `stepPlayerMovement` |
 | Reconciliation | Seq-based ring buffer + Bernier replay | Seq-based ring buffer + Bernier replay |
 | Entity interpolation | cl_interp buffer, 100ms default | SI library, 100ms buffer |
-| Lag compensation | Server-side position history + time rewind | Server-side SI vault (planned) |
+| Lag compensation | Server-side position history + time rewind | Server-side position history + displayTick rewind |
 | Delta compression | Per-client ack-based field deltas | None (full state every tick, msgpack binary) |
 | Error smoothing | cl_smooth / cl_smoothtime | Linear decay render offset, 150ms |
 | Wire format | Huffman + delta | MessagePack binary (WS), msgpack raw (geckos) |
