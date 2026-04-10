@@ -22,7 +22,7 @@ const RATE_LIMITS = Object.freeze({
   move: 40, attack: 30, chat: 2, placeBarricade: 5,
   toggleBots: 2, toggleBotsFreeWill: 2, toggleNight: 2,
   ready: 5, kick: 2, setName: 2, perk: 5,
-  dash: 10, reload: 5, dropWeapon: 5, jump: 20,
+  dash: 10, reload: 5, dropWeapon: 5, switchWeapon: 5, jump: 20,
   setUpdateRate: 1,
 });
 // Close a socket after this many consecutive over-budget drops on any

@@ -12,14 +12,27 @@ function handleWeaponPickups(dt) {
       const w = weaponPickups[i];
       if (Math.hypot(p.x - w.x, p.y - w.y) < 45) {
         if (p._ignorePickupId === w.id && (p.pickupCooldown || 0) > 0) continue;
-        if (p.weapon !== 'normal' && p.weapon !== w.weapon) continue;
-        if (p.weapon === w.weapon) {
+        // Effective primary weapon = whichever weapon they're actually
+        // CARRYING (held or stashed-while-knifing). Pickups always
+        // affect the primary slot, never the knife slot.
+        const heldPrimary = p.weapon === 'knife' ? p._primaryWeapon : p.weapon;
+        if (heldPrimary !== 'normal' && heldPrimary !== w.weapon) continue;
+        const sameWeapon = heldPrimary === w.weapon;
+        if (sameWeapon) {
           // Picking up a second of the same weapon (only benelli + M16A2 support dual-wield)
-          if ((w.weapon === 'shotgun' || w.weapon === 'burst') && !p.dualWield) {
-            p.dualWield = true;
-            p._shotgunAlt = false; // fresh start on every new dual-wield session
+          if ((w.weapon === 'shotgun' || w.weapon === 'burst') && !(p.weapon === 'knife' ? p._primaryDualWield : p.dualWield)) {
+            if (p.weapon === 'knife') p._primaryDualWield = true;
+            else p.dualWield = true;
+            p._shotgunAlt = false;
           }
-          p.ammo = combat.getMaxAmmo(p, p.weapon);
+          // Refill ammo on whichever slot the primary lives on right now.
+          if (p.weapon === 'knife') p._primaryAmmo = combat.getMaxAmmo({ ...p, weapon: w.weapon, dualWield: p._primaryDualWield }, w.weapon);
+          else p.ammo = combat.getMaxAmmo(p, p.weapon);
+        } else if (p.weapon === 'knife') {
+          // Hot-swap the stashed primary while continuing to hold the knife.
+          p._primaryWeapon = w.weapon;
+          p._primaryDualWield = false;
+          p._primaryAmmo = combat.getMaxAmmo({ ...p, weapon: w.weapon, dualWield: false }, w.weapon);
         } else {
           p.weapon = w.weapon;
           p.dualWield = false;
@@ -29,9 +42,8 @@ function handleWeaponPickups(dt) {
         p.reloading = 0;
         if (p.reloadTimer) { clearTimeout(p.reloadTimer); p.reloadTimer = null; }
         broadcast({ type: 'weaponPickup', playerId: p.id, name: p.name, weapon: p.weapon, dualWield: !!p.dualWield, pickupId: w.id });
-        // Sticky fields changed (weapon, dualWield, ammo via getMaxAmmo) — ship
-        // a snapshot so clients update viewmodel + HUD next frame instead of
-        // waiting for a tick that only carries mutable state.
+        // Sticky fields changed — ship a snapshot so clients update
+        // viewmodel + HUD next frame instead of waiting for a tick.
         broadcastPlayerSnapshot(p);
         gameState.removeWeaponPickupAt(i);
       }
@@ -55,7 +67,25 @@ function handleArmorPickups() {
 }
 
 function handleDropWeapon(player) {
-  if (!player || !player.alive || player.weapon === 'normal') return;
+  if (!player || !player.alive) return;
+  // Knife is always-equipped — pressing Q while holding it drops the
+  // STASHED primary (if any), not the knife itself. Switching back via
+  // 1 then would be empty, so the player goes back to pistol.
+  if (player.weapon === 'knife') {
+    const stashed = player._primaryWeapon;
+    if (!stashed || stashed === 'normal') return;
+    const dropId = gameState.nextEntityId();
+    gameState.addWeaponPickup({ id: dropId, x: player.x + 20, y: player.y, weapon: stashed });
+    broadcast({ type: 'weaponSpawn', id: dropId, x: player.x + 20, y: player.y, weapon: stashed });
+    player._primaryWeapon = 'normal';
+    player._primaryAmmo = Math.ceil((MAG_SIZES['normal'] || 15) * (player.extMagMult || 1));
+    player._primaryDualWield = false;
+    player.pickupCooldown = 2; player._ignorePickupId = dropId;
+    broadcast({ type: 'weaponDrop', playerId: player.id, name: player.name });
+    broadcastPlayerSnapshot(player);
+    return;
+  }
+  if (player.weapon === 'normal') return;
   const dropId = gameState.nextEntityId();
   gameState.addWeaponPickup({ id: dropId, x: player.x + 20, y: player.y, weapon: player.weapon });
   broadcast({ type: 'weaponSpawn', id: dropId, x: player.x + 20, y: player.y, weapon: player.weapon });
@@ -73,9 +103,6 @@ function handleDropWeapon(player) {
   player.reloading = 0;
   if (player.reloadTimer) { clearTimeout(player.reloadTimer); player.reloadTimer = null; }
   broadcast({ type: 'weaponDrop', playerId: player.id, name: player.name });
-  // weapon + dualWield changed (sticky fields) — ship a snapshot so the client
-  // viewmodel swaps back to pistol instead of staying on the dropped weapon
-  // until the next unrelated snapshot event.
   broadcastPlayerSnapshot(player);
 }
 

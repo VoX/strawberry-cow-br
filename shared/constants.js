@@ -16,6 +16,23 @@ const MUD_SPEED_MULT = 0.5;             // mud patch slowdown
 const GRAVITY = 800;                    // z-axis gravity units/s^2
 const BARRICADE_HEIGHT = 55;            // barricades are 55 units tall
 const PLAYER_WALL_INFLATE = 15;         // AABB inflation matching capsule radius
+const JUMP_VZ = 230;                    // vertical velocity injected by jump
+
+// Client-authoritative speed multipliers — sent in each move's
+// `speedMult` field. Both halves of the CSP loop must consume the same
+// constants or the simulation diverges.
+const KNIFE_SPEED_MULT = 1.2;
+const HIT_SLOW_MULT = 0.5;
+const HIT_SLOW_DURATION_MS = 500;
+const SPEED_MULT_MIN = 0;               // clamp on incoming move messages
+const SPEED_MULT_MAX = 2;
+
+// Knife melee. Range is ~2 body widths ahead, 90° total cone (45° either
+// side of aim), damage so 2 hits kill a full-health target, 500ms cooldown.
+const KNIFE_MELEE_RANGE = 62;
+const KNIFE_MELEE_CONE_COS = 0.707;      // cos(45°) — dot-product gate on aim
+const KNIFE_MELEE_DAMAGE = 55;
+const KNIFE_MELEE_CD_MS = 500;
 
 // Burst-family weapons share the burst-fire pipeline, ADS-irrelevant
 // recoil ramp shape, fire-mode selector, and reload sound. Used in
@@ -52,7 +69,10 @@ const WEAPON_TYPES = ['shotgun','burst','bolty','shotgun','burst','bolty','cowta
 module.exports = {
   MAP_W, MAP_H, TICK_RATE,
   PLAYER_BASE_SPEED, PLAYER_WALK_MULT, MUD_SPEED_MULT, GRAVITY,
-  BARRICADE_HEIGHT, PLAYER_WALL_INFLATE,
+  BARRICADE_HEIGHT, PLAYER_WALL_INFLATE, JUMP_VZ,
+  KNIFE_SPEED_MULT, HIT_SLOW_MULT, HIT_SLOW_DURATION_MS,
+  SPEED_MULT_MIN, SPEED_MULT_MAX,
+  KNIFE_MELEE_RANGE, KNIFE_MELEE_CONE_COS, KNIFE_MELEE_DAMAGE, KNIFE_MELEE_CD_MS,
   STATEFUL_INPUT_TYPES, BURST_FAMILY,
   COLORS, FOOD_TYPES, WEAPON_TYPES,
 };

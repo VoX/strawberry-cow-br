@@ -8,14 +8,14 @@
 // here is a verbatim move from the old inline ws.on('message') handler.
 
 const { MAP_W, MAP_H } = require('./config');
-const { STATEFUL_INPUT_TYPES } = require('../shared/constants');
+const { STATEFUL_INPUT_TYPES, JUMP_VZ, SPEED_MULT_MIN, SPEED_MULT_MAX } = require('../shared/constants');
 const lobbyState = require('./lobby-state');
 const gameState = require('./game-state');
 const { broadcast, sendTo } = require('./network');
-const { assignColor, getPlayerStates, serializeFood, eliminatePlayer } = require('./player');
+const { assignColor, getPlayerStates, serializeFood, eliminatePlayer, broadcastPlayerSnapshot } = require('./player');
 const { handlePerk } = require('./perks');
 const { handleDropWeapon } = require('./weapons');
-const { handleAttack, handleDash, handleReload, placeBarricadeForPlayer } = require('./combat');
+const { handleAttack, handleMelee, handleDash, handleReload, placeBarricadeForPlayer } = require('./combat');
 const { checkAllReady, getLobbyPlayers, startLobby } = require('./lobby');
 const { checkWinner } = require('./game');
 const transport = require('./transport');
@@ -60,17 +60,13 @@ function dispatchMessage(player, msg) {
   // silently let an un-joined peer mutate game state.
   if (!player._joined && msg.type !== 'join') return;
 
-  // Monotonic-clamped seq tracker for CSP reconcile. Only stateful inputs
-  // get tracked; the gate above already blocks pre-join messages so any
-  // message reaching this line belongs to a joined player. STALE inputs
-  // (seq < lastInputSeq) are dropped entirely — geckos.io's unreliable
-  // channel can deliver `move` messages out of order, and applying a
-  // stale move would overwrite the freshest dx/dy with stale values
-  // until the next move arrives. The drop is silent: the next live move
-  // arrives within ~50 ms and supersedes whatever was lost.
+  // Stale stateful inputs (seq <= last seen) are dropped — geckos UDP
+  // can reorder. Note: lastInputSeq is now advanced by the per-tick
+  // move-queue drain in game.js, NOT here, so we still gate on the
+  // last RECEIVED seq tracked separately on `_lastRecvMoveSeq`.
   if (typeof msg.seq === 'number' && STATEFUL_INPUT_TYPES.has(msg.type)) {
-    if (msg.seq <= (player.lastInputSeq || 0)) return;
-    player.lastInputSeq = msg.seq;
+    if (msg.seq <= (player._lastRecvMoveSeq || 0)) return;
+    player._lastRecvMoveSeq = msg.seq;
   }
 
   if (msg.type === 'setName' && player._joined && player.inLobby) {
@@ -162,18 +158,45 @@ function dispatchMessage(player, msg) {
     }
   }
   if (msg.type === 'move' && player._joined && player.alive) {
-    player.dx = Math.max(-1, Math.min(1, msg.dx || 0));
-    player.dy = Math.max(-1, Math.min(1, msg.dy || 0));
-    player.walking = !!msg.walking;
-    // Camera-derived aim from the client. Humans send this every move so
-    // their cow faces where they're LOOKING (camera yaw), not where
-    // they're moving — those diverge whenever the player strafes. Bots
-    // are server-side and never reach this handler; they set their own
-    // aimAngle in shared/movement.js based on their move direction.
-    if (typeof msg.aim === 'number') player.aimAngle = msg.aim;
+    // Enqueue the move for the next tick's drain instead of overwriting
+    // dx/dy directly. Each queue entry carries its OWN seq + input —
+    // the gameTick movement loop pops one per tick and integrates
+    // exactly that seq's input, then snapshots at that seq. This is
+    // the load-bearing fix for walking-rubberband: the OLD direct-
+    // write path silently dropped intermediate seqs whenever the
+    // client sent multiple moves between two server ticks (clock
+    // drift between client predict accumulator and server setInterval),
+    // which produced a snapshot/ring-entry mismatch and a per-ack
+    // visible snap. With the queue, every client predict step gets a
+    // matching server integration step.
+    if (!player._moveQueue) player._moveQueue = [];
+    player._moveQueue.push({
+      seq: msg.seq,
+      dx: Math.max(-1, Math.min(1, msg.dx || 0)),
+      dy: Math.max(-1, Math.min(1, msg.dy || 0)),
+      walking: !!msg.walking,
+      aim: typeof msg.aim === 'number' ? msg.aim : null,
+      // Client-authoritative speed multiplier — knife / on-hit slow /
+      // future loadout effects. Server simulates whatever the client says.
+      speedMult: typeof msg.speedMult === 'number' ? Math.max(SPEED_MULT_MIN, Math.min(SPEED_MULT_MAX, msg.speedMult)) : 1,
+    });
+    // Cap depth to avoid runaway catch-up under sustained client
+    // overproduction. Drop oldest on overflow — keeping the most
+    // recent intent matters more than perfect history continuity.
+    while (player._moveQueue.length > 6) player._moveQueue.shift();
+    // Net stats: track move arrival times in a 1-second sliding window.
+    if (!player._moveArrivals) player._moveArrivals = [];
+    const nowMs = Date.now();
+    player._moveArrivals.push(nowMs);
+    while (player._moveArrivals.length > 0 && nowMs - player._moveArrivals[0] > 1000) {
+      player._moveArrivals.shift();
+    }
   }
   if (msg.type === 'attack') {
     handleAttack(player, msg);
+  }
+  if (msg.type === 'meleeAttack') {
+    handleMelee(player);
   }
   if (msg.type === 'reload') {
     handleReload(player);
@@ -182,8 +205,32 @@ function dispatchMessage(player, msg) {
     handleDash(player);
   }
   if (msg.type === 'jump' && player._joined && player.alive && player.onGround) {
-    player.vz = 200;
+    player.vz = JUMP_VZ;
     player.onGround = false;
+  }
+  // Knife loadout slot — secondary weapon, always available, +20% move
+  // speed while held. Pressing 2 stashes the primary on `_primaryWeapon`/
+  // `_primaryAmmo`/`_primaryDualWield`; pressing 1 restores them. Picking
+  // up a new weapon while holding the knife replaces _primaryWeapon
+  // (handled in weapons.js).
+  if (msg.type === 'switchWeapon' && player._joined && player.alive) {
+    const target = msg.to === 'knife' ? 'knife' : 'primary';
+    if (target === 'knife' && player.weapon !== 'knife') {
+      player._primaryWeapon = player.weapon;
+      player._primaryAmmo = player.ammo;
+      player._primaryDualWield = !!player.dualWield;
+      player.weapon = 'knife';
+      player.dualWield = false;
+      player.ammo = -1;
+      player.reloading = 0;
+      if (player.reloadTimer) { clearTimeout(player.reloadTimer); player.reloadTimer = null; }
+      broadcastPlayerSnapshot(player);
+    } else if (target === 'primary' && player.weapon === 'knife' && player._primaryWeapon) {
+      player.weapon = player._primaryWeapon;
+      player.ammo = player._primaryAmmo != null ? player._primaryAmmo : 15;
+      player.dualWield = !!player._primaryDualWield;
+      broadcastPlayerSnapshot(player);
+    }
   }
   if (msg.type === 'placeBarricade' && player._joined && player.alive) {
     placeBarricadeForPlayer(player, msg.aimX || 0, msg.aimY || 0);
@@ -195,6 +242,13 @@ function dispatchMessage(player, msg) {
   if (msg.type === 'chat' && player._joined) {
     const txt = String(msg.text || '').slice(0, 120).trim();
     if (txt) broadcast({ type: 'chat', playerId: player.id, name: player.name, color: player.color, text: txt });
+  }
+  if (msg.type === 'moo' && player._joined && player.alive) {
+    const nowMs = Date.now();
+    if (nowMs >= (player.mooReadyAt || 0)) {
+      player.mooReadyAt = nowMs + 1500;
+      broadcast({ type: 'mooTaunt', playerId: player.id, x: player.x, y: player.y });
+    }
   }
 }
 

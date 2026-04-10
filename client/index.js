@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { CH } from './config.js';
 import S from './state.js';
-import { sfx, tickMusic, updateMusicMood } from './audio.js';
+import { sfx, tickMusic, updateMusicMood, updateAudioListener } from './audio.js';
 import { scene, cam, ren, sun, sky, cloudPlanes, vmScene, vmCam } from './renderer.js';
 import { getTerrainHeight } from './terrain.js';
 import { setVmGroupRef } from './input.js';
@@ -148,6 +148,7 @@ function loop(ts) {
     cam.position.y += (dynCH + targetZ - cam.position.y) * camLerpY;
   }
   if (!spectatingTarget) { _tmpEuler.set(S.pitch, S.yaw, 0, 'YXZ'); cam.quaternion.setFromEuler(_tmpEuler); }
+  updateAudioListener(cam);
   sun.position.set(cam.position.x + 300, 400, cam.position.z + 200);
   sun.target.position.set(cam.position.x, 0, cam.position.z);
   sun.target.updateMatrixWorld();

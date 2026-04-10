@@ -4,7 +4,7 @@ import { cam, ren } from './renderer.js';
 import { initAudio } from './audio.js';
 import { send } from './network.js';
 import { INTERP_DELAY_MS } from './interp.js';
-import { TICK_RATE, BURST_FAMILY } from '../shared/constants.js';
+import { TICK_RATE, BURST_FAMILY, JUMP_VZ } from '../shared/constants.js';
 
 // Jump prediction: server applies vz=200 + onGround=false on receipt of
 // the jump message ONLY IF player.onGround was true. Mirror that gate
@@ -14,7 +14,7 @@ import { TICK_RATE, BURST_FAMILY } from '../shared/constants.js';
 function predictJump() {
   const mp = S.mePredicted;
   if (!mp || !mp.onGround) return;
-  mp.vz = 200;
+  mp.vz = JUMP_VZ;
   mp.onGround = false;
 }
 
@@ -32,6 +32,13 @@ export function setVmGroupRef(getter) { vmGroupRef = getter; }
 const _inputDir = new THREE.Vector3();
 
 export function doAttack() {
+  // Knife routes to the melee path — a separate `meleeAttack` msg that
+  // server/combat.js::handleMelee resolves via cone/range check. No aim
+  // payload needed; server reads player.aimAngle from the move stream.
+  if (S.me && S.me.weapon === 'knife') {
+    send({ type: 'meleeAttack' });
+    return;
+  }
   _inputDir.set(0, 0, -1).applyQuaternion(cam.quaternion);
   send({
     type: 'attack',
@@ -253,6 +260,21 @@ addEventListener('keydown', e => {
   if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && S.state === 'playing') doDash();
   if (e.code === 'Space') { e.preventDefault(); send({ type: 'jump' }); predictJump(); }
   if (e.code === 'KeyQ' && S.state === 'playing') send({ type: 'dropWeapon' });
+  if (e.code === 'KeyV' && !e.repeat && S.state === 'playing' && S.me && S.me.alive) send({ type: 'moo' });
+  // F toggles between the held primary and the knife. Number keys are
+  // reserved for the perk-pick menu. Locally optimistic: flip
+  // S.mePredicted.weapon immediately so the predict-step speedMult
+  // picks up the bonus before the server's snapshot lands.
+  if (e.code === 'KeyF' && S.state === 'playing' && S.mePredicted) {
+    if (S.mePredicted.weapon === 'knife') {
+      S.mePredicted.weapon = S.localPrimaryWeapon || (S.me && S.me.weapon !== 'knife' ? S.me.weapon : 'normal');
+      send({ type: 'switchWeapon', to: 'primary' });
+    } else {
+      S.localPrimaryWeapon = S.mePredicted.weapon;
+      S.mePredicted.weapon = 'knife';
+      send({ type: 'switchWeapon', to: 'knife' });
+    }
+  }
   if (e.code === 'KeyP') { S.debugMode = !S.debugMode; }
   if (e.code === 'KeyO') { toggleFullscreen(); }
   if (e.code === 'KeyR' && S.state === 'playing') send({ type: 'reload' });

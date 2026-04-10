@@ -1,9 +1,14 @@
+import * as THREE from 'three';
 import S from './state.js';
 
 let actx = null;
 export function getAudioCtx() { return actx; }
 
 function masterVol() { return typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5; }
+// Music volume is a separate slider — lets players turn music down
+// without muting gunshots. Every function in the menu/in-game music
+// section below reads this instead of masterVol().
+function musicVol() { return typeof S.musicVol !== 'undefined' ? S.musicVol : 0.5; }
 
 export function initAudio() {
   if (actx) return;
@@ -12,13 +17,135 @@ export function initAudio() {
   loadSpitSample(); loadShotgunSamples(); loadLRSamples(); loadBoltyShotSample(); loadSampleSounds();
 }
 
-export function sfx(freq, dur, type, v) {
+// --- Positional audio ---------------------------------------------------
+// All world-sourced sfx (remote gunshots, explosions, moo, rocket whistle,
+// barricade impacts, shield hits) route through a PannerNode instead of
+// connecting straight to actx.destination. The listener follows the camera
+// via updateAudioListener() called once per render frame. HRTF + inverse
+// distance model replaces the hand-rolled 1/(1 + d*0.005) falloff and
+// gives real L/R directionality on headphones.
+//
+// Call-site contract: pass `pos = {x, y, z}` in WORLD coords (three.js).
+// Server (x, y) maps to (world.x, world.z); vertical is world.y (y3d).
+// Omit `pos` for HUD / local-player sfx — they stay 2D automatically.
+
+const _audioFwd = new THREE.Vector3();
+export function updateAudioListener(cam) {
+  if (!actx || !actx.listener) return;
+  const lis = actx.listener;
+  const t = actx.currentTime;
+  // Horizontal forward — keep the audio world level so looking up/down
+  // doesn't rotate sources above/below into front/back. Matches every FPS.
+  _audioFwd.set(0, 0, -1).applyQuaternion(cam.quaternion);
+  _audioFwd.y = 0;
+  if (_audioFwd.lengthSq() > 1e-4) _audioFwd.normalize(); else _audioFwd.set(0, 0, -1);
+  if (lis.positionX) {
+    lis.positionX.setValueAtTime(cam.position.x, t);
+    lis.positionY.setValueAtTime(cam.position.y, t);
+    lis.positionZ.setValueAtTime(cam.position.z, t);
+    lis.forwardX.setValueAtTime(_audioFwd.x, t);
+    lis.forwardY.setValueAtTime(0, t);
+    lis.forwardZ.setValueAtTime(_audioFwd.z, t);
+    lis.upX.setValueAtTime(0, t);
+    lis.upY.setValueAtTime(1, t);
+    lis.upZ.setValueAtTime(0, t);
+  } else if (lis.setPosition) {
+    // Safari fallback — same semantics via the deprecated setters.
+    lis.setPosition(cam.position.x, cam.position.y, cam.position.z);
+    lis.setOrientation(_audioFwd.x, 0, _audioFwd.z, 0, 1, 0);
+  }
+}
+
+// Set a panner's position via AudioParam setters (modern) or legacy
+// setPosition (Safari < 14). Exported so projectiles.js can reuse it
+// for the per-frame rocket whistle update without touching AudioParams.
+export function setPannerPosition(p, x, y, z) {
+  if (p.positionX) {
+    const t = actx.currentTime;
+    p.positionX.setValueAtTime(x, t);
+    p.positionY.setValueAtTime(y, t);
+    p.positionZ.setValueAtTime(z, t);
+  } else if (p.setPosition) {
+    p.setPosition(x, y, z);
+  }
+}
+
+export function createPanner(x, y, z) {
+  const p = actx.createPanner();
+  p.panningModel = 'HRTF';
+  p.distanceModel = 'inverse';
+  p.refDistance = 40;
+  p.maxDistance = 2000;
+  p.rolloffFactor = 0.9;
+  setPannerPosition(p, x, y, z);
+  p.connect(actx.destination);
+  return p;
+}
+
+// Wire a source → gain chain to either a fresh 3D panner or the 2D
+// destination, and (for spatial) schedule gain+panner disconnection on
+// source-ended so the graph doesn't accumulate orphan nodes. Without
+// this hook, every spatialized sfx would leak a PannerNode that stays
+// rooted to destination until tab close.
+function connectOut(source, gain, pos) {
+  if (pos && actx.listener) {
+    const panner = createPanner(pos.x, pos.y, pos.z);
+    gain.connect(panner);
+    source.onended = () => { try { gain.disconnect(); panner.disconnect(); } catch (e) {} };
+  } else {
+    gain.connect(actx.destination);
+  }
+}
+
+export function sfx(freq, dur, type, v, pos) {
   if (!actx) return; const t = actx.currentTime;
   const o = actx.createOscillator(), g = actx.createGain();
   o.type = type || 'sine'; o.frequency.setValueAtTime(freq, t); o.frequency.exponentialRampToValueAtTime(freq * 0.3, t + dur);
   const gain = (v || 0.1) * masterVol();
   g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-  o.connect(g); g.connect(actx.destination); o.start(t); o.stop(t + dur);
+  o.connect(g); connectOut(o, g, pos); o.start(t); o.stop(t + dur);
+}
+
+// Gunshot punch layer — adds a sub-bass thump + high-frequency crack
+// underneath a sample playback so the shot hits the chest instead of
+// just tapping the ears. Called alongside each weapon sample sfx. All
+// params are optional — subHi/subLo set the pitch sweep, crackHz sets
+// the highpass cutoff on the noise burst, subVol/crackVol scale each
+// layer independently. Duration is short (50-150 ms total).
+function punchLayer(vol, pos, opts) {
+  if (!actx) return;
+  const o = opts || {};
+  const t = actx.currentTime;
+  const v = (vol || 0.1) * masterVol();
+  const subDur = o.subDur || 0.14;
+  // Sub-bass thump — quick pitch drop gives the "kick in the chest"
+  const sub = actx.createOscillator(), sg = actx.createGain();
+  sub.type = 'sine';
+  sub.frequency.setValueAtTime(o.subHi || 180, t);
+  sub.frequency.exponentialRampToValueAtTime(o.subLo || 45, t + subDur);
+  sg.gain.setValueAtTime(0.0001, t);
+  sg.gain.exponentialRampToValueAtTime(v * (o.subVol || 1.0), t + 0.005);
+  sg.gain.exponentialRampToValueAtTime(0.001, t + subDur);
+  sub.connect(sg); connectOut(sub, sg, pos);
+  sub.start(t); sub.stop(t + subDur + 0.02);
+  // Crack — exp-decayed white noise burst through a highpass filter,
+  // gives the bright snap on top. Skipped if crackVol is 0.
+  const crackVol = o.crackVol != null ? o.crackVol : 0.7;
+  if (crackVol > 0) {
+    const crackDur = o.crackDur || 0.05;
+    const bs = Math.max(1, Math.floor(actx.sampleRate * crackDur));
+    const b = actx.createBuffer(1, bs, actx.sampleRate);
+    const d = b.getChannelData(0);
+    for (let i = 0; i < bs; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / bs * 10);
+    const src = actx.createBufferSource(); src.buffer = b;
+    const hp = actx.createBiquadFilter();
+    hp.type = 'highpass'; hp.frequency.value = o.crackHz || 2200;
+    const cg = actx.createGain();
+    cg.gain.setValueAtTime(v * crackVol, t);
+    cg.gain.exponentialRampToValueAtTime(0.001, t + crackDur);
+    src.connect(hp); hp.connect(cg); connectOut(src, cg, pos);
+    src.start(t);
+  }
 }
 
 // Spit shot sample
@@ -28,16 +155,18 @@ function loadSpitSample() {
   _spitLoaded = true;
   fetch('SpitShot.ogg').then(r => r.arrayBuffer()).then(buf => actx.decodeAudioData(buf)).then(d => { _spitBuf = d; }).catch(() => {});
 }
-export function sfxShoot(vol) {
+export function sfxShoot(vol, pos) {
   if (!actx) return;
   loadSpitSample();
   if (_spitBuf) {
     const src = actx.createBufferSource(); src.buffer = _spitBuf;
-    const g = actx.createGain(); g.gain.value = (vol || 0.08) * masterVol();
-    src.connect(g); g.connect(actx.destination); src.start();
+    const g = actx.createGain(); g.gain.value = (vol || 0.1) * masterVol();
+    src.connect(g); connectOut(src, g, pos); src.start();
   } else {
-    sfx(400, 0.12, 'square', vol || 0.08);
+    sfx(400, 0.12, 'square', vol || 0.1, pos);
   }
+  // Pistol punch — small crack, minimal bass (it's a pistol, not a cannon)
+  punchLayer((vol || 0.1) * 0.6, pos, { subHi: 160, subLo: 60, subDur: 0.08, subVol: 0.5, crackHz: 2800, crackVol: 0.5, crackDur: 0.035 });
 }
 
 // LR-300 shot samples
@@ -50,17 +179,19 @@ function loadLRSamples() {
     fetch(file).then(r => r.arrayBuffer()).then(buf => actx.decodeAudioData(buf)).then(decoded => lrBuffers.push(decoded)).catch(() => {});
   });
 }
-export function sfxLR(vol) {
+export function sfxLR(vol, pos) {
   if (!actx) return;
   loadLRSamples();
   if (lrBuffers.length > 0) {
     const buf = lrBuffers[Math.floor(Math.random() * lrBuffers.length)];
     const src = actx.createBufferSource(); src.buffer = buf;
-    const g = actx.createGain(); g.gain.value = (vol || 0.1) * masterVol();
-    src.connect(g); g.connect(actx.destination); src.start();
+    const g = actx.createGain(); g.gain.value = (vol || 0.13) * masterVol();
+    src.connect(g); connectOut(src, g, pos); src.start();
   } else {
-    sfx(400, 0.12, 'square', vol || 0.08);
+    sfx(400, 0.12, 'square', vol || 0.1, pos);
   }
+  // Rifle punch — medium crack + mid bass thump
+  punchLayer((vol || 0.13) * 0.85, pos, { subHi: 200, subLo: 50, subDur: 0.11, subVol: 0.9, crackHz: 2400, crackVol: 0.75, crackDur: 0.05 });
 }
 
 // Benelli shotgun samples
@@ -73,20 +204,22 @@ function loadShotgunSamples() {
     fetch(file).then(r => r.arrayBuffer()).then(buf => actx.decodeAudioData(buf)).then(decoded => shotgunBuffers.push(decoded)).catch(() => {});
   });
 }
-export function sfxShotgun(vol) {
+export function sfxShotgun(vol, pos) {
   if (!actx) return;
   loadShotgunSamples();
   loadSampleSounds();
   if (shotgunBuffers.length > 0) {
     const buf = shotgunBuffers[Math.floor(Math.random() * shotgunBuffers.length)];
     const src = actx.createBufferSource(); src.buffer = buf;
-    const g = actx.createGain(); g.gain.value = (vol || 0.1) * masterVol();
-    src.connect(g); g.connect(actx.destination); src.start();
+    const g = actx.createGain(); g.gain.value = (vol || 0.14) * masterVol();
+    src.connect(g); connectOut(src, g, pos); src.start();
   } else {
-    sfx(300, 0.15, 'square', vol || 0.08);
+    sfx(300, 0.15, 'square', vol || 0.1, pos);
   }
+  // Shotgun punch — big low-end thump + wide crack (the whole point of a shotgun)
+  punchLayer((vol || 0.14) * 1.3, pos, { subHi: 220, subLo: 35, subDur: 0.22, subVol: 1.4, crackHz: 1600, crackVol: 1.0, crackDur: 0.08 });
   // Shell ejection impact sound after the shot
-  setTimeout(() => playSample(_shellImpactBuf, (vol || 0.1) * 0.8), 220);
+  setTimeout(() => playSample(_shellImpactBuf, (vol || 0.1) * 0.8, pos), 220);
 }
 // L96 shot sample
 let _boltyShotBuf = null, _boltyShotLoaded = false;
@@ -95,22 +228,24 @@ function loadBoltyShotSample() {
   _boltyShotLoaded = true;
   fetch('BoltyShot.ogg').then(r => r.arrayBuffer()).then(buf => actx.decodeAudioData(buf)).then(d => { _boltyShotBuf = d; }).catch(() => {});
 }
-export function sfxBolty() {
+export function sfxBolty(vol, pos) {
   if (!actx) return;
   loadBoltyShotSample();
   loadSampleSounds();
   if (_boltyShotBuf) {
     const src = actx.createBufferSource(); src.buffer = _boltyShotBuf;
-    const g = actx.createGain(); g.gain.value = 0.1 * masterVol();
-    src.connect(g); g.connect(actx.destination); src.start();
+    const g = actx.createGain(); g.gain.value = (vol || 0.13) * masterVol();
+    src.connect(g); connectOut(src, g, pos); src.start();
   } else {
-    sfx(800, 0.25, 'sawtooth', 0.1);
+    sfx(800, 0.25, 'sawtooth', vol || 0.1, pos);
   }
+  // L96 punch — sharp high slap + deep sustained bass (sniper feel)
+  punchLayer((vol || 0.13) * 1.1, pos, { subHi: 160, subLo: 38, subDur: 0.28, subVol: 1.1, crackHz: 3200, crackVol: 0.9, crackDur: 0.045 });
   // Bolt rack after shot
   setTimeout(() => {
-    if (!playSample(_boltBuf, 0.08)) {
-      sfx(300, 0.08, 'sawtooth', 0.07);
-      setTimeout(() => sfx(500, 0.06, 'square', 0.06), 200);
+    if (!playSample(_boltBuf, 0.08, pos)) {
+      sfx(300, 0.08, 'sawtooth', 0.07, pos);
+      setTimeout(() => sfx(500, 0.06, 'square', 0.06, pos), 200);
     }
   }, 500);
 }
@@ -196,6 +331,135 @@ export function sfxLevelUp() {
 export function sfxDeath() { sfx(400, 0.6, 'sawtooth', 0.08); }
 export function sfxBump() { sfx(100, 0.1, 'sine', 0.05); }
 
+// Knife swing whoosh — short filtered-noise sweep, pos-aware.
+export function sfxMeleeSwing(pos) {
+  if (!actx) return;
+  const t = actx.currentTime;
+  const v = 0.12 * masterVol();
+  const dur = 0.14;
+  const bs = Math.max(1, Math.floor(actx.sampleRate * dur));
+  const b = actx.createBuffer(1, bs, actx.sampleRate);
+  const d = b.getChannelData(0);
+  for (let i = 0; i < bs; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / bs * 3);
+  const src = actx.createBufferSource(); src.buffer = b;
+  const bp = actx.createBiquadFilter();
+  bp.type = 'bandpass'; bp.Q.value = 1.8;
+  bp.frequency.setValueAtTime(3200, t);
+  bp.frequency.exponentialRampToValueAtTime(700, t + dur);
+  const g = actx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(v, t + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  src.connect(bp); bp.connect(g); connectOut(src, g, pos);
+  src.start(t);
+}
+
+// Knife hit impact — meaty thud + mid-range slap.
+export function sfxMeleeHit(pos) {
+  if (!actx) return;
+  const t = actx.currentTime;
+  const v = 0.18 * masterVol();
+  // Body thump
+  const o = actx.createOscillator(), og = actx.createGain();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(320, t);
+  o.frequency.exponentialRampToValueAtTime(70, t + 0.15);
+  og.gain.setValueAtTime(0.0001, t);
+  og.gain.exponentialRampToValueAtTime(v, t + 0.005);
+  og.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+  o.connect(og); connectOut(o, og, pos);
+  o.start(t); o.stop(t + 0.2);
+  // Mid slap layered on top via punchLayer for a wet crack
+  punchLayer(0.16, pos, { subHi: 160, subLo: 55, subDur: 0.1, subVol: 0.7, crackHz: 1600, crackVol: 0.9, crackDur: 0.06 });
+}
+
+// Cow moo taunt — synth-based, multi-variant. Real moos are deep, rich,
+// with vibrato and a formant sweep as the mouth opens on the "oooh" and
+// closes on the "mmm". We layer three square oscillators (fundamental +
+// slightly detuned for chorus + sub-octave for body) through a lowpass
+// filter that sweeps open→closed, with a vibrato LFO modulating pitch
+// and a breath-noise layer for mouth/nose texture. A set of profiles
+// randomizes pitch, duration, and vibrato so no two moos sound the same.
+const MOO_PROFILES = [
+  // {name,   base, dur,  vibHz, vibCents, filtLo, filtHi, detune}
+  { name: 'normal', base: 115, dur: 0.85, vibHz: 4.5, vibCents: 18, filtLo: 500, filtHi: 1300, detune: 6 },
+  { name: 'deep',   base:  88, dur: 1.05, vibHz: 3.8, vibCents: 22, filtLo: 360, filtHi: 1000, detune: 8 },
+  { name: 'short',  base: 125, dur: 0.55, vibHz: 5.5, vibCents: 12, filtLo: 580, filtHi: 1500, detune: 5 },
+  { name: 'long',   base: 105, dur: 1.25, vibHz: 4.0, vibCents: 20, filtLo: 450, filtHi: 1150, detune: 7 },
+  { name: 'angry',  base: 100, dur: 0.90, vibHz: 6.5, vibCents: 28, filtLo: 420, filtHi: 1250, detune: 10 },
+];
+export function sfxMoo(vol, pos) {
+  if (!actx) return;
+  const t = actx.currentTime;
+  const v = (vol || 0.22) * masterVol();
+  // Pick a random profile, then jitter each parameter slightly so every
+  // moo within a profile still sounds unique.
+  const p = MOO_PROFILES[Math.floor(Math.random() * MOO_PROFILES.length)];
+  const base = p.base * (0.94 + Math.random() * 0.12);
+  const dur = p.dur * (0.9 + Math.random() * 0.2);
+  const openT = dur * 0.22;   // when the vowel fully opens
+  const closeT = dur * 0.78;  // when the mouth starts closing
+  const detune = p.detune;
+  // Vibrato LFO — a low-freq sine driving a gain node that writes into
+  // each osc's detune parameter. cents of vibrato = vibCents.
+  const lfo = actx.createOscillator();
+  lfo.type = 'sine'; lfo.frequency.setValueAtTime(p.vibHz, t);
+  const lfoGain = actx.createGain();
+  lfoGain.gain.setValueAtTime(p.vibCents, t);
+  lfo.connect(lfoGain);
+  // Three oscillators: fundamental + detuned sibling (chorus) + sub octave.
+  const mkOsc = (freq, type, detuneBias) => {
+    const osc = actx.createOscillator();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t);
+    osc.detune.setValueAtTime(detuneBias, t);
+    lfoGain.connect(osc.detune);
+    return osc;
+  };
+  const o1 = mkOsc(base, 'square', 0);
+  const o2 = mkOsc(base, 'square', detune);
+  const o3 = mkOsc(base * 0.5, 'triangle', -detune);
+  // Lowpass formant filter — starts closed ("mmm"), opens to filtHi
+  // ("oooh"), closes back to low on release. Gives the mouth-shape feel.
+  const f = actx.createBiquadFilter();
+  f.type = 'lowpass'; f.Q.value = 1.2;
+  f.frequency.setValueAtTime(p.filtLo, t);
+  f.frequency.linearRampToValueAtTime(p.filtHi, t + openT);
+  f.frequency.setValueAtTime(p.filtHi, t + closeT);
+  f.frequency.linearRampToValueAtTime(p.filtLo * 0.85, t + dur);
+  // Breath noise — soft, lowpassed white noise, gated by a separate
+  // envelope. Adds the throaty texture a pure synth lacks.
+  const noiseBufSize = Math.floor(actx.sampleRate * dur);
+  const nb = actx.createBuffer(1, noiseBufSize, actx.sampleRate);
+  const nd = nb.getChannelData(0);
+  for (let i = 0; i < noiseBufSize; i++) nd[i] = (Math.random() * 2 - 1) * 0.6;
+  const nsrc = actx.createBufferSource(); nsrc.buffer = nb;
+  const nf = actx.createBiquadFilter();
+  nf.type = 'lowpass'; nf.frequency.setValueAtTime(700, t); nf.Q.value = 0.8;
+  const ng = actx.createGain();
+  ng.gain.setValueAtTime(0.0001, t);
+  ng.gain.exponentialRampToValueAtTime(v * 0.18, t + 0.06);
+  ng.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  nsrc.connect(nf); nf.connect(ng);
+  // Main envelope — slow nasal attack, full vowel hold, long release.
+  const g = actx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(v * 0.55, t + 0.07);
+  g.gain.exponentialRampToValueAtTime(v, t + openT);
+  g.gain.setValueAtTime(v, t + closeT);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o1.connect(f); o2.connect(f); o3.connect(f);
+  f.connect(g);
+  ng.connect(g);
+  connectOut(o1, g, pos);
+  const stopT = t + dur + 0.05;
+  lfo.start(t); lfo.stop(stopT);
+  o1.start(t); o1.stop(stopT);
+  o2.start(t); o2.stop(stopT);
+  o3.start(t); o3.stop(stopT);
+  nsrc.start(t); nsrc.stop(stopT);
+}
+
 export function sfxEmptyMag() { sfx(1500, 0.03, 'square', 0.06); }
 
 export function sfxReloadLR() {
@@ -221,25 +485,31 @@ function loadSampleSounds() {
   fetch('ShellImpact.wav').then(r => r.arrayBuffer()).then(buf => actx.decodeAudioData(buf)).then(d => { _shellImpactBuf = d; }).catch(() => {});
   fetch('Explosion.ogg').then(r => r.arrayBuffer()).then(buf => actx.decodeAudioData(buf)).then(d => { _explosionBuf = d; }).catch(() => {});
 }
-export function sfxExplosion(vol) {
+export function sfxExplosion(vol, pos) {
   if (!actx) return;
   loadSampleSounds();
-  if (!playSample(_explosionBuf, vol || 0.15)) {
-    sfx(60, 0.5, 'sine', vol || 0.15);
+  if (!playSample(_explosionBuf, vol || 0.18, pos)) {
+    sfx(60, 0.5, 'sine', vol || 0.18, pos);
   }
+  // Huge sub thump layered under the sample — makes the ground shake
+  // regardless of how punchy the Explosion.ogg sample is on its own.
+  punchLayer((vol || 0.18) * 1.6, pos, { subHi: 140, subLo: 28, subDur: 0.45, subVol: 1.5, crackHz: 1200, crackVol: 0.6, crackDur: 0.1 });
 }
-export function sfxRocket(vol) {
+export function sfxRocket(vol, pos) {
   if (!actx) return;
   loadSampleSounds();
-  if (!playSample(_rocketBuf, vol || 0.12)) {
-    sfx(200, 0.3, 'sine', vol || 0.1);
+  if (!playSample(_rocketBuf, vol || 0.14, pos)) {
+    sfx(200, 0.3, 'sine', vol || 0.1, pos);
   }
+  // Launch kick — short thump under the whoosh so it feels like something
+  // actually left the tube.
+  punchLayer((vol || 0.14) * 1.0, pos, { subHi: 180, subLo: 40, subDur: 0.18, subVol: 1.0, crackHz: 1800, crackVol: 0.6, crackDur: 0.06 });
 }
-function playSample(buf, vol) {
+function playSample(buf, vol, pos) {
   if (!actx || !buf) return false;
   const src = actx.createBufferSource(); src.buffer = buf;
   const g = actx.createGain(); g.gain.value = (vol || 0.1) * masterVol();
-  src.connect(g); g.connect(actx.destination); src.start();
+  src.connect(g); connectOut(src, g, pos); src.start();
   return true;
 }
 
@@ -271,7 +541,7 @@ function startMenuMusicTribal() {
   menuMusicInterval = setInterval(() => {
     if (S.state === 'playing') { stopMenuMusic(); return; }
     const t = actx.currentTime;
-    const v = masterVol();
+    const v = musicVol();
     // Slow tribal beat
     const lowPat = [1,0,0,0, 1,0,1,0];
     const midPat = [0,0,1,0, 0,1,0,0];
@@ -309,7 +579,7 @@ export function startMenuMusic() {
   menuMusicInterval = setInterval(() => {
     if (S.state === 'playing') { stopMenuMusic(); return; }
     const t = actx.currentTime;
-    const v = masterVol();
+    const v = musicVol();
     const chord = chords[beat % chords.length];
     // Pad
     chord.forEach(n => {
@@ -352,7 +622,7 @@ function startMenuMusicIndustrial() {
   menuMusicInterval = setInterval(() => {
     if (S.state === 'playing') { stopMenuMusic(); return; }
     const t = actx.currentTime;
-    const v = masterVol();
+    const v = musicVol();
     const chord = minorChords[beat % minorChords.length];
     // Dark pad — filtered sawtooth, lower register
     chord.forEach(n => {
@@ -474,7 +744,7 @@ function startMenuMusicCustom() {
     // Buffer ready — swap the wait-interval out for the real BufferSource.
     clearInterval(menuMusicInterval); menuMusicInterval = null;
     const src = actx.createBufferSource(); src.buffer = customBuffers.menu; src.loop = true;
-    const g = actx.createGain(); g.gain.value = 0.35 * masterVol();
+    const g = actx.createGain(); g.gain.value = 0.35 * musicVol();
     src.connect(g); g.connect(actx.destination); src.start();
     _customMenuNode = src; _customMenuGain = g;
   }, 100);
@@ -483,7 +753,7 @@ function startMenuMusicCustom() {
 // In-game music: hold one active BufferSource + GainNode per mood transition.
 // On mood change, start the new buffer with gain ramping 0 → target over 2s and
 // fade the old one target → 0 over 2s, then stop the old node. Gain is updated
-// every tick from masterVol() so volume slider changes respond live.
+// every tick from musicVol() so volume slider changes respond live.
 let _customActiveNode = null, _customActiveGain = null, _customActiveMood = null;
 const _CUSTOM_MOOD_GAIN = { chill: 0.35, tense: 0.35, frantic: 0.35, menu: 0.35 };
 function tickMusicCustom() {
@@ -491,7 +761,7 @@ function tickMusicCustom() {
   loadCustomBuffers();
   const buf = customBuffers[musicMood];
   if (!buf) return; // still decoding
-  const v = masterVol();
+  const v = musicVol();
   if (_customActiveMood !== musicMood) {
     // Mood changed (or first tick): spin up the new node with a 2s fade-in and
     // fade the outgoing node out in parallel, then stop it.
@@ -549,14 +819,14 @@ function startMenuMusicRadio() {
     _radioAudio.crossOrigin = 'anonymous';
     _radioAudio.preload = 'none';
   }
-  _radioAudio.volume = 0.5 * masterVol();
+  _radioAudio.volume = 0.5 * musicVol();
   if (_radioAudio.paused) {
     _radioAudio.play().catch(err => console.warn('[audio] radio play failed:', err));
   }
 }
 function tickMusicRadio() {
   if (!_radioAudio) { startMenuMusicRadio(); return; }
-  _radioAudio.volume = 0.5 * masterVol();
+  _radioAudio.volume = 0.5 * musicVol();
   if (_radioAudio.paused) {
     _radioAudio.play().catch(() => {});
   }
@@ -596,7 +866,7 @@ function tickMusicIndustrial() {
   const tempos = { chill: 0.176, tense: 0.11, frantic: 0.088 };
   const tempo = tempos[musicMood] || 0.176;
   if (t < nextNote - 0.03) return;
-  const v = masterVol();
+  const v = musicVol();
   _indBeat++;
 
   // Section progression — every 32 beats switch the pattern
@@ -862,7 +1132,7 @@ function tickMusicTribal() {
   const tempos = { chill: 0.32, tense: 0.24, frantic: 0.18 };
   const tempo = tempos[musicMood] || 0.32;
   if (t < nextNote - 0.03) return;
-  const v = masterVol();
+  const v = musicVol();
   _tribalBeat++;
 
   // Section progression — every 32 beats switch the pattern
@@ -1020,7 +1290,7 @@ function tickMusicMoney() {
   const tempos = { chill: 0.15, tense: 0.13, frantic: 0.11 };
   const tempo = tempos[musicMood] || 0.15;
   if (t < nextNote - 0.03) return;
-  const v = masterVol();
+  const v = musicVol();
   _moneyBeat++;
 
   const beatInSection = _moneyBeat - _moneySectionStart;
@@ -1122,7 +1392,7 @@ function startMenuMusicMoney() {
   menuMusicInterval = setInterval(() => {
     if (S.state === 'playing') { stopMenuMusic(); return; }
     const t = actx.currentTime;
-    const v = masterVol();
+    const v = musicVol();
     const scale = [0, 2, 3, 5, 7, 9, 10, 12];
     // Walking bass pulse
     if (beat % 2 === 0) {
@@ -1196,7 +1466,7 @@ function tickMusicBoy() {
   const tempos = { chill: 0.16, tense: 0.13, frantic: 0.1 };
   const tempo = tempos[musicMood] || 0.16;
   if (t < nextNote - 0.03) return;
-  const v = masterVol();
+  const v = musicVol();
   _boyBeat++;
 
   const beatInSection = _boyBeat - _boySectionStart;
@@ -1274,7 +1544,7 @@ function startMenuMusicBoy() {
   menuMusicInterval = setInterval(() => {
     if (S.state === 'playing') { stopMenuMusic(); return; }
     const t = actx.currentTime;
-    const v = masterVol();
+    const v = musicVol();
     const scale = [0, 4, 7, 12, 14, 12, 7, 4];
     const note = scale[beat % scale.length];
     bouncePluck(t, 0.05 * v, 261.63 * Math.pow(2, note / 12), 0.3);
@@ -1375,7 +1645,7 @@ function tickMusicNeo() {
   const tempos = { chill: 0.19, tense: 0.16, frantic: 0.13 };
   const tempo = tempos[musicMood] || 0.19;
   if (t < nextNote - 0.03) return;
-  const v = masterVol();
+  const v = musicVol();
   _neoBeat++;
 
   const beatInSection = _neoBeat - _neoSectionStart;
@@ -1474,7 +1744,7 @@ function startMenuMusicNeo() {
   menuMusicInterval = setInterval(() => {
     if (S.state === 'playing') { stopMenuMusic(); return; }
     const t = actx.currentTime;
-    const v = masterVol();
+    const v = musicVol();
     const scale = [0, 2, 3, 5, 7, 9, 10];
     if (beat % 8 === 0) jazz7Chord(t, 0.06 * v, 110, false);
     if (beat % 2 === 0) walkBass(t, 0.04 * v, 55 * Math.pow(2, scale[Math.floor(beat / 2) % scale.length] / 12));
@@ -1502,7 +1772,7 @@ export function tickMusic() {
   const t = actx.currentTime;
   const tempo = TEMPOS[musicMood] || 0.28;
   if (t < nextNote - 0.05) return;
-  const v = masterVol();
+  const v = musicVol();
   _classicBeat++;
 
   // Section progression — every 32 beats switch the pattern

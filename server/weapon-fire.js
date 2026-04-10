@@ -72,10 +72,10 @@ const PLAYER_STATS_BASE = {
   // not scoped.
   aug: {
     hungerGate: [2, 6], hungerCost: [2, 5],
-    cooldown: 0.615, dmg: 6, speed: 1760, spreadBase: 0, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
+    cooldown: 0.615, dmg: 6, speed: 2024, spreadBase: 0, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
     burstStepMs: 92,
-    auto: { hungerCost: [1, 2], cooldown: 0.133, dmg: 3, speed: 1600, spreadBase: 0.022, pellets: 1, dualPelletMult: 1 },
-    semi: { hungerCost: [1, 2], cooldown: 0.266, dmg: 3, speed: 1760, spreadBase: 0, pellets: 1, dualPelletMult: 1 },
+    auto: { hungerCost: [1, 2], cooldown: 0.133, dmg: 3, speed: 1840, spreadBase: 0.022, pellets: 1, dualPelletMult: 1 },
+    semi: { hungerCost: [1, 2], cooldown: 0.266, dmg: 3, speed: 2024, spreadBase: 0, pellets: 1, dualPelletMult: 1 },
   },
 };
 

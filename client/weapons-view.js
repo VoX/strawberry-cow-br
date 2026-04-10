@@ -150,6 +150,37 @@ export function buildViewmodel(type, dual) {
     hoof.userData.reloadStyle = 'magswap';
     vmGroup.add(hoof);
     vmGroup.userData.hoof = hoof;
+  } else if (type === 'knife') {
+    // Combat knife — short steel blade with a wrapped handle. Held
+    // out in front, slightly angled. No reload, no fire mode.
+    const bladeMat = new THREE.MeshBasicMaterial({ color: 0xcccccc });
+    const handleMat = new THREE.MeshBasicMaterial({ color: 0x222222 });
+    const guardMat = new THREE.MeshBasicMaterial({ color: 0x666666 });
+    // Blade — flat tapered prism
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.2, 7), bladeMat);
+    blade.position.set(0, 0, -10); vmGroup.add(blade);
+    // Tip cone
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.6, 2, 4), bladeMat);
+    tip.rotation.x = -Math.PI / 2;
+    tip.position.set(0, 0, -14.5); vmGroup.add(tip);
+    // Crossguard
+    const guard = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.6, 0.8), guardMat);
+    guard.position.set(0, 0, -6); vmGroup.add(guard);
+    // Handle
+    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.6, 4, 6), handleMat);
+    handle.rotation.x = Math.PI / 2;
+    handle.position.set(0, -0.2, -3.5); vmGroup.add(handle);
+    // Pommel
+    const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.7, 6, 4), guardMat);
+    pommel.position.set(0, -0.2, -1); vmGroup.add(pommel);
+    const hoof = buildHoof();
+    hoof.position.set(-0.3, -1.0, -4);
+    hoof.rotation.set(-0.2, 0.1, 0.5);
+    hoof.userData.restPos = hoof.position.clone();
+    hoof.userData.restRot = hoof.rotation.clone();
+    hoof.userData.reloadStyle = 'none';
+    vmGroup.add(hoof);
+    vmGroup.userData.hoof = hoof;
   } else if (type === 'aug') {
     // Steyr AUG viewmodel — bullpup body, integrated optic, forward grip.
     // Single-wield only (the dual-wield gate in server/weapons.js excludes

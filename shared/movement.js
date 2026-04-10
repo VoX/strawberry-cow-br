@@ -78,7 +78,13 @@ function stepPlayerMovement(p, dt, world, input, terrain) {
       if (Math.hypot(p.x - m.x, p.y - m.y) < m.r) { mudSlow = MUD_SPEED_MULT; break; }
     }
     const walkMult = input.walking ? PLAYER_WALK_MULT : 1;
-    const speed = PLAYER_BASE_SPEED * sizeSlowdown * p.perks.speedMult * mudSlow * walkMult;
+    // input.speedMult is client-authoritative for effects the client can
+    // initiate locally (knife loadout = 1.2; future on-hit slowdown =
+    // 0.5; etc). Server reads it from each dequeued move so the server
+    // simulation matches the client's predicted simulation tick-for-tick
+    // without needing to know about the effect itself. Defaults to 1.
+    const inputSpeedMult = input.speedMult != null ? input.speedMult : 1;
+    const speed = PLAYER_BASE_SPEED * sizeSlowdown * p.perks.speedMult * mudSlow * walkMult * inputSpeedMult;
     p.x += nx * speed * dt;
     p.y += ny * speed * dt;
     if (Math.abs(nx) > Math.abs(ny)) p.dir = nx > 0 ? 'east' : 'west';

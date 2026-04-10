@@ -1,4 +1,5 @@
 const { TICK_RATE, MAP_W, MAP_H } = require('./config');
+const { KNIFE_SPEED_MULT } = require('../shared/constants');
 const { stepPlayerMovement } = require('../shared/movement');
 const { broadcast, sendTo } = require('./network');
 const transport = require('./transport');
@@ -28,8 +29,10 @@ function startGame() {
   // of the new round doesn't ship a stale-round position to the client.
   for (const [, p] of gameState.getPlayers()) {
     p.lastInputSeq = 0;
+    p._lastRecvMoveSeq = 0;
+    p._moveQueue = null;
+    p._lastMoveSpeedMult = 1;
     p._ackSnapshot = null;
-    p._pendingStun = null;
   }
   gameState.setGameTime(0);
   gameState.setZone({ x: 0, y: 0, w: MAP_W, h: MAP_H });
@@ -65,7 +68,7 @@ function startGame() {
     }
   }
 
-  for (const [, p] of gameState.getPlayers()) { p.barricadeReadyAt = 0; }
+  for (const [, p] of gameState.getPlayers()) { p.barricadeReadyAt = 0; p.mooReadyAt = 0; p.meleeReadyAt = 0; }
   broadcast({
     type: 'start',
     terrainSeed: getSeed(),
@@ -150,47 +153,45 @@ function gameTick() {
   const moveWorld = { walls, barricades, mudPatches, portals, zone };
   const moveTerrain = { getGroundHeight, WALL_HEIGHT };
 
-  // Commit pending hit-stuns whose target tick has arrived. The
-  // delayed-slowdown scheme schedules these in combat.js so the client
-  // can engage the same stun at the same simulation tick (no reconcile
-  // snap on hit). Walk before the movement loop so the integrator sees
-  // the new stunTimer this tick.
-  const tickNow = gameState.getTickNum();
-  for (const [, p] of gameState.getPlayers()) {
-    if (p._pendingStun && tickNow >= p._pendingStun.tick) {
-      p.stunTimer = p._pendingStun.duration;
-      p._pendingStun = null;
-    }
-  }
-
   for (const [, p] of gameState.getPlayers()) {
     if (!p.alive) continue;
 
+    // Drain ONE queued client move per tick — 1:1 with the client's
+    // predict step. The dequeued speedMult is forwarded into the
+    // integrator (knife / on-hit slowdown / future loadout effects).
+    // On queue underflow we reuse the LAST drained mult so transient
+    // packet loss doesn't drop the player back to baseline speed for
+    // a tick — covers any future client-authoritative effect without
+    // a per-effect special case here.
+    let moveSpeedMult = p._lastMoveSpeedMult != null ? p._lastMoveSpeedMult : 1;
+    if (p._moveQueue && p._moveQueue.length > 0) {
+      const m = p._moveQueue.shift();
+      p.dx = m.dx;
+      p.dy = m.dy;
+      p.walking = m.walking;
+      if (m.aim != null) p.aimAngle = m.aim;
+      if (typeof m.seq === 'number' && m.seq > (p.lastInputSeq || 0)) {
+        p.lastInputSeq = m.seq;
+      }
+      if (typeof m.speedMult === 'number') moveSpeedMult = m.speedMult;
+      p._lastMoveSpeedMult = moveSpeedMult;
+    } else if (p.isBot && p.weapon === 'knife') {
+      // Bots don't go through the queue — derive from server-side weapon.
+      moveSpeedMult = KNIFE_SPEED_MULT;
+    }
+
     // Capture whether this player was spawn-protected BEFORE the call.
-    // stepPlayerMovement decrements in place, so a player whose protection
-    // expires mid-tick would otherwise look unprotected to the post-call
-    // check — and we'd process hunger/food/cooldowns on a frame the old
-    // inline code skipped entirely via `continue`. Matches the original
-    // behavior exactly.
+    // stepPlayerMovement decrements in place; matches the original
+    // skip-rest-of-per-player-work semantics if protection drops mid-call.
     const wasSpawnProtected = p.spawnProtection > 0;
 
-    // Delegate all position / physics / collision / portal / zone-clamp
-    // work to the shared integrator. Input is the player's own dx/dy/walking;
-    // Phase 4 CSP will call the same function on the client with the latest
-    // input buffer to produce an identical result.
-    stepPlayerMovement(p, dt, moveWorld, { dx: p.dx, dy: p.dy, walking: p.walking }, moveTerrain);
+    stepPlayerMovement(p, dt, moveWorld, { dx: p.dx, dy: p.dy, walking: p.walking, speedMult: moveSpeedMult }, moveTerrain);
 
-    // Snapshot post-integration position the FIRST tick we see a new
-    // lastInputSeq. The CSP reconcile pairs "client predicted state at
-    // seq=N's first integrated step" against "server position at seq=N's
-    // first integrated tick". See client/prediction.js header for the
-    // full netcode-strategy reference; in short, the freeze-on-advance
-    // is the load-bearing symmetry that keeps client and server pointing
-    // at the same simulation moment.
-    // Snapshot stored in place to avoid per-tick allocation. Re-armed
-    // only when lastInputSeq advances — between advances the snapshot
-    // stays frozen at the moment of the first integrated tick for that
-    // seq, which is what the client's reconcile pairing expects.
+    // Snapshot stored in place — re-armed only when lastInputSeq
+    // advances. Each draining of the queue advances lastInputSeq by
+    // exactly one client predict step's worth, so the snapshot now
+    // truly represents "first server tick that integrated this seq",
+    // matching the client's first ring entry for that seq.
     if (!p.isBot && (p._ackSnapshot == null || p.lastInputSeq > p._ackSnapshot.seq)) {
       if (!p._ackSnapshot) p._ackSnapshot = { seq: 0, x: 0, y: 0, z: 0, vz: 0, onGround: false, stunTimer: 0, spawnProt: false };
       const snap = p._ackSnapshot;
@@ -353,12 +354,19 @@ function gameTick() {
     for (const [, p] of gameState.getPlayers()) {
       if (p.isBot || !p.ws || !p._ackSnapshot) continue;
       const snap = p._ackSnapshot;
+      // Net stats — moves received in the trailing 1-second window vs
+      // expected (TICK_RATE/sec). Lets the client debug overlay show
+      // unreliable C2S packet loss.
+      const moveArrivedPct = p._moveArrivals ? Math.round((p._moveArrivals.length / TICK_RATE) * 100) : 0;
       sendTo(p.ws, {
         type: 'inputAck',
         seq: snap.seq,
         x: snap.x, y: snap.y, z: snap.z,
         vz: snap.vz,
         onGround: snap.onGround,
+        stunTimer: snap.stunTimer,
+        spawnProt: snap.spawnProt,
+        moveArrivedPct,
       });
     }
   }

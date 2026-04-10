@@ -26,6 +26,7 @@ import S from './state.js';
 import { stepPlayerMovement } from '../shared/movement.js';
 import { getTerrainHeight } from './terrain.js';
 import { send } from './network.js';
+import { KNIFE_SPEED_MULT, HIT_SLOW_MULT } from '../shared/constants.js';
 
 // Fixed timestep — must match server/config.js::TICK_RATE.
 const TICK_HZ = 30;
@@ -169,7 +170,7 @@ function refreshWorld() {
   _world.zone = S.serverZone;
   return _world;
 }
-const _stepInput = { dx: 0, dy: 0, walking: false };
+const _stepInput = { dx: 0, dy: 0, walking: false, speedMult: 1 };
 
 let _predictErrorLogged = false;
 
@@ -195,6 +196,16 @@ export function getRenderedPredicted() {
   return _renderedOut;
 }
 
+// Product of every client-authoritative speed effect for the next move.
+// Server matches whatever we send via the move queue's speedMult.
+function computeLocalSpeedMult() {
+  const mp = S.mePredicted;
+  let mult = 1;
+  if (mp && mp.weapon === 'knife') mult *= KNIFE_SPEED_MULT;
+  if (S.localHitSlowEndsAt > performance.now()) mult *= HIT_SLOW_MULT;
+  return mult;
+}
+
 export function predictStep(frameDt) {
   if (!S.mePredicted || !S.me) return;
   accumulator += frameDt;
@@ -210,9 +221,10 @@ export function predictStep(frameDt) {
     _stepInput.dx = currentInput.dx;
     _stepInput.dy = currentInput.dy;
     _stepInput.walking = !!currentInput.walking;
+    _stepInput.speedMult = computeLocalSpeedMult();
     // send() increments S.inputSeq, so the seq we capture immediately
     // after is the one the server will see for this step's input.
-    send({ type: 'move', dx: _stepInput.dx, dy: _stepInput.dy, walking: _stepInput.walking, aim: currentInput.aim });
+    send({ type: 'move', dx: _stepInput.dx, dy: _stepInput.dy, walking: _stepInput.walking, aim: currentInput.aim, speedMult: _stepInput.speedMult });
     if (S.pingLast === 0) S.pingLast = performance.now();
     const seqAtStep = S.inputSeq;
     // Guard so an integrator regression doesn't kill the render loop.
@@ -228,7 +240,7 @@ export function predictStep(frameDt) {
     }
     // Ring entry needs its own input copy — replay reads it later and
     // _stepInput will have been overwritten by then.
-    predictRing.push({ seq: seqAtStep, state: snapshotPlayer(S.mePredicted), input: { dx: _stepInput.dx, dy: _stepInput.dy, walking: _stepInput.walking } });
+    predictRing.push({ seq: seqAtStep, state: snapshotPlayer(S.mePredicted), input: { dx: _stepInput.dx, dy: _stepInput.dy, walking: _stepInput.walking, speedMult: _stepInput.speedMult } });
     if (predictRing.length > PREDICT_RING_CAP) predictRing.shift();
   }
   decayRenderOffset(frameDt);
@@ -280,6 +292,14 @@ export function reconcilePrediction(ackedState) {
   const dy = acked.state.y - serverY;
   const dz = (acked.state.z || 0) - (serverZ || 0);
   const drift = Math.hypot(dx, dy, dz);
+  // Net stats — record every reconcile so the overlay can split avg
+  // drift from snap count.
+  const ns = S.netStats;
+  const nowMs = performance.now();
+  ns.reconcileSnapsWindow.push({ t: nowMs, drift, snapped: drift > RECONCILE_EPSILON });
+  while (ns.reconcileSnapsWindow.length > 0 && nowMs - ns.reconcileSnapsWindow[0].t > 1000) {
+    ns.reconcileSnapsWindow.shift();
+  }
   if (drift <= RECONCILE_EPSILON) {
     // Prediction matched. Drop the acked entry and everything before.
     predictRing.splice(0, ackedIdx + 1);

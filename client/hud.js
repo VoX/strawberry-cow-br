@@ -2,6 +2,10 @@ import { MW, MH } from './config.js';
 import S from './state.js';
 import { BURST_FAMILY } from '../shared/constants.js';
 
+// Hoisted: chat color map and HTML escaper, reused every chat rebuild.
+const _CHAT_COL_HEX = { pink: '#ff88aa', blue: '#88aaff', green: '#88ff88', gold: '#ffdd44', purple: '#cc88ff', red: '#ff4444', orange: '#ff8844', cyan: '#44ffdd' };
+const _escapeHtml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
 // Cache all HUD element refs at first invocation instead of calling getElementById every frame
 let H = null;
 function initHudRefs() {
@@ -61,13 +65,45 @@ export function updateHud(me, time, dt) {
     H.barricadeLabel.style.display = aliveDisp;
   }
 
+  // Chat log render runs FIRST so spectators (and post-corpse-reap
+  // dead players where me === null) still see chat. Throttled to 10 Hz.
+  // Skip the rebuild entirely when there's nothing to show — common
+  // case during early-round silence.
+  if (!S._hudTick) S._hudTick = 0;
+  S._hudTick += dt;
+  if (S._hudTick >= 0.1 && S.chatLog.length > 0) {
+    const tickDt = S._hudTick;
+    S._hudTick = 0;
+    for (let i = S.chatLog.length - 1; i >= 0; i--) {
+      S.chatLog[i].t -= tickDt;
+      if (S.chatLog[i].t <= 0) S.chatLog.splice(i, 1);
+    }
+    const chatEl = H.chatLog;
+    if (chatEl) {
+      chatEl.innerHTML = S.chatLog.map(c => {
+        const opacity = Math.min(1, c.t / 3);
+        if (c.system) {
+          return '<div style="margin-bottom:2px;opacity:' + opacity + ';color:#ddd">' + c.text + '</div>';
+        }
+        const col = _CHAT_COL_HEX[c.color] || '#ff88aa';
+        return '<div style="margin-bottom:2px;opacity:' + opacity + '"><span style="color:' + col + ';font-weight:bold">' + _escapeHtml(c.name) + ':</span> ' + _escapeHtml(c.text) + '</div>';
+      }).join('');
+    }
+  } else if (S._hudTick >= 0.1) {
+    // Empty chat — still flip the throttle counter so the minimap
+    // (gated on the same `_hudTick === 0` signal further down) gets
+    // its 10 Hz pulse.
+    S._hudTick = 0;
+    if (H.chatLog && H.chatLog.innerHTML !== '') H.chatLog.innerHTML = '';
+  }
+
   if (!me) return;
   const hPct = Math.max(0, me.hunger / 100);
   H.hungerFill.style.width = (hPct * 100) + '%';
   H.hungerFill.style.background = hPct > 0.5 ? '#ffffff' : hPct > 0.25 ? '#dddddd' : '#ff4444';
   H.hungerTxt.textContent = 'MILK ' + Math.ceil(me.hunger) + '%';
   const wep = me.weapon || 'normal';
-  const wepNames = { shotgun: 'Benelli', burst: 'M16A2', bolty: 'L96', cowtank: 'M72 LAW', normal: 'M92 Pistol', aug: 'AUG' };
+  const wepNames = { shotgun: 'Benelli', burst: 'M16A2', bolty: 'L96', cowtank: 'M72 LAW', normal: 'M92 Pistol', aug: 'AUG', knife: 'Knife' };
   let ammoTxt = '';
   let reloadBlock = '';
   if (wep === 'cowtank') {
@@ -149,9 +185,9 @@ export function updateHud(me, time, dt) {
 
   // Dynamic crosshair — spread per weapon, tightens when crouched, widens on movement/reload
   if (H.chN && aliveHud) {
-    // AUG hipfire spread is 1.5x the M16 equivalent; the optic + ADS
-    // gate brings it back to baseline when scoped (the adsMult below).
-    const augBase = (S.fireMode === 'auto' ? 18 : 8) * 1.5;
+    // AUG hipfire spread is 2.25x the M16 equivalent (penalty for not
+    // using the optic). ADS would bring it back to baseline.
+    const augBase = (S.fireMode === 'auto' ? 18 : 8) * 2.25;
     const baseSpread = { normal: 8, shotgun: 42, bolty: 5, cowtank: 10, burst: S.fireMode === 'auto' ? 18 : 8, aug: augBase }[wep] || 8;
     const crouchMult = S.crouching ? 0.35 : 1;
     const movingMult = (S.keys['KeyW'] || S.keys['KeyS'] || S.keys['KeyA'] || S.keys['KeyD']) ? 2.2 : 1;
@@ -189,33 +225,6 @@ export function updateHud(me, time, dt) {
   const pcSig = _aliveCount + '/' + S.serverPlayers.length;
   if (S._pcSig !== pcSig) { S._pcSig = pcSig; H.playerCount.textContent = '\u{1F404} ' + pcSig; }
 
-  // Chat log — kill notifications, weapon pickups, mode changes, and
-  // actual player chat all share this surface. Decrement + DOM rebuild
-  // throttled to 10 Hz; in-place prune avoids the per-frame array realloc.
-  if (!S._hudTick) S._hudTick = 0;
-  S._hudTick += dt;
-  if (S._hudTick >= 0.1) {
-    const tickDt = S._hudTick;
-    S._hudTick = 0;
-    for (let i = S.chatLog.length - 1; i >= 0; i--) {
-      S.chatLog[i].t -= tickDt;
-      if (S.chatLog[i].t <= 0) S.chatLog.splice(i, 1);
-    }
-    const chatEl = H.chatLog;
-    if (chatEl) {
-      const colHex = { pink: '#ff88aa', blue: '#88aaff', green: '#88ff88', gold: '#ffdd44', purple: '#cc88ff', red: '#ff4444', orange: '#ff8844', cyan: '#44ffdd' };
-      const escapeHtml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      chatEl.innerHTML = S.chatLog.map(c => {
-        const opacity = Math.min(1, c.t / 3);
-        if (c.system) {
-          return '<div style="margin-bottom:2px;opacity:' + opacity + ';color:#ddd">' + c.text + '</div>';
-        }
-        const col = colHex[c.color] || '#ff88aa';
-        return '<div style="margin-bottom:2px;opacity:' + opacity + '"><span style="color:' + col + ';font-weight:bold">' + escapeHtml(c.name) + ':</span> ' + escapeHtml(c.text) + '</div>';
-      }).join('');
-    }
-  }
-
   // Debug overlay
   let dbg = document.getElementById('debugOverlay');
   if (!dbg && S.debugMode) {
@@ -247,6 +256,44 @@ export function updateHud(me, time, dt) {
                  '\nFRAME gap ms: ' + fmtRing(iw.frameGaps, iw.frameGapsCount) +
                  '\nJANK frames (>50ms): ' + iw.frameJank;
       }
+      // Net stats — tick / ack / reconcile health for diagnosing
+      // walking-rubberband when ping looks fine but jitter or sub-
+      // epsilon drift is doing damage.
+      let netLine = '';
+      const ns = S.netStats;
+      if (ns) {
+        const tickRcv = ns._lastTickRcv || 0;
+        const tickGap = ns._lastTickGap || 0;
+        const tickRcvPct = tickRcv > 0 ? Math.round((tickRcv / (tickRcv + tickGap)) * 100) : 0;
+        // Tick jitter = stddev of inter-arrival times.
+        let jitter = 0;
+        if (ns.tickGaps.length > 1) {
+          let mean = 0; for (const g of ns.tickGaps) mean += g; mean /= ns.tickGaps.length;
+          let variance = 0; for (const g of ns.tickGaps) { const d = g - mean; variance += d * d; }
+          jitter = Math.sqrt(variance / ns.tickGaps.length);
+        }
+        // inputAck mean gap.
+        let ackGap = 0;
+        if (ns.inputAckArrivals.length > 1) {
+          const span = ns.inputAckArrivals[ns.inputAckArrivals.length - 1] - ns.inputAckArrivals[0];
+          ackGap = Math.round(span / (ns.inputAckArrivals.length - 1));
+        }
+        // Reconcile snap stats.
+        let snaps = 0, totalDrift = 0;
+        for (const r of ns.reconcileSnapsWindow) {
+          if (r.snapped) snaps++;
+          totalDrift += r.drift;
+        }
+        const avgDrift = ns.reconcileSnapsWindow.length > 0
+          ? (totalDrift / ns.reconcileSnapsWindow.length).toFixed(2)
+          : '0';
+        netLine =
+          '\nTICK rcv: ' + tickRcvPct + '% (' + tickRcv + '/' + (tickRcv + tickGap) + ')' +
+          ' jit=' + jitter.toFixed(1) + 'ms' +
+          '\nMOVE rcv: ' + (ns.moveArrivedPct || 0) + '% (server)' +
+          '\nACK gap: ' + ackGap + 'ms' +
+          '\nRECONCILE: ' + snaps + ' snaps, drift avg ' + avgDrift + 'u';
+      }
       dbg.textContent =
         'POS: ' + me.x.toFixed(0) + ', ' + me.y.toFixed(0) + ', ' + (me.z || 0).toFixed(1) +
         '\nAIM: yaw=' + yawDeg + ' pitch=' + pitchDeg +
@@ -254,6 +301,7 @@ export function updateHud(me, time, dt) {
         '\nFPS: ' + S.fpsDisplay + ' PING: ' + Math.round(S.pingVal) + 'ms' +
         '\nPLAYERS: ' + _aliveCount + '/' + S.serverPlayers.length +
         '\nPROJ: ' + S.projData.length +
+        netLine +
         iwLine;
     }
   }

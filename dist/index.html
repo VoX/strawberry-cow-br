@@ -46,14 +46,16 @@ body{background:#1a0a2e;overflow:hidden;font-family:'Segoe UI',sans-serif}
 <div><kbd>WASD</kbd> move</div>
 <div><kbd>Mouse</kbd> look</div>
 <div><kbd>LMB</kbd> fire</div>
-<div><kbd>RMB</kbd> ADS (L96)</div>
+<div><kbd>RMB</kbd> ADS</div>
 <div><kbd>Space</kbd> jump</div>
 <div><kbd>Shift</kbd> dash</div>
 <div><kbd>C</kbd> crouch</div>
 <div><kbd>R</kbd> reload</div>
+<div><kbd>F</kbd> toggle knife</div>
 <div><kbd>B</kbd> barricade</div>
 <div><kbd>Q</kbd> drop weapon</div>
-<div><kbd>X</kbd> M16 fire mode</div>
+<div><kbd>X</kbd> fire mode</div>
+<div><kbd>V</kbd> moo</div>
 <div><kbd>T</kbd> chat</div>
 <div><kbd>P</kbd> debug overlay</div>
 <div><kbd>O</kbd> fullscreen</div>
@@ -69,7 +71,8 @@ body{background:#1a0a2e;overflow:hidden;font-family:'Segoe UI',sans-serif}
 <div style="margin-top:12px;color:#cc88ff;font-size:13px"><label><input type="checkbox" id="botsCheck" checked style="vertical-align:middle"> Include Artificial Bovine Intelligence</label></div>
 <div style="margin-top:4px;color:#cc88ff;font-size:13px"><label><input type="checkbox" id="botsFreeWillCheck" checked style="vertical-align:middle"> Replicate Artificial Bovine Intelligence Free Will</label></div>
 <div style="margin-top:4px;color:#cc88ff;font-size:13px"><label><input type="checkbox" id="nightCheck" style="vertical-align:middle"> Nocturnal Meadow</label></div>
-<div style="margin-top:8px;color:#cc88ff;font-size:13px">Volume: <input id="volSlider" type="range" min="0" max="100" value="50" style="width:120px;vertical-align:middle"> <span id="volLbl">50%</span></div>
+<div style="margin-top:8px;color:#cc88ff;font-size:13px">SFX: <input id="volSlider" type="range" min="0" max="100" value="50" style="width:120px;vertical-align:middle"> <span id="volLbl">50%</span></div>
+<div style="margin-top:4px;color:#cc88ff;font-size:13px">Music: <input id="musicVolSlider" type="range" min="0" max="100" value="50" style="width:120px;vertical-align:middle"> <span id="musicVolLbl">50%</span></div>
 <div style="margin-top:8px;color:#cc88ff;font-size:13px">Music: <select id="musicSelect" style="background:#000;color:#fff;border:1px solid #cc88ff;border-radius:4px;padding:2px 8px;font-size:13px"><option value="classic" style="background:#000">Classic Cowbell</option><option value="industrial" style="background:#000">Dark Industrial</option><option value="tribal" style="background:#000">Tribal Drums</option><option value="money" style="background:#000">Money (Wall Street)</option><option value="boy" style="background:#000">BoyMusic (Fruity)</option><option value="custom" style="background:#000">Custom</option><option value="radio" style="background:#000">Radio</option></select></div>
 <div id="serverStatus" style="margin-top:12px;font-size:13px;color:#ffaa44">&#x23F3; finding meadow...</div>
 </div>
@@ -102,7 +105,7 @@ body{background:#1a0a2e;overflow:hidden;font-family:'Segoe UI',sans-serif}
 .perkCard{background:rgba(26,10,46,0.85);border:2px solid #cc88ff;border-radius:8px;padding:10px 14px;width:180px;text-align:center;cursor:pointer;pointer-events:auto}
 </style>
 <div id="scopeOverlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:8;display:none"><div style="position:absolute;top:0;left:0;width:100%;height:100%;background:radial-gradient(circle at center,transparent 35%,rgba(0,0,0,0.95) 36%);"></div><div style="position:absolute;top:50%;left:0;width:100%;height:1px;background:rgba(255,100,100,0.5)"></div><div style="position:absolute;top:0;left:50%;width:1px;height:100%;background:rgba(255,100,100,0.5)"></div><div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:8px;height:8px;border:1px solid rgba(255,100,100,0.6);border-radius:50%"></div></div>
-<div id="augScopeOverlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:8;display:none"><div style="position:absolute;top:0;left:0;width:100%;height:100%;background:radial-gradient(circle at center,transparent 35%,rgba(0,0,0,0.95) 36%);"></div><div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:26px;height:26px;border:6px solid #000;border-radius:50%;background:transparent;box-shadow:0 0 0 1px rgba(0,0,0,0.6)"></div><div style="position:absolute;top:50%;left:0;width:calc(50% - 19px);height:1px;background:#000"></div><div style="position:absolute;top:50%;left:calc(50% + 19px);width:calc(50% - 19px);height:1px;background:#000"></div><div style="position:absolute;left:50%;top:0;width:1px;height:calc(50% - 19px);background:#000"></div><div style="position:absolute;left:50%;top:calc(50% + 19px);width:1px;height:calc(50% - 19px);background:#000"></div></div>
+<div id="augScopeOverlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:8;display:none"><div style="position:absolute;top:0;left:0;width:100%;height:100%;background:radial-gradient(circle at center,transparent 35%,rgba(0,0,0,0.95) 36%);"></div><div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:26px;height:26px;border:6px solid #000;border-radius:50%;background:transparent;box-shadow:0 0 0 1px rgba(0,0,0,0.6)"></div><div style="position:absolute;top:50%;left:0;width:calc(50% - 12px);height:1px;background:#000"></div><div style="position:absolute;top:50%;left:calc(50% + 12px);width:calc(50% - 12px);height:1px;background:#000"></div><div style="position:absolute;left:50%;top:0;width:1px;height:calc(50% - 12px);background:#000"></div><div style="position:absolute;left:50%;top:calc(50% + 12px);width:1px;height:calc(50% - 12px);background:#000"></div></div>
 <div id="lowHealthOverlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:6;display:none;background:radial-gradient(ellipse at center,transparent 50%,rgba(255,0,0,0.4) 100%)"></div>
 <div id="spawnProtOverlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:5;display:none;background:radial-gradient(ellipse at center,transparent 60%,rgba(255,238,68,0.4) 100%);border:3px solid rgba(255,238,68,0.3);box-sizing:border-box"></div>
 <div id="hitFlash" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:7;opacity:0;background:rgba(255,0,0,0.3)"></div>

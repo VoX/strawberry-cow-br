@@ -29,6 +29,7 @@ const S = {
   pendingLevelUps: 0,
   perkMenuOpen: false,
   masterVol: 0.5,
+  musicVol: 0.5,
   recoilIndex: 0,
   recoilTimer: 0,
   debugMode: false,
@@ -46,7 +47,20 @@ const S = {
   inputSeq: 0,    // client-side monotonic counter for STATEFUL_INPUT_TYPES. Incremented in network.js::send.
   lastAckedInput: 0, // highest seq the server has confirmed applying — echoed via inputAck broadcast. Phase 4 reconcile baseline.
   mePredicted: null, // Phase 4 predicted local player state (x/y/z/vz/dir/...). Camera reads from here; reconciled against S.me on every inputAck.
-  pendingLocalStun: null, // { tick, duration } scheduled by projectileHit, committed when S.lastTickNum catches up
+  localHitSlowEndsAt: 0, // performance.now() ms — local on-hit slowdown timer (client-authoritative)
+  localPrimaryWeapon: null, // last-held primary stashed when switching to knife
+  // Network monitoring (debug-mode only). Sliding 1-second windows.
+  netStats: {
+    tickArrivals: [], // performance.now() of each tick recv
+    tickGaps: [],     // ms between consecutive ticks (sliding 1s)
+    lastTickRecvT: 0,
+    expectedNextTickNum: 0,
+    tickGapCount: 0,  // total skipped tick numbers in window
+    tickRcvCount: 0,  // total ticks received in window
+    inputAckArrivals: [], // performance.now() of each ack recv
+    reconcileSnapsWindow: [], // [{t, drift}] sliding 1s
+    moveArrivedPct: 100, // last value reported by server inputAck
+  },
 };
 
 export default S;

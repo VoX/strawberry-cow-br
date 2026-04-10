@@ -3,7 +3,7 @@ import { MW, MH, COL } from './config.js';
 import S from './state.js';
 import { scene } from './renderer.js';
 import { getTerrainHeight } from './terrain.js';
-import { getAudioCtx } from './audio.js';
+import { getAudioCtx, createPanner, setPannerPosition } from './audio.js';
 import { spawnParticle, PGEO_SPHERE_LO, PGEO_TORUS } from './particles.js';
 import { disposeMeshTree } from './three-utils.js';
 
@@ -12,7 +12,12 @@ const rocketSounds = {};
 
 export function clearRocketSounds() {
   for (const id in rocketSounds) {
-    try { rocketSounds[id].osc.stop(); rocketSounds[id].osc.disconnect(); rocketSounds[id].gain.disconnect(); } catch(e) {}
+    try {
+      rocketSounds[id].osc.stop();
+      rocketSounds[id].osc.disconnect();
+      rocketSounds[id].gain.disconnect();
+      if (rocketSounds[id].panner) rocketSounds[id].panner.disconnect();
+    } catch(e) {}
     delete rocketSounds[id];
   }
 }
@@ -49,7 +54,8 @@ export function updateProjectiles(dt) {
       glow.position.z = -length * 0.6;
       m.add(glow);
       scene.add(m); S.projMeshes[p.id] = m;
-      // Start rocket whistle sound for cowtank
+      // Rocket whistle routed through a PannerNode updated each frame
+      // below, so the sound pans across the listener as the rocket flies.
       if (p.cowtank && getAudioCtx() && Object.keys(rocketSounds).length < 3) {
         const actx = getAudioCtx();
         const o = actx.createOscillator(), g = actx.createGain();
@@ -57,9 +63,15 @@ export function updateProjectiles(dt) {
         o.frequency.linearRampToValueAtTime(900, actx.currentTime + 2);
         const v = 0.04 * (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5);
         g.gain.setValueAtTime(v, actx.currentTime);
-        o.connect(g); g.connect(actx.destination); o.start();
-        rocketSounds[p.id] = { osc: o, gain: g };
+        o.connect(g);
+        const panner = createPanner(p.x, p.y3d, p.y);
+        g.connect(panner);
+        o.start();
+        rocketSounds[p.id] = { osc: o, gain: g, panner };
       }
+    }
+    if (p.cowtank && rocketSounds[p.id] && rocketSounds[p.id].panner) {
+      setPannerPosition(rocketSounds[p.id].panner, p.x, p.y3d, p.y);
     }
     // Smoke trail for cowtank — uses the shared particle pool
     if (p.cowtank && S.projMeshes[p.id] && Math.random() < 0.6) {
@@ -139,12 +151,24 @@ export function updateProjectiles(dt) {
     const p = S.projData[i];
     if (p.y3d === -999 || p.x < -100 || p.x > MW + 100 || p.y < -100 || p.y > MH + 100) {
       if (S.projMeshes[p.id]) { disposeMeshTree(S.projMeshes[p.id]); delete S.projMeshes[p.id]; }
-      if (rocketSounds[p.id]) { try { rocketSounds[p.id].osc.stop(); } catch(e){} delete rocketSounds[p.id]; }
+      if (rocketSounds[p.id]) {
+        try {
+          rocketSounds[p.id].osc.stop();
+          if (rocketSounds[p.id].panner) rocketSounds[p.id].panner.disconnect();
+        } catch(e){}
+        delete rocketSounds[p.id];
+      }
       S.projData.splice(i, 1);
     }
   }
   // Clean up rocket sounds for projectiles removed elsewhere (e.g. projectileHit)
   for (const id in rocketSounds) {
-    if (!S.projMeshes[id]) { try { rocketSounds[id].osc.stop(); } catch(e){} delete rocketSounds[id]; }
+    if (!S.projMeshes[id]) {
+      try {
+        rocketSounds[id].osc.stop();
+        if (rocketSounds[id].panner) rocketSounds[id].panner.disconnect();
+      } catch(e){}
+      delete rocketSounds[id];
+    }
   }
 }

@@ -10,7 +10,7 @@
 // cues, same particle spawns.
 import * as THREE from 'three';
 import S from './state.js';
-import { sfx, sfxShoot, sfxBolty, sfxShotgun, sfxRocket, sfxLR, sfxExplosion, sfxHit, sfxEat, sfxLevelUp, sfxDeath, sfxEmptyMag, sfxReloadLR, sfxReloadBolty, sfxShellLoad, setMusicPlaying, resetMusic, getAudioCtx, startMenuMusic, stopMenuMusic, initAudio } from './audio.js';
+import { sfx, sfxShoot, sfxBolty, sfxShotgun, sfxRocket, sfxLR, sfxExplosion, sfxHit, sfxEat, sfxLevelUp, sfxDeath, sfxEmptyMag, sfxReloadLR, sfxReloadBolty, sfxShellLoad, sfxMoo, sfxMeleeSwing, sfxMeleeHit, setMusicPlaying, resetMusic, getAudioCtx, startMenuMusic, stopMenuMusic, initAudio } from './audio.js';
 import { scene, cam, setNightMode } from './renderer.js';
 import { getTerrainHeight, rebuildTerrain } from './terrain.js';
 import { send, closeActive as closeActiveTransport } from './network.js';
@@ -22,7 +22,7 @@ import { spawnParticle, clearParticles, PGEO_SPHERE_LO, PGEO_SPHERE_MED, PGEO_BO
 import { setArmorSpawns, onArmorSpawn, onArmorPickup, clearPickups } from './pickups.js';
 import { disposeMeshTree } from './three-utils.js';
 import { S2C } from '../shared/messages.js';
-import { BURST_FAMILY } from '../shared/constants.js';
+import { BURST_FAMILY, HIT_SLOW_DURATION_MS } from '../shared/constants.js';
 import { INTERP_HIST_CAP, interpSamplePlayer } from './interp.js';
 import { reconcilePrediction } from './prediction.js';
 import { spawnBulletHole, clearBulletHoles, removeBulletHolesBySurfaceKey } from './bullet-holes.js';
@@ -185,7 +185,7 @@ export const handlers = {
     // carry stale seqs into the new round and the first reconcile would
     // walk an invalid ring.
     S.inputSeq = 0; S.lastAckedInput = 0;
-    S.pendingLocalStun = null;
+    S.localHitSlowEndsAt = 0;
     document.getElementById('joinScreen').style.display = 'none';
     document.getElementById('hud').style.display = 'block';
     S.serverPlayers = msg.players;
@@ -208,7 +208,7 @@ export const handlers = {
     // Reset input seq counters — mirrors server/game.js::startGame. Carrying
     // seqs across rounds would reference sim state that no longer exists.
     S.inputSeq = 0; S.lastAckedInput = 0;
-    S.pendingLocalStun = null;
+    S.localHitSlowEndsAt = 0;
     document.getElementById('joinScreen').style.display = 'none';
     document.getElementById('hud').style.display = 'block';
     S.serverPlayers = msg.players;
@@ -243,14 +243,36 @@ export const handlers = {
   // join could race), we skip that entry. The next snapshot or spectate sync
   // will fill it in.
   tick(msg) {
-    if (typeof msg.tickNum === 'number') S.lastTickNum = msg.tickNum;
-    // Commit any pending local hit-stun whose target tick has arrived.
-    // Server schedules the stun ~3 ticks ahead via projectileHit; the
-    // local apply needs to fire at the same simulation tick so the
-    // predict step skips the integrator at the same moment.
-    if (S.pendingLocalStun && S.lastTickNum >= S.pendingLocalStun.tick) {
-      if (S.mePredicted) S.mePredicted.stunTimer = S.pendingLocalStun.duration;
-      S.pendingLocalStun = null;
+    if (typeof msg.tickNum === 'number') {
+      // Net stats: detect tick-number gaps + per-arrival jitter (sliding
+      // 1-second window). Used by the debug overlay to show packet loss
+      // on the unreliable S2C channel and inter-arrival jitter.
+      const ns = S.netStats;
+      const recvT = performance.now();
+      if (S.lastTickNum > 0 && msg.tickNum > S.lastTickNum + 1) {
+        ns.tickGapCount += (msg.tickNum - S.lastTickNum - 1);
+      }
+      ns.tickRcvCount++;
+      if (ns.lastTickRecvT > 0) {
+        ns.tickGaps.push(recvT - ns.lastTickRecvT);
+        if (ns.tickGaps.length > 30) ns.tickGaps.shift();
+      }
+      ns.lastTickRecvT = recvT;
+      ns.tickArrivals.push(recvT);
+      while (ns.tickArrivals.length > 0 && recvT - ns.tickArrivals[0] > 1000) {
+        ns.tickArrivals.shift();
+        // Decay the per-second counters in proportion — not exact but
+        // close enough for a debug overlay update at 1 Hz.
+      }
+      // Reset rolling counters when the window flips.
+      if (recvT - (ns._windowStart || 0) > 1000) {
+        ns._lastTickRcv = ns.tickRcvCount;
+        ns._lastTickGap = ns.tickGapCount;
+        ns.tickRcvCount = 0;
+        ns.tickGapCount = 0;
+        ns._windowStart = recvT;
+      }
+      S.lastTickNum = msg.tickNum;
     }
     if (S._iwStats === undefined) {
       S._iwStats = {
@@ -332,11 +354,16 @@ export const handlers = {
   // position (not S.me, which would be a later tick and race).
   inputAck(msg) {
     if (typeof msg.seq !== 'number' || msg.seq <= S.lastAckedInput) return;
-    // Defensive: refuse malformed payloads. Without this, a botched
-    // server emit could ship undefined/NaN straight into the predicted
-    // state and rubberband the player to NaN-land.
     if (typeof msg.x !== 'number' || typeof msg.y !== 'number' || typeof msg.z !== 'number') return;
     S.lastAckedInput = msg.seq;
+    // Net stats: ack arrival timing + server-reported move-channel loss.
+    const ns = S.netStats;
+    const ackT = performance.now();
+    ns.inputAckArrivals.push(ackT);
+    while (ns.inputAckArrivals.length > 0 && ackT - ns.inputAckArrivals[0] > 1000) {
+      ns.inputAckArrivals.shift();
+    }
+    if (typeof msg.moveArrivedPct === 'number') ns.moveArrivedPct = msg.moveArrivedPct;
     // Snap server-only movement gates onto the predicted player too.
     // The tick handler also syncs these, but inputAck can arrive between
     // ticks and we want the very next predict step to respect the gates.
@@ -389,6 +416,7 @@ export const handlers = {
         burst:   { x: 3.5, y: -2.6, z: -22 },
         bolty:   { x: 0, y: -4.0, z: -26 },
         cowtank: { x: 2.0, y: -3.0, z: -22 },
+        aug:     { x: 3.5, y: -2.6, z: -22 },
       };
       let m = MUZZLES[myWep] || MUZZLES.normal;
       // Dual-wield M16: volley 1 uses the left barrel
@@ -406,6 +434,12 @@ export const handlers = {
       if (myWep === 'bolty' && !S.adsActive) {
         m = { x: 3, y: -3.5, z: -26 };
       }
+      // AUG ADS: while scoped the camera centers on the optic, so the
+      // visible muzzle drops to centered + low. Hip-fire keeps the
+      // standard offset.
+      if (myWep === 'aug' && S.adsActive) {
+        m = { x: 0, y: -3.5, z: -22 };
+      }
       // Transform muzzle offset by camera orientation to world space
       _tmpDir.set(m.x, m.y, m.z).applyQuaternion(cam.quaternion);
       spawnX = cam.position.x + _tmpDir.x;
@@ -419,14 +453,15 @@ export const handlers = {
     // world origin on the first frame after spawn.
     S.projData.push({ id: msg.id, x: spawnX, y: spawnZ, vx: msg.vx, vy: msg.vy, color: msg.color || 'pink', bolty: msg.bolty, cowtank: msg.cowtank, y3d: spawnH, vy3d, _lastTrailPos: msg.bolty ? { x: spawnX, y: spawnH, z: spawnZ } : undefined });
     if (msg.ownerId !== S.myId) {
-      // Distance-based weapon sound for other players
-      const dist = Math.hypot(msg.x - cam.position.x, msg.y - cam.position.z);
-      const distVol = Math.max(0.01, 1 / (1 + dist * 0.005));
-      if (msg.bolty) sfx(800, 0.25, 'sawtooth', 0.1 * distVol);
-      else if (msg.cowtank) sfxRocket(0.12 * distVol);
-      else if (msg.shotgun !== undefined) sfxShotgun(0.1 * distVol);
-      else if (msg.burst !== undefined) sfxLR(0.1 * distVol);
-      else sfx(400, 0.12, 'square', 0.08 * distVol);
+      // Remote weapon sound — PannerNode handles distance attenuation +
+      // directional panning. Volume stays at full base level.
+      const th = getTerrainHeight(msg.x, msg.y);
+      const pos = { x: msg.x, y: th + 50, z: msg.y };
+      if (msg.bolty) sfxBolty(0.1, pos);
+      else if (msg.cowtank) sfxRocket(0.12, pos);
+      else if (msg.shotgun !== undefined) sfxShotgun(0.1, pos);
+      else if (msg.burst !== undefined) sfxLR(0.1, pos);
+      else sfx(400, 0.12, 'square', 0.08, pos);
     }
     if (msg.ownerId === S.myId) {
       const myWep = S.me ? S.me.weapon : 'normal';
@@ -499,8 +534,8 @@ export const handlers = {
         const walkingMod = S.crouching ? 0.73 : 1;
         // Dual-wield recoil multiplier: benelli only gets +10%, everything else +30%
         const dualMod = S.me.dualWield ? (wep === 'shotgun' ? 1.1 : 1.3) : 1;
-        // AUG hipfire penalty: 1.5x recoil when not scoped, 1x when ADS.
-        const augHipMod = (wep === 'aug' && !S.adsActive) ? 1.5 : 1;
+        // AUG hipfire penalty: 2.25x recoil when not scoped, 1x when ADS.
+        const augHipMod = (wep === 'aug' && !S.adsActive) ? 2.25 : 1;
         const recoilMult = burstMod * tacticowMod * walkingMod * dualMod * augHipMod;
         S.pitch += r.p * recoilMult;
         S.yaw += r.y * recoilMult;
@@ -542,19 +577,10 @@ export const handlers = {
     if (S.projMeshes[msg.projectileId]) { disposeMeshTree(S.projMeshes[msg.projectileId]); delete S.projMeshes[msg.projectileId]; }
     if (msg.targetId === S.myId) {
       sfxHit(); flashHit(0.5, 150); flashEdge('damageEdgeFlash');
-      // Schedule the local stun for the same simulation tick the
-      // server will engage it on (delayed-slowdown scheme). Both sides
-      // start the stun at the same moment so reconcile has nothing to
-      // pull back. Earliest pending wins. If the start tick has
-      // already passed (network delay), commit immediately instead of
-      // waiting for the next tick handler call.
-      if (typeof msg.stunStartTick === 'number') {
-        if (S.lastTickNum >= msg.stunStartTick) {
-          if (S.mePredicted) S.mePredicted.stunTimer = 0.5;
-        } else if (!S.pendingLocalStun || msg.stunStartTick < S.pendingLocalStun.tick) {
-          S.pendingLocalStun = { tick: msg.stunStartTick, duration: 0.5 };
-        }
-      }
+      // Client-authoritative on-hit slowdown — predict step folds the
+      // slow factor into each move's speedMult, server simulates it.
+      const newEnd = performance.now() + HIT_SLOW_DURATION_MS;
+      if (newEnd > S.localHitSlowEndsAt) S.localHitSlowEndsAt = newEnd;
     }
     // Persistent bullet hole on world geometry hits — wall, barricade, or
     // terrain. Player hits don't get holes (the blood particles below cover
@@ -731,8 +757,8 @@ export const handlers = {
         growth: -1.8,
       });
     }
-    // Explosion sound
-    sfxExplosion(0.15);
+    // Explosion sound — spatialized at blast origin.
+    sfxExplosion(0.15, { x: ex, y: th + 10, z: ey });
   },
 
   eliminated(msg) {
@@ -758,6 +784,25 @@ export const handlers = {
     if (msg.playerId != null) showChatBubble(msg.playerId, msg.text);
   },
 
+  mooTaunt(msg) {
+    if (msg.playerId != null) showChatBubble(msg.playerId, 'moo!');
+    if (msg.playerId === S.myId) sfxMoo();
+    else sfxMoo(0.18, { x: msg.x, y: getTerrainHeight(msg.x, msg.y) + 40, z: msg.y });
+  },
+
+  meleeSwing(msg) {
+    const th = getTerrainHeight(msg.x, msg.y);
+    sfxMeleeSwing({ x: msg.x, y: th + 40, z: msg.y });
+  },
+
+  meleeHit(msg) {
+    const th = getTerrainHeight(msg.x, msg.y);
+    sfxMeleeHit({ x: msg.x, y: th + 40, z: msg.y });
+    if (msg.targetId === S.myId) {
+      flashHit(0.55, 220);
+    }
+  },
+
   barricadePlaced(msg) {
     addBarricade({ id: msg.id, cx: msg.cx, cy: msg.cy, w: msg.w, h: msg.h, angle: msg.angle });
     if (msg.ownerId === S.myId) {
@@ -767,9 +812,12 @@ export const handlers = {
   },
 
   barricadeDestroyed(msg) {
+    const b = S.barricades.find(b => b.id === msg.id);
+    const pos = b ? { x: b.cx, y: getTerrainHeight(b.cx, b.cy) + 20, z: b.cy } : null;
     removeBarricade(msg.id);
     removeBulletHolesBySurfaceKey('barricade:' + msg.id);
-    sfx(300, 0.08, 'square', 0.05); sfx(150, 0.15, 'sawtooth', 0.04);
+    sfx(300, 0.08, 'square', 0.05, pos);
+    sfx(150, 0.15, 'sawtooth', 0.04, pos);
   },
 
   barricadeHit(msg) {
@@ -1123,7 +1171,7 @@ export const handlers = {
         growth: -2.5,
       });
     }
-    sfx(800, 0.1, 'sine', 0.05);
+    sfx(800, 0.1, 'sine', 0.05, { x: msg.x, y: th + 20, z: msg.y });
   },
 
   shieldBreak(msg) {

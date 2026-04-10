@@ -56,6 +56,9 @@ const S2C = Object.freeze({
   shieldBreak: 'shieldBreak',
   newHost: 'newHost',
   kicked: 'kicked',
+  mooTaunt: 'mooTaunt',
+  meleeSwing: 'meleeSwing',
+  meleeHit: 'meleeHit',
 });
 
 // --- client -> server ------------------------------------------------------
@@ -77,7 +80,10 @@ const C2S = Object.freeze({
   placeBarricade: 'placeBarricade',
   chat: 'chat',
   dropWeapon: 'dropWeapon',
+  switchWeapon: 'switchWeapon',
   setUpdateRate: 'setUpdateRate',
+  moo: 'moo',
+  meleeAttack: 'meleeAttack',
 });
 
 const MSG = Object.freeze({ ...S2C, ...C2S });

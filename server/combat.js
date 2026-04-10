@@ -5,17 +5,12 @@ const { getTerrainHeight, getGroundHeight, WALL_HEIGHT } = require('./terrain');
 const ballistics = require('./ballistics');
 const weaponFire = require('./weapon-fire');
 const { applyHungerDelta, applyArmorDelta, broadcastPlayerSnapshot } = require('./player');
+const { KNIFE_MELEE_RANGE, KNIFE_MELEE_CONE_COS, KNIFE_MELEE_DAMAGE, KNIFE_MELEE_CD_MS } = require('../shared/constants');
 
 const MAG_SIZES = weaponFire.MAG_SIZES;
 // Extended-mag perk values — specific per weapon (dual-wield multiplies these by 2)
 const EXT_MAG_SIZES = { normal: 19, burst: 25, shotgun: 8, bolty: 7, aug: 38 };
 
-// Hit-stun delay in server ticks. The server schedules `p.stunTimer = 0.5`
-// for `currentTick + STUN_DELAY_TICKS` instead of applying it immediately,
-// and the projectileHit broadcast carries `stunStartTick` so the client
-// can engage the same stun on the same simulation tick. ~3 ticks = 100 ms,
-// long enough for the message to land before the server commits the slow.
-const STUN_DELAY_TICKS = 3;
 
 const BASE_EYE_HEIGHT = 35;
 function eyeHeight(p) {
@@ -26,6 +21,9 @@ function eyeHeight(p) {
 function handleAttack(player, msg) {
   if (!player || !player.alive || player.attackCooldown > 0.005) return;
   const weapon = player.weapon || 'normal';
+  // Knife is melee-only — no projectile fire (would fall through to the
+  // pistol stats below since PLAYER_STATS_BASE.knife is undefined).
+  if (weapon === 'knife') return;
   if (player.reloading > 0) {
     if (weapon === 'shotgun' && player.ammo > 0) {
       clearTimeout(player.reloadTimer);
@@ -249,19 +247,12 @@ function updateProjectiles(dt) {
           applyArmorDelta(p, -absorbed);
           broadcast({ type: 'shieldHit', playerId: p.id, x: p.x, y: p.y });
         }
-        // Delayed stun: schedule the stunTimer to engage at a future
-        // tick (~100 ms = 3 ticks) instead of applying immediately.
-        // Both server and client know the same target tick from the
-        // projectileHit broadcast, so they can stop integrating at the
-        // same simulation moment with no reconcile snap. The stun is
-        // committed in gameTick's pre-movement pending-stun walk.
-        const stunStartTick = currentTickNum + STUN_DELAY_TICKS;
-        // Earliest pending stun wins (stacked hits don't push the start
-        // out — once you're committed to a slowdown, the soonest one is
-        // what counts).
-        if (!p._pendingStun || stunStartTick < p._pendingStun.tick) {
-          p._pendingStun = { tick: stunStartTick, duration: 0.5 };
-        }
+        // Slowdown is client-authoritative: server doesn't enforce it.
+        // The client receives projectileHit, starts a local slowdown
+        // timer, and includes the resulting input.speedMult in every
+        // subsequent move message. Server's move queue forwards that
+        // mult to stepPlayerMovement so both sides simulate the same
+        // speed. No stunTimer on hit, no pendingStun, no rubberband.
         applyHungerDelta(p, -actualDmg, pr.ownerId);
         if (pr.explosive) applyExplosion(pr, p.id);
         // Milksteal: heal owner 1% on hit
@@ -269,7 +260,7 @@ function updateProjectiles(dt) {
         if (owner && owner.milksteal && owner.alive) {
           applyHungerDelta(owner, 0.5);
         }
-        broadcast({ type: 'projectileHit', projectileId: pr.id, targetId: p.id, ownerId: pr.ownerId, dmg: Math.round(dmg), headshot, stunStartTick });
+        broadcast({ type: 'projectileHit', projectileId: pr.id, targetId: p.id, ownerId: pr.ownerId, dmg: Math.round(dmg), headshot });
         gameState.removeProjectileAt(i); continue;
     }
     // Terrain collision
@@ -461,4 +452,49 @@ function placeBarricadeForPlayer(player, aimX, aimY) {
   return true;
 }
 
-module.exports = { handleAttack, updateProjectiles, handleDash, handleReload, getMaxAmmo, placeBarricadeForPlayer, eyeHeight };
+// Knife melee attack — short-range cone in front of the attacker. Picks
+// the closest player inside the cone, routes damage through the normal
+// shield/armor/hunger pipeline, broadcasts a swing (always) and a hit
+// (only on connect). Bots never call this path — human knife-holders only.
+function handleMelee(player) {
+  if (!player || !player._joined || !player.alive) return;
+  if (player.weapon !== 'knife') return;
+  const nowMs = Date.now();
+  if (player.meleeReadyAt && nowMs < player.meleeReadyAt) return;
+  player.meleeReadyAt = nowMs + KNIFE_MELEE_CD_MS;
+
+  // Aim vector on the server (x, y) plane. Client derives aimAngle from
+  // `atan2(fwd.x, fwd.z)` against world (x, z), which maps directly to
+  // server (x, y) here — so forward = (sin a, cos a).
+  const aim = player.aimAngle || 0;
+  const fx = Math.sin(aim);
+  const fy = Math.cos(aim);
+  const rangeSq = KNIFE_MELEE_RANGE * KNIFE_MELEE_RANGE;
+  let hit = null, hitDistSq = Infinity;
+  for (const [, p] of gameState.getPlayers()) {
+    if (p.id === player.id || !p.alive || !p._joined) continue;
+    const dx = p.x - player.x, dy = p.y - player.y;
+    const distSq = dx * dx + dy * dy;
+    if (distSq > rangeSq || distSq < 1) continue;
+    const dist = Math.sqrt(distSq);
+    const dot = (dx * fx + dy * fy) / dist;
+    if (dot < KNIFE_MELEE_CONE_COS) continue;
+    if (distSq < hitDistSq) { hit = p; hitDistSq = distSq; }
+  }
+
+  broadcast({ type: 'meleeSwing', playerId: player.id, x: player.x, y: player.y });
+  if (!hit) return;
+
+  let dmg = KNIFE_MELEE_DAMAGE;
+  if (hit.perks && hit.perks.damageReduction) dmg *= (1 - hit.perks.damageReduction);
+  if (hit.armor > 0) {
+    const absorbed = Math.min(hit.armor, dmg);
+    dmg -= absorbed;
+    applyArmorDelta(hit, -absorbed);
+    broadcast({ type: 'shieldHit', playerId: hit.id, x: hit.x, y: hit.y });
+  }
+  if (dmg > 0) applyHungerDelta(hit, -dmg, player.id);
+  broadcast({ type: 'meleeHit', attackerId: player.id, targetId: hit.id, x: hit.x, y: hit.y, dmg: Math.round(KNIFE_MELEE_DAMAGE) });
+}
+
+module.exports = { handleAttack, handleMelee, updateProjectiles, handleDash, handleReload, getMaxAmmo, placeBarricadeForPlayer, eyeHeight };

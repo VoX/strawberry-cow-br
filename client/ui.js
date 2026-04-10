@@ -12,6 +12,8 @@ if (fullscreenBtn) fullscreenBtn.addEventListener('click', toggleFullscreen);
 try { const sn = localStorage.getItem('cowName3d'); if (sn) document.getElementById('nameIn').value = sn; } catch (e) {}
 try { const sv = localStorage.getItem('cowVol3d'); if (sv) { document.getElementById('volSlider').value = sv; document.getElementById('volLbl').textContent = sv + '%'; } } catch (e) {}
 S.masterVol = parseFloat(document.getElementById('volSlider').value) / 100;
+try { const smv = localStorage.getItem('cowMusicVol3d'); if (smv) { document.getElementById('musicVolSlider').value = smv; document.getElementById('musicVolLbl').textContent = smv + '%'; } } catch (e) {}
+S.musicVol = parseFloat(document.getElementById('musicVolSlider').value) / 100;
 
 try { const sm = localStorage.getItem('cowMusic3d'); if (sm) { S.musicStyle = sm; document.getElementById('musicSelect').value = sm; } } catch(e) {}
 // Custom music pack files are gitignored — check they exist on this deploy
@@ -59,6 +61,10 @@ document.getElementById('botsFreeWillCheck').addEventListener('change', e => {
 document.getElementById('volSlider').addEventListener('input', e => {
   S.masterVol = e.target.value / 100; document.getElementById('volLbl').textContent = e.target.value + '%';
   try { localStorage.setItem('cowVol3d', e.target.value); } catch (ex) {}
+});
+document.getElementById('musicVolSlider').addEventListener('input', e => {
+  S.musicVol = e.target.value / 100; document.getElementById('musicVolLbl').textContent = e.target.value + '%';
+  try { localStorage.setItem('cowMusicVol3d', e.target.value); } catch (ex) {}
 });
 const COW_NAMES = ['MooCow','BurgerBoy','SteakMate','DairyQueen','CowPoke','BeefCake','MilkMan','Cheddar','UdderChaos','MooLander','CowntDracula','SirLoin','AngusYoung','T-Bone','Bovinity','Cowculator','MooDonna','Heifernator','PrimeMooVer','Bullseye','CreamPuff','Grazey','Moosician','Barnaby','Wagyu','Bessie'];
 let _nameIdx = Math.floor(Math.random() * COW_NAMES.length);
