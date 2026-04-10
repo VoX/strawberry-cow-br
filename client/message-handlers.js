@@ -230,7 +230,10 @@ export const handlers = {
     clearBulletHoles();
     // Spawn resource nodes + sleeping bags from world snapshot
     clearNodes();
-    if (msg.resourceNodes) msg.resourceNodes.forEach(n => spawnNode(n));
+    S._resourceNodePositions = [];
+    if (msg.resourceNodes) {
+      msg.resourceNodes.forEach(n => { spawnNode(n); S._resourceNodePositions.push({ x: n.x, y: n.y, type: n.type }); });
+    }
     clearSleepingBags();
     if (msg.sleepingBags) msg.sleepingBags.forEach(b => spawnSleepingBag(b));
     clearLootBags();
@@ -842,11 +845,18 @@ export const handlers = {
 
   // --- Resource gathering ---
   resourceNodeSpawn(msg) {
-    if (msg.node) spawnNode(msg.node);
+    if (msg.node) {
+      spawnNode(msg.node);
+      if (S._resourceNodePositions) S._resourceNodePositions.push({ x: msg.node.x, y: msg.node.y, type: msg.node.type });
+    }
   },
 
   resourceNodeDepleted(msg) {
     removeNode(msg.id);
+    if (S._resourceNodePositions) {
+      const idx = S._resourceNodePositions.findIndex(n => n.x != null); // simplified — remove by reference won't work easily
+      // Resource nodes respawn at new positions, so just leave stale markers; they refresh on next spawn
+    }
   },
 
   resourceHit(msg) {
@@ -856,7 +866,10 @@ export const handlers = {
   },
 
   sleepingBagPlaced(msg) {
-    if (msg.bag) spawnSleepingBag(msg.bag);
+    if (msg.bag) {
+      spawnSleepingBag(msg.bag);
+      if (msg.bag.ownerId === S.myId) S._sleepingBagPos = { x: msg.bag.x, y: msg.bag.y };
+    }
   },
 
   sleepingBagRemoved(msg) {

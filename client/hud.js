@@ -329,5 +329,18 @@ export function updateHud(me, time, dt) {
     }
     mctx.fillStyle = 'rgba(255,255,100,0.4)';
     for (const f of S.serverFoods) { mctx.fillRect(f.x * sx, f.y * sy, 1, 1); }
+    // Resource nodes — colored dots by type
+    if (S._resourceNodePositions) {
+      const rcol = { grass: '#44aa22', tree: '#8B4513', rock: '#888', scrap: '#cc7722' };
+      for (const n of S._resourceNodePositions) {
+        mctx.fillStyle = rcol[n.type] || '#888';
+        mctx.fillRect(n.x * sx, n.y * sy, 2, 2);
+      }
+    }
+    // Sleeping bag — blue marker
+    if (S._sleepingBagPos) {
+      mctx.fillStyle = '#44aaff';
+      mctx.fillRect(S._sleepingBagPos.x * sx - 2, S._sleepingBagPos.y * sy - 2, 5, 5);
+    }
   }
 }
