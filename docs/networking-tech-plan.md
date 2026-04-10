@@ -46,61 +46,9 @@ Server: gameTick drain loop checks for jump flag → applies vz=230 + onGround=f
 
 ## Proposal 2: Delta Compression on Tick Broadcast
 
-### Goal
-Reduce tick bandwidth by 60-80% by only sending fields that changed since the last tick per player.
+### Status: REJECTED
 
-### Current flow
-```
-gameTick → getPlayerTicks() returns full 20-field object per player
-→ broadcast to all clients every tick (30 Hz)
-```
-
-### Proposed flow
-```
-gameTick → getPlayerTickDeltas(prevTicks) returns only changed fields per player
-→ broadcast deltas; client merges into existing serverPlayers via Object.assign
-→ store current tick as prevTicks for next comparison
-```
-
-### Files changed
-| File | Change |
-|------|--------|
-| `server/player.js` | New `getPlayerTickDeltas(prevMap)` function. For each player, compare current tick fields against `prevMap[id]`. Return only fields that differ. Always include `id`. |
-| `server/game.js` | Store `_prevTickState = new Map()` module-level. After building tick payload, cache current state. Pass prev to `getPlayerTickDeltas()`. |
-| `client/message-handlers.js` | No change needed — tick handler already does `Object.assign(existing, t)` which handles partial objects correctly. |
-
-### Delta logic (server/player.js)
-```js
-function getPlayerTickDeltas(prevMap) {
-  const arr = [];
-  for (const [, p] of gameState.getPlayers()) {
-    if (p.corpseReaped) continue;
-    const cur = getPlayerTick(p);
-    const prev = prevMap.get(p.id);
-    if (!prev) { arr.push(cur); continue; } // new player, send full
-    const delta = { id: p.id };
-    let changed = false;
-    for (const key of Object.keys(cur)) {
-      if (key === 'id') continue;
-      if (cur[key] !== prev[key]) { delta[key] = cur[key]; changed = true; }
-    }
-    if (changed) arr.push(delta);
-    // else: player unchanged, omit entirely
-  }
-  return arr;
-}
-```
-
-### Risk
-- **First-tick for new joiners**: handled by `spectate`/`start` message which sends full player state.
-- **Reconnect**: if a client misses a delta, subsequent deltas apply on top of stale state. The `playerSnapshot` sticky-field messages and periodic full-state via `spectate` on rejoin cover this.
-- **Object comparison**: uses strict `!==`. Works for numbers/booleans/strings. The `resources` field (if present) is an object — needs JSON comparison or per-field check. On main branch, resources aren't in the tick, so this isn't an issue yet.
-
-### Expected savings
-Typical tick: only x, y, z, aimAngle change (4 of 20 fields). With 16 players:
-- Current: 16 × 20 fields = 320 field writes per tick
-- Delta: 16 × 4 fields + 16 × id = 80 field writes per tick (75% reduction)
-- Players who are standing still: 0 fields (omitted entirely)
+Delta compression on unreliable ticks was implemented and reverted. Dropped UDP packets leave clients with stale fields that never recover (no full-state fallback on the unreliable path). Caused bots to flash in/out and players to get stuck on join. Full-state ticks with MessagePack binary encoding provide ~40-50% bandwidth savings without the reliability risk.
 
 ---
 
