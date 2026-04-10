@@ -68,6 +68,7 @@ const C2S = Object.freeze({
   placeBarricade: 'placeBarricade',
   chat: 'chat',
   dropWeapon: 'dropWeapon',
+  minigunSpin: 'minigunSpin',
   switchWeapon: 'switchWeapon',
   setUpdateRate: 'setUpdateRate',
   moo: 'moo',

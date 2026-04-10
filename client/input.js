@@ -141,6 +141,11 @@ document.addEventListener('mousedown', e => {
   if (e.button === 2 && S.locked && S.state === 'playing') {
     const me = S.me;
     // Block ADS during bolt rack and reload
+    // Minigun: right-click toggles barrel spin
+    if (me && me.alive && me.weapon === 'minigun') {
+      send({ type: 'minigunSpin' });
+      return;
+    }
     if (me && me.alive && (me.weapon === 'bolty' || me.weapon === 'aug') && !S._boltRacking && !me.reloading) {
       S.adsActive = true;
       cam.fov = me.weapon === 'aug' ? 37.5 : 12.5;

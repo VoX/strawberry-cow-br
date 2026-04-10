@@ -102,6 +102,8 @@ function getPlayerTick(p) {
     recoilMult: p.recoilMult || 1, extMagMult: p.extMagMult || 1,
     xpToNext: p.xpToNext || 50,
     personality: p.personality || null,
+    // Minigun spin state for HUD bar
+    minigunSpin: p._minigunSpinTime || 0,
     // Event flags — set for ONE tick then cleared by clearEventFlags().
     // Client detects rising edge to trigger visuals/audio.
     justDashed: !!p._justDashed,

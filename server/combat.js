@@ -23,6 +23,8 @@ function handleAttack(player, msg) {
   // Knife is melee-only — no projectile fire (would fall through to the
   // pistol stats below since PLAYER_STATS_BASE.knife is undefined).
   if (weapon === 'knife') return;
+  // Minigun: must be spun up to fire
+  if (weapon === 'minigun' && !player._minigunSpun) return;
   if (player.reloading > 0) {
     if (weapon === 'shotgun' && player.ammo > 0) {
       clearTimeout(player.reloadTimer);
@@ -33,6 +35,14 @@ function handleAttack(player, msg) {
   }
   const magSize = MAG_SIZES[weapon];
   if (magSize && player.ammo <= 0) {
+    if (weapon === 'minigun') {
+      // Minigun is disposable — auto-drop when empty
+      const { handleDropWeapon } = require('./weapons');
+      handleDropWeapon(player);
+      player._minigunSpun = false;
+      player._minigunSpinTime = 0;
+      return;
+    }
     sendTo(player.ws, { type: 'emptyMag' });
     player.attackCooldown = 0.3;
     handleReload(player);
@@ -362,6 +372,7 @@ function getMaxAmmo(player, weapon) {
 function handleReload(player) {
   if (!player || !player.alive || player.reloading > 0) return;
   const weapon = player.weapon || 'normal';
+  if (weapon === 'minigun') return; // minigun can't reload — disposable
   const maxAmmo = getMaxAmmo(player, weapon);
   if (!maxAmmo || player.ammo >= maxAmmo) return;
   player.reloading = 1;

@@ -228,6 +228,14 @@ function gameTick() {
     // Eat timer
     if (p.eating) { p.eatTimer -= dt; if (p.eatTimer <= 0) p.eating = false; }
 
+    // Minigun spin-up timer — 1 second to fully spin
+    if (p._minigunSpinning && p.weapon === 'minigun') {
+      p._minigunSpinTime = Math.min(1, (p._minigunSpinTime || 0) + dt);
+      if (p._minigunSpinTime >= 1) p._minigunSpun = true;
+    } else if (p.weapon !== 'minigun') {
+      p._minigunSpinning = false; p._minigunSpun = false; p._minigunSpinTime = 0;
+    }
+
     // Food collision
     const collectRadius = 35 + Math.min(20, p.foodEaten * 0.5);
     const foods = gameState.getFoods();

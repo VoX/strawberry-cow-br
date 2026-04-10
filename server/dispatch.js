@@ -297,6 +297,17 @@ function dispatchMessage(player, msg) {
     const txt = String(msg.text || '').slice(0, 120).trim();
     if (txt) broadcast({ type: 'chat', playerId: player.id, name: player.name, color: player.color, text: txt });
   }
+  // Minigun spin toggle — right-click while holding minigun.
+  // Spin-up takes 1 second (tracked via _minigunSpinTime, ticked in gameTick).
+  if (msg.type === 'minigunSpin' && player._joined && player.alive) {
+    if (player.weapon === 'minigun') {
+      player._minigunSpinning = !player._minigunSpinning;
+      if (!player._minigunSpinning) {
+        player._minigunSpun = false;
+        player._minigunSpinTime = 0;
+      }
+    }
+  }
   if (msg.type === 'moo' && player._joined && player.alive) {
     const nowMs = Date.now();
     if (nowMs >= (player.mooReadyAt || 0)) {

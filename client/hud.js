@@ -39,6 +39,21 @@ function initHudRefs() {
     lowHealthOverlay: document.getElementById('lowHealthOverlay'),
     spawnProtOverlay: document.getElementById('spawnProtOverlay'),
   };
+  // Create minigun spin bar dynamically
+  const spinBar = document.createElement('div');
+  spinBar.id = 'minigunSpinBar';
+  spinBar.style.cssText = 'position:fixed;bottom:120px;left:50%;transform:translateX(-50%);width:200px;height:12px;background:rgba(0,0,0,0.6);border:1px solid #666;display:none;border-radius:3px;';
+  const spinFill = document.createElement('div');
+  spinFill.id = 'minigunSpinFill';
+  spinFill.style.cssText = 'height:100%;width:0%;background:linear-gradient(90deg,#ff4400,#ffaa00);border-radius:2px;transition:width 0.05s;';
+  spinBar.appendChild(spinFill);
+  const spinLabel = document.createElement('div');
+  spinLabel.style.cssText = 'color:#ffaa00;font-size:10px;text-align:center;margin-top:2px;';
+  spinLabel.textContent = 'SPIN UP [RMB]';
+  spinBar.appendChild(spinLabel);
+  document.body.appendChild(spinBar);
+  H.spinBar = spinBar;
+  H.spinFill = spinFill;
 }
 
 export function updateHud(me, time, dt) {
@@ -62,6 +77,17 @@ export function updateHud(me, time, dt) {
     H.crosshair.style.display = aliveDisp;
     H.barricadeBar.style.display = aliveDisp;
     H.barricadeLabel.style.display = aliveDisp;
+  }
+
+  // Minigun spin-up bar
+  if (H.spinBar) {
+    const showSpin = aliveHud && me.weapon === 'minigun';
+    H.spinBar.style.display = showSpin ? 'block' : 'none';
+    if (showSpin) {
+      const pct = Math.min(100, (me.minigunSpin || 0) * 100);
+      H.spinFill.style.width = pct + '%';
+      H.spinFill.style.background = pct >= 100 ? '#00ff44' : 'linear-gradient(90deg,#ff4400,#ffaa00)';
+    }
   }
 
   // Chat log render runs FIRST so spectators (and post-corpse-reap
