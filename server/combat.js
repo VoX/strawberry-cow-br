@@ -1,4 +1,4 @@
-const { MAP_W, MAP_H } = require('./config');
+const { MAP_W, MAP_H, TICK_RATE } = require('./config');
 const { broadcast, sendTo } = require('./network');
 const gameState = require('./game-state');
 const { getTerrainHeight, getGroundHeight, WALL_HEIGHT } = require('./terrain');
@@ -170,9 +170,9 @@ function updateProjectiles(dt) {
       const siVault = getSI().vault;
       // Advance the rewind time by ticksAlive × tick duration so each
       // tick of the projectile's flight checks the right historical frame.
-      const rewindTime = pr.fireServerTime + (pr.ticksAlive * (1000 / 30));
+      const rewindTime = pr.fireServerTime + (pr.ticksAlive * (1000 / TICK_RATE));
       const snapPair = siVault.get(rewindTime);
-      if (snapPair) {
+      if (snapPair && snapPair.older && snapPair.newer) {
         const interp = getSI().interpolate(snapPair.older, snapPair.newer, rewindTime, 'x y z');
         if (interp && interp.state) playersForHit = _buildRewoundPlayers(interp.state, players);
       }
