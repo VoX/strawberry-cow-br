@@ -160,6 +160,28 @@ function loop(ts) {
   sky.position.copy(cam.position);
   cloudPlanes.forEach(c => { c.position.x = c.userData.origX + Math.sin(time * 0.05 * c.userData.speed) * 200; });
 
+  // Footstep sounds for nearby remote players — spatialized via PannerNode.
+  // Throttled to ~3 Hz per player to avoid audio spam.
+  if (!S._footstepTimers) S._footstepTimers = {};
+  for (const p of S.serverPlayers) {
+    if (p.id === S.myId || !p.alive) continue;
+    const dx = p.x - cam.position.x, dz = p.y - cam.position.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist > 300) continue; // too far to hear
+    // Check if player moved since last check
+    const key = String(p.id);
+    const prev = S._footstepTimers[key];
+    const now = time;
+    if (prev && now - prev.t < 0.3) continue;
+    const moved = prev ? Math.hypot(p.x - prev.x, p.y - prev.y) > 3 : false;
+    S._footstepTimers[key] = { t: now, x: p.x, y: p.y };
+    if (moved) {
+      const th = getTerrainHeight(p.x, p.y);
+      const vol = p.crouching ? 0.02 : 0.04;
+      sfx(80 + Math.random() * 40, 0.06, 'sine', vol, { x: p.x, y: th + 5, z: p.y });
+    }
+  }
+
   // Water effects — splash particles and wake rings when below water level
   const WATER_LEVEL = -30;
   if (me && me.alive) {
