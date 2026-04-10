@@ -36,9 +36,11 @@ function handleAttack(player, msg) {
   const magSize = MAG_SIZES[weapon];
   if (magSize && player.ammo <= 0) {
     if (weapon === 'minigun') {
-      // Minigun is disposable — auto-drop when empty
-      const { handleDropWeapon } = require('./weapons');
-      handleDropWeapon(player);
+      // Minigun is disposable — discard when empty (no pickup created)
+      player.weapon = 'normal';
+      player.dualWield = false;
+      player.ammo = MAG_SIZES.normal || 10;
+      player._minigunSpinning = false;
       player._minigunSpun = false;
       player._minigunSpinTime = 0;
       return;
