@@ -55,7 +55,7 @@ export function updateHud(me, time, dt) {
     S._aliveDisp = aliveDisp;
     H.weapon.style.display = aliveDisp;
     H.hunger.style.display = aliveDisp;
-    H.xpBar.style.display = aliveDisp;
+    H.xpBar.style.display = 'none'; // Perks/XP temporarily disabled
     H.dashBar.style.display = aliveDisp;
     H.atkBar.style.display = aliveDisp;
     H.crosshair.style.display = aliveDisp;

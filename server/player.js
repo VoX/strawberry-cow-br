@@ -152,20 +152,8 @@ function eliminatePlayer(p, reason) {
       attacker.kills = (attacker.kills || 0) + 1;
       attacker.score += 50;
       applyHungerDelta(attacker, 18);
-      const killXp = (attacker.xpToNext || 50) * 2;
-      attacker.xp = (attacker.xp || 0) + killXp;
-      let humanLeveled = false;
-      while (attacker.xp >= attacker.xpToNext) {
-        attacker.xp = Math.max(0, attacker.xp - attacker.xpToNext);
-        attacker.level++;
-        attacker.xpToNext = Math.floor(50 + attacker.level * 25 + attacker.level * attacker.level * 5);
-        if (attacker.isBot) { const { botPickRandomPerk } = require('./perks'); botPickRandomPerk(attacker); }
-        else { sendTo(attacker.ws, { type: 'levelup', level: attacker.level }); humanLeveled = true; }
-      }
-      // Collapse multiple level-ups into a single sticky-field snapshot. Bot
-      // level-ups snapshot via botPickRandomPerk → handlePerk → broadcast.
-      if (humanLeveled) broadcastPlayerSnapshot(attacker);
-      broadcast({ type: 'kill', killerId: attacker.id, killerName: attacker.name, victimId: p.id, victimName: p.name });
+      // Perks/XP temporarily disabled
+      broadcast({ type: 'kill', killerId: attacker.id, killerName: attacker.name, victimId: p.id, victimName: p.name, weapon: attacker.weapon || 'unknown' });
     }
   }
   if (p.isBot) { delete p._lastPos; delete p._wanderTarget; delete p._volleyHits; }

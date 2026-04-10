@@ -24,11 +24,28 @@ function _reconcileMap(meshMap, seen) {
 }
 
 function _buildArmorMesh(a) {
-  const m = new THREE.Mesh(new THREE.OctahedronGeometry(8, 0), new THREE.MeshBasicMaterial({ color: 0x5588ff }));
-  const glow = new THREE.Mesh(new THREE.OctahedronGeometry(12, 0), new THREE.MeshBasicMaterial({ color: 0x5588ff, transparent: true, opacity: 0.2 }));
-  m.add(glow);
-  m.position.set(a.x, getTerrainHeight(a.x, a.y) + 15, a.y);
-  return m;
+  // Potion bottle — glass body + cork + glowing liquid
+  const g = new THREE.Group();
+  const glassMat = new THREE.MeshLambertMaterial({ color: 0x5588ff, transparent: true, opacity: 0.6 });
+  const liquidMat = new THREE.MeshBasicMaterial({ color: 0x3366ff });
+  const corkMat = new THREE.MeshLambertMaterial({ color: 0xaa8855 });
+  // Bottle body — rounded cylinder
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(4, 5, 10, 8), glassMat);
+  g.add(body);
+  // Liquid inside — slightly smaller, opaque
+  const liquid = new THREE.Mesh(new THREE.CylinderGeometry(3.5, 4.5, 7, 8), liquidMat);
+  liquid.position.y = -1; g.add(liquid);
+  // Bottle neck
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(2, 3, 3, 8), glassMat);
+  neck.position.y = 6; g.add(neck);
+  // Cork stopper
+  const cork = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 2, 6), corkMat);
+  cork.position.y = 8.5; g.add(cork);
+  // Glow aura
+  const glow = new THREE.Mesh(new THREE.SphereGeometry(10, 8, 8), new THREE.MeshBasicMaterial({ color: 0x5588ff, transparent: true, opacity: 0.15 }));
+  g.add(glow);
+  g.position.set(a.x, getTerrainHeight(a.x, a.y) + 15, a.y);
+  return g;
 }
 
 function _buildWeaponPickupModel(type) {

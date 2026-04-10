@@ -24,7 +24,7 @@
   },
   "projectiles": [
     {
-      "dmg": 28,
+      "dmg": 50,
       "id": 1,
       "ownerId": 200,
       "vx": 16800,

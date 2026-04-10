@@ -252,18 +252,9 @@ function gameTick() {
           }
         }
         p.foodEaten++;
-        p.xp = (p.xp || 0) + Math.floor(8 + Math.random() * 12);
-        if (p.xp >= p.xpToNext) {
-          p.xp = Math.max(0, p.xp - p.xpToNext);
-          p.level++;
-          p.xpToNext = Math.floor(50 + p.level * 25 + p.level * p.level * 5);
-          // xpToNext is a sticky field — ship a snapshot so the HUD XP bar
-          // doesn't drift off the next-level threshold. Bot perk-picks already
-          // snapshot via handlePerk; humans only get the levelup toast so
-          // they need an explicit snapshot here.
-          if (p.isBot) { const { botPickRandomPerk } = require('./perks'); botPickRandomPerk(p); }
-          else { sendTo(p.ws, { type: 'levelup', level: p.level }); broadcastPlayerSnapshot(p); }
-        }
+        // Perks/XP temporarily disabled
+        // p.xp = (p.xp || 0) + Math.floor(8 + Math.random() * 12);
+        // if (p.xp >= p.xpToNext) { ... levelup ... }
         p.eating = true;
         p.eatTimer = 0.5;
         broadcast({ type: 'eat', playerId: p.id, foodId: f.id, foodType: f.type.name, golden: f.golden, poisoned: f.poisoned });

@@ -76,7 +76,7 @@
   },
   "projectiles": [
     {
-      "dmg": 5,
+      "dmg": 8,
       "id": 2,
       "ownerId": 200,
       "volleyId": 1,
@@ -88,7 +88,7 @@
       "z": 35
     },
     {
-      "dmg": 5,
+      "dmg": 8,
       "id": 3,
       "ownerId": 200,
       "volleyId": 1,
@@ -100,7 +100,7 @@
       "z": 35
     },
     {
-      "dmg": 5,
+      "dmg": 8,
       "id": 4,
       "ownerId": 200,
       "volleyId": 1,
@@ -112,7 +112,7 @@
       "z": 35
     },
     {
-      "dmg": 5,
+      "dmg": 8,
       "id": 5,
       "ownerId": 200,
       "volleyId": 1,
@@ -124,7 +124,7 @@
       "z": 35
     },
     {
-      "dmg": 5,
+      "dmg": 8,
       "id": 6,
       "ownerId": 200,
       "volleyId": 1,
