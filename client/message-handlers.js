@@ -91,27 +91,13 @@ function updateHostControls() {
 
 export const handlers = {
   serverStatus(msg) {
-    const el = document.getElementById('gameStatus');
+    const el = document.getElementById('serverStatus');
     if (el) {
-      if (msg.gameState === 'playing') {
-        el.textContent = '\u{1F3AF} Match in progress — ' + msg.alive + '/' + msg.total + ' cows remaining';
-        el.style.color = '#ffaa44';
-      } else if (msg.gameState === 'lobby') {
-        el.textContent = '\u{1F550} Waiting for players in lobby';
-        el.style.color = '#88ff88';
-      } else if (msg.gameState === 'ending') {
-        el.textContent = '\u{1F3C1} Match ending...';
-        el.style.color = '#cc88ff';
-      } else {
-        el.textContent = '';
-      }
+      const online = msg.total || 0;
+      el.textContent = '\u{1F404} ' + online + ' cow' + (online !== 1 ? 's' : '') + ' online';
+      el.style.color = online > 0 ? '#88ff88' : '#ffaa44';
     }
-    // Relabel the join button when a round is already running so the
-    // player knows their first click will drop them in as a spectator.
-    const jb = document.getElementById('joinBtn');
-    if (jb && !S.myId) {
-      jb.textContent = msg.gameState === 'playing' ? 'SPECTATE MEADOW' : 'QUEUE FOR MEADOW';
-    }
+    document.title = 'Strawberry Cow Survival (' + (msg.total || 0) + ' online)';
   },
 
   joined(msg) {
