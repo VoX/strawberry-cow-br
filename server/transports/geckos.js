@@ -20,6 +20,7 @@
 
 const { geckos, iceServers } = require('@geckos.io/server');
 const gameState = require('../game-state');
+const { encodeMsg, decodeMsg } = require('../codec');
 
 const SIGNALING_PORT = parseInt(process.env.GECKOS_PORT || '9208', 10);
 const PORT_MIN = parseInt(process.env.GECKOS_PORT_MIN || '10000', 10);
@@ -61,7 +62,11 @@ function init(httpServer) {
   _io.onConnection(channel => {
     if (_onConnect) _onConnect(channel);
     channel.on(MSG_EVENT, data => {
-      if (_onMessage) _onMessage(channel, data);
+      if (!_onMessage) return;
+      try {
+        const msg = (data instanceof ArrayBuffer || data instanceof Uint8Array) ? decodeMsg(data) : data;
+        _onMessage(channel, msg);
+      } catch (e) { /* drop garbage */ }
     });
     // The geckos library calls this with a connectionState string —
     // 'disconnected', 'failed', or 'closed'. All three are terminal for
@@ -83,26 +88,23 @@ function onDisconnect(cb) { _onDisconnect = cb; }
 // of-line blocking the rest of the data channel.
 function sendReliable(channel, msg) {
   if (!channel) return;
-  try { channel.emit(MSG_EVENT, msg, RELIABLE_OPTS); } catch (e) { /* channel closed */ }
+  try { channel.emit(MSG_EVENT, encodeMsg(msg), RELIABLE_OPTS); } catch (e) { /* channel closed */ }
 }
 
-// Per-player unreliable send. Single UDP packet, no retransmit. The whole
-// point of the migration: the next tick supersedes a dropped one and
-// nothing stalls behind it.
 function sendUnreliable(channel, msg) {
   if (!channel) return;
-  try { channel.emit(MSG_EVENT, msg); } catch (e) { /* channel closed */ }
+  try { channel.emit(MSG_EVENT, encodeMsg(msg)); } catch (e) { /* channel closed */ }
 }
 
-// Server-side broadcast. geckos's `io.emit` fans out to every connected
-// channel — same semantics as the WS impl's _broadcast loop.
 function broadcastReliable(msg) {
   if (!_io) return;
-  try { _io.emit(MSG_EVENT, msg, RELIABLE_OPTS); } catch (e) {}
+  const buf = encodeMsg(msg);
+  try { _io.emit(MSG_EVENT, buf, RELIABLE_OPTS); } catch (e) {}
 }
 function broadcastUnreliable(msg) {
   if (!_io) return;
-  try { _io.emit(MSG_EVENT, msg); } catch (e) {}
+  const buf = encodeMsg(msg);
+  try { _io.emit(MSG_EVENT, buf); } catch (e) {}
 }
 
 // Deferred close: caller intent is "this peer is gone, but anything I

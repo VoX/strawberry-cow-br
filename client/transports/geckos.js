@@ -7,6 +7,7 @@
 // single-shot UDP fire-and-forget.
 
 import geckosClient from '@geckos.io/client';
+import { encode, decode } from '@msgpack/msgpack';
 
 const RELIABLE_OPTS = Object.freeze({ reliable: true, interval: 150, runs: 10 });
 const MSG_EVENT = 'msg';
@@ -66,7 +67,12 @@ function connect(opts) {
 
   _channel.on(MSG_EVENT, data => {
     if (!_onMessage) return;
-    try { _onMessage(data); } catch (err) { /* never let a handler crash kill the transport */ }
+    try {
+      const msg = (data instanceof ArrayBuffer) ? decode(new Uint8Array(data))
+                : (data instanceof Uint8Array) ? decode(data)
+                : data;
+      _onMessage(msg);
+    } catch (err) { /* never let a handler crash kill the transport */ }
   });
 
   _channel.onDisconnect(() => fireClose(null));
@@ -74,11 +80,11 @@ function connect(opts) {
 
 function sendReliable(msg) {
   if (!_channel) return;
-  try { _channel.emit(MSG_EVENT, msg, RELIABLE_OPTS); } catch (e) { /* channel closed */ }
+  try { _channel.emit(MSG_EVENT, encode(msg), RELIABLE_OPTS); } catch (e) { /* channel closed */ }
 }
 function sendUnreliable(msg) {
   if (!_channel) return;
-  try { _channel.emit(MSG_EVENT, msg); } catch (e) { /* channel closed */ }
+  try { _channel.emit(MSG_EVENT, encode(msg)); } catch (e) { /* channel closed */ }
 }
 
 function close() {

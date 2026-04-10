@@ -1,7 +1,6 @@
 import S from './state.js';
 import { STATEFUL_INPUT_TYPES } from '../shared/constants.js';
 import { wsTransport, geckosTransport, transportKind, userPickedTransport } from './transport.js';
-import { encode, decode } from '@msgpack/msgpack';
 
 // Messages whose `type` is in this set go through the transport's
 // unreliable channel. On WebSocket that's identical to reliable; on

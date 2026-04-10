@@ -9,7 +9,7 @@ const { generateMap } = require('./map');
 const { getGroundHeight, WALL_HEIGHT, generateTerrain, getSeed } = require('./terrain');
 const { spawnInitialFood, spawnFood, spawnGoldenFood, spawnWeaponPickup, safeRandPos } = require('./spawning');
 const { spawnBots, updateBots } = require('./bots');
-const { getPlayerStates, getPlayerTicks, getPlayerTickDeltas, broadcastPlayerSnapshot, applyHungerDelta, resolveDeaths, clearPendingDeaths, eliminatePlayer, serializeFood, buildServerStatus } = require('./player');
+const { getPlayerStates, getPlayerTicks, broadcastPlayerSnapshot, applyHungerDelta, resolveDeaths, clearPendingDeaths, eliminatePlayer, serializeFood, buildServerStatus } = require('./player');
 const { handleWeaponPickups, handleArmorPickups } = require('./weapons');
 const { updateProjectiles } = require('./combat');
 const { rand } = require('./utils');
@@ -324,7 +324,7 @@ function gameTick() {
   const tickPayload = {
     type: 'tick',
     tickNum: gameState.getTickNum(),
-    players: getPlayerTicks(),  // delta compression disabled pending investigation
+    players: getPlayerTicks(),
     zone: gameState.getZone(),
     gameTime: Math.floor(gameState.getGameTime()),
   };
