@@ -1,5 +1,5 @@
 const { TICK_RATE, MAP_W, MAP_H } = require('./config');
-const { KNIFE_SPEED_MULT } = require('../shared/constants');
+const { KNIFE_SPEED_MULT, JUMP_VZ } = require('../shared/constants');
 const { stepPlayerMovement } = require('../shared/movement');
 const { broadcast, sendTo } = require('./network');
 const transport = require('./transport');

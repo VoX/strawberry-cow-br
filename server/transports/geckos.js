@@ -20,7 +20,9 @@
 
 const { geckos, iceServers } = require('@geckos.io/server');
 const gameState = require('../game-state');
-const { encodeMsg, decodeMsg } = require('../codec');
+// No codec needed — geckos.io handles its own serialization. Both
+// reliable and unreliable paths pass raw objects; msgpack binary is
+// only used on the WS transport where we control the wire directly.
 
 const SIGNALING_PORT = parseInt(process.env.GECKOS_PORT || '9208', 10);
 const PORT_MIN = parseInt(process.env.GECKOS_PORT_MIN || '10000', 10);
@@ -61,12 +63,10 @@ function init(httpServer) {
 
   _io.onConnection(channel => {
     if (_onConnect) _onConnect(channel);
+    // All messages arrive as plain objects — geckos handles serialization.
     channel.on(MSG_EVENT, data => {
       if (!_onMessage) return;
-      try {
-        const msg = (data instanceof ArrayBuffer || data instanceof Uint8Array) ? decodeMsg(data) : data;
-        _onMessage(channel, msg);
-      } catch (e) { /* drop garbage */ }
+      _onMessage(channel, data);
     });
     // The geckos library calls this with a connectionState string —
     // 'disconnected', 'failed', or 'closed'. All three are terminal for
@@ -86,25 +86,32 @@ function onDisconnect(cb) { _onDisconnect = cb; }
 // Per-player reliable send. Library re-sends + receiver dedupes — equivalent
 // to TCP delivery semantics from the application's POV, but without head-
 // of-line blocking the rest of the data channel.
+// Reliable sends pass the raw object — geckos.io's retry mechanism wraps
+// the payload in its own envelope, and binary Uint8Array payloads don't
+// survive that serialization round-trip. The library handles plain-object
+// JSON internally, so this is safe. Only the unreliable (fire-and-forget)
+// path uses msgpack binary for smaller UDP frames.
 function sendReliable(channel, msg) {
   if (!channel) return;
-  try { channel.emit(MSG_EVENT, encodeMsg(msg), RELIABLE_OPTS); } catch (e) { /* channel closed */ }
+  try { channel.emit(MSG_EVENT, msg, RELIABLE_OPTS); } catch (e) { /* channel closed */ }
 }
 
+// Unreliable sends also pass raw objects — geckos.io's emit API doesn't
+// reliably handle Uint8Array payloads through its broadcast/channel paths.
+// The library serializes internally. msgpack binary encoding is used only
+// on the WS transport where we control the wire format directly.
 function sendUnreliable(channel, msg) {
   if (!channel) return;
-  try { channel.emit(MSG_EVENT, encodeMsg(msg)); } catch (e) { /* channel closed */ }
+  try { channel.emit(MSG_EVENT, msg); } catch (e) { /* channel closed */ }
 }
 
 function broadcastReliable(msg) {
   if (!_io) return;
-  const buf = encodeMsg(msg);
-  try { _io.emit(MSG_EVENT, buf, RELIABLE_OPTS); } catch (e) {}
+  try { _io.emit(MSG_EVENT, msg, RELIABLE_OPTS); } catch (e) {}
 }
 function broadcastUnreliable(msg) {
   if (!_io) return;
-  const buf = encodeMsg(msg);
-  try { _io.emit(MSG_EVENT, buf); } catch (e) {}
+  try { _io.emit(MSG_EVENT, msg); } catch (e) {}
 }
 
 // Deferred close: caller intent is "this peer is gone, but anything I
