@@ -4,7 +4,33 @@ import S from './state.js';
 import { vmScene } from './renderer.js';
 import { disposeMeshTree, fbxLoadingManager } from './three-utils.js';
 
+import { getAudioCtx } from './audio.js';
+
 let vmGroup = null, vmType = null, vmDual = false;
+
+// Minigun spin sound — persistent oscillator while barrels spin
+let _minigunOsc = null, _minigunGain = null;
+function updateMinigunSound(spinPct) {
+  const actx = getAudioCtx();
+  if (!actx) return;
+  if (spinPct > 0.01) {
+    if (!_minigunOsc) {
+      _minigunOsc = actx.createOscillator();
+      _minigunGain = actx.createGain();
+      _minigunOsc.type = 'sawtooth';
+      _minigunOsc.connect(_minigunGain);
+      _minigunGain.connect(actx.destination);
+      _minigunOsc.start();
+    }
+    const vol = Math.min(0.06, spinPct * 0.06) * (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5);
+    _minigunGain.gain.setTargetAtTime(vol, actx.currentTime, 0.05);
+    _minigunOsc.frequency.setTargetAtTime(80 + spinPct * 200, actx.currentTime, 0.05);
+  } else if (_minigunOsc) {
+    try { _minigunOsc.stop(); } catch (e) {}
+    try { _minigunOsc.disconnect(); _minigunGain.disconnect(); } catch (e) {}
+    _minigunOsc = null; _minigunGain = null;
+  }
+}
 
 export function getVmGroup() { return vmGroup; }
 
@@ -427,17 +453,22 @@ export function buildViewmodel(type, dual) {
   } else if (type === 'minigun') {
     const housing = new THREE.Mesh(new THREE.CylinderGeometry(2, 2.2, 5, 8), dark);
     housing.rotation.x = Math.PI / 2; housing.position.set(0, -0.5, 0); vmGroup.add(housing);
+    // Barrel assembly in a sub-group for spinning
+    const barrelGroup = new THREE.Group();
+    barrelGroup.position.set(0, -0.5, -9);
     for (let i = 0; i < 6; i++) {
       const angle = (i / 6) * Math.PI * 2;
       const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 14, 4), dark);
       tube.rotation.x = Math.PI / 2;
-      tube.position.set(Math.cos(angle) * 1.1, -0.5 + Math.sin(angle) * 1.1, -9);
-      vmGroup.add(tube);
+      tube.position.set(Math.cos(angle) * 1.1, Math.sin(angle) * 1.1, 0);
+      barrelGroup.add(tube);
     }
     const clamp = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 1.8, 0.6, 8), metal);
-    clamp.rotation.x = Math.PI / 2; clamp.position.set(0, -0.5, -12); vmGroup.add(clamp);
+    clamp.rotation.x = Math.PI / 2; clamp.position.set(0, 0, -3); barrelGroup.add(clamp);
     const core = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 16, 6), metal);
-    core.rotation.x = Math.PI / 2; core.position.set(0, -0.5, -8); vmGroup.add(core);
+    core.rotation.x = Math.PI / 2; core.position.set(0, 0, 1); barrelGroup.add(core);
+    vmGroup.add(barrelGroup);
+    vmGroup.userData.minigunBarrels = barrelGroup;
     const hoof = buildHoof();
     hoof.position.set(-0.3, -0.5, -5);
     hoof.rotation.set(-0.2, 0.1, 0.5);
@@ -512,6 +543,16 @@ export function updateViewmodel() {
       vmGroup.position.y -= 1;
     } else if (vmType === 'bolty') {
       vmGroup.rotation.z *= 0.8; // smooth return
+    }
+    // Minigun barrel spin — rotate the barrel group based on spin state
+    if (vmGroup.userData.minigunBarrels && me) {
+      const spinPct = me.minigunSpin || 0;
+      if (spinPct > 0) {
+        vmGroup.userData.minigunBarrels.rotation.z += spinPct * 30 * (1/60);
+      }
+      updateMinigunSound(spinPct);
+    } else {
+      updateMinigunSound(0);
     }
     // Hoof reload animation — style varies per weapon
     const hoof = vmGroup.userData.hoof;
