@@ -389,34 +389,20 @@ export function buildViewmodel(type, dual) {
     hoof.userData.reloadStyle = 'none'; // M72 LAW is single-use, no reload
     vmGroup.add(hoof);
     vmGroup.userData.hoof = hoof;
-  } else if (type === 'python') {
-    buildPythonViewModel(vmGroup);
+  } else if (type === 'python' || type === 'm249' || type === 'minigun') {
+    // Simplified viewmodel — the detailed models cause performance issues.
+    // Use a basic box placeholder for now.
+    const bodyMat = new THREE.MeshBasicMaterial({ color: type === 'python' ? 0x444444 : type === 'm249' ? 0x556B2F : 0x333333 });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(2, 2, type === 'minigun' ? 14 : type === 'm249' ? 12 : 6), bodyMat);
+    body.position.set(0, 0, type === 'minigun' ? -7 : -3); vmGroup.add(body);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(type === 'minigun' ? 0.8 : 0.3, type === 'minigun' ? 0.8 : 0.3, type === 'minigun' ? 10 : 6, 6), new THREE.MeshBasicMaterial({ color: 0x222222 }));
+    barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.3, type === 'minigun' ? -15 : -8); vmGroup.add(barrel);
     const hoof = buildHoof();
     hoof.position.set(-0.3, -0.5, -5);
     hoof.rotation.set(-0.2, 0.1, 0.5);
     hoof.userData.restPos = hoof.position.clone();
     hoof.userData.restRot = hoof.rotation.clone();
     hoof.userData.reloadStyle = 'cylinder';
-    vmGroup.add(hoof);
-    vmGroup.userData.hoof = hoof;
-  } else if (type === 'm249') {
-    buildM249ViewModel(vmGroup);
-    const hoof = buildHoof();
-    hoof.position.set(-0.8, -0.5, -10);
-    hoof.rotation.set(-0.2, 0.1, 0.5);
-    hoof.userData.restPos = hoof.position.clone();
-    hoof.userData.restRot = hoof.rotation.clone();
-    hoof.userData.reloadStyle = 'magswap';
-    vmGroup.add(hoof);
-    vmGroup.userData.hoof = hoof;
-  } else if (type === 'minigun') {
-    buildMinigunViewModel(vmGroup);
-    const hoof = buildHoof();
-    hoof.position.set(-0.8, -0.5, -8);
-    hoof.rotation.set(-0.2, 0.1, 0.5);
-    hoof.userData.restPos = hoof.position.clone();
-    hoof.userData.restRot = hoof.rotation.clone();
-    hoof.userData.reloadStyle = 'belt';
     vmGroup.add(hoof);
     vmGroup.userData.hoof = hoof;
   }
