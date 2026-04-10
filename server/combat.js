@@ -356,7 +356,7 @@ function handleDash(player) {
     player.z = getGroundHeight(player.x, player.y);
     player.vz = 0;
     player.dashCooldown = 3 * (player.dashCdMult || 1);
-    broadcast({ type: 'dash', playerId: player.id });
+    player._justDashed = true;  // event flag, rides the next tick
   }
 }
 

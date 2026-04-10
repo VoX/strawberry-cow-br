@@ -14,7 +14,7 @@ const { generateMap } = require('./map');
 const { getGroundHeight, WALL_HEIGHT, generateTerrain, getSeed } = require('./terrain');
 const { spawnInitialFood, spawnFood, spawnGoldenFood, spawnWeaponPickup, safeRandPos } = require('./spawning');
 const { spawnBots, updateBots } = require('./bots');
-const { getPlayerStates, getPlayerTicks, applyHungerDelta, resolveDeaths, clearPendingDeaths, eliminatePlayer, serializeFood, buildServerStatus } = require('./player');
+const { getPlayerStates, getPlayerTicks, clearEventFlags, applyHungerDelta, resolveDeaths, clearPendingDeaths, eliminatePlayer, serializeFood, buildServerStatus } = require('./player');
 const { handleWeaponPickups, handleArmorPickups } = require('./weapons');
 const { updateProjectiles } = require('./combat');
 const { rand } = require('./utils');
@@ -374,6 +374,9 @@ function gameTick() {
     }
     transport.sendUnreliable(p.ws, tickPayload);
   }
+
+  // Clear one-tick event flags now that all clients have the data.
+  clearEventFlags();
 
   // inputAck at 15 Hz (every 2nd tick) — seq-based reconciliation for the
   // local player. SI handles remote player interpolation; this handles

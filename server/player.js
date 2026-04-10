@@ -102,7 +102,21 @@ function getPlayerTick(p) {
     recoilMult: p.recoilMult || 1, extMagMult: p.extMagMult || 1,
     xpToNext: p.xpToNext || 50,
     personality: p.personality || null,
+    // Event flags — set for ONE tick then cleared by clearEventFlags().
+    // Client detects rising edge to trigger visuals/audio.
+    justDashed: !!p._justDashed,
+    justEliminated: !!p._justEliminated,
+    eliminatedRank: p._eliminatedRank || 0,
   };
+}
+
+// Clear one-tick event flags after the tick broadcast.
+function clearEventFlags() {
+  for (const [, p] of gameState.getPlayers()) {
+    p._justDashed = false;
+    p._justEliminated = false;
+    p._eliminatedRank = 0;
+  }
 }
 
 function getPlayerTicks() {
@@ -142,8 +156,9 @@ function eliminatePlayer(p, reason) {
     broadcast({ type: 'weaponSpawn', id: drop.id, x: drop.x, y: drop.y, weapon: drop.weapon });
     p.weapon = 'normal'; p.dualWield = false;
   }
-  broadcast({ type: 'eliminated', playerId: p.id, name: p.name, rank: remaining + 1, x: p.x, y: p.y, z: p.z });
-  broadcast(buildServerStatus());
+  // Event flags — client detects alive→false + these fields in the next tick.
+  p._justEliminated = true;
+  p._eliminatedRank = remaining + 1;
 }
 
 function serializeFood(f) {
@@ -158,4 +173,4 @@ function buildServerStatus() {
   return { type: 'serverStatus', gameState: lobbyState.getPhase(), alive, total, debugScene: gameState.isDebugScene() };
 }
 
-module.exports = { assignColor, getPlayerStates, getPlayerTick, getPlayerTicks, applyHungerDelta, applyArmorDelta, resolveDeaths, clearPendingDeaths, eliminatePlayer, serializeFood, buildServerStatus };
+module.exports = { assignColor, getPlayerStates, getPlayerTick, getPlayerTicks, clearEventFlags, applyHungerDelta, applyArmorDelta, resolveDeaths, clearPendingDeaths, eliminatePlayer, serializeFood, buildServerStatus };

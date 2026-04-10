@@ -340,6 +340,36 @@ export const handlers = {
       }
     }
 
+    // Process event flags from tick data — these fire visuals/audio that
+    // previously came as separate reliable messages.
+    for (const p of S.serverPlayers) {
+      if (p.justDashed) {
+        // Trigger dash dust effect (was the 'dash' handler).
+        const smooth = p.id === S.myId ? { x: p.x, y: p.y } : getInterpolatedEntity(p);
+        const th = getTerrainHeight(smooth.x, smooth.y);
+        for (let i = 0; i < 15; i++) {
+          const sz = 3 + Math.random() * 4;
+          spawnParticle({ geo: PGEO_SPHERE_LO, color: 0xcccccc, x: smooth.x + (Math.random() - 0.5) * 20, y: th + 5 + Math.random() * 15, z: smooth.y + (Math.random() - 0.5) * 20, sx: sz, life: 0.8 + Math.random() * 0.4, peakOpacity: 0.6, vy: 30, growth: 1.8 });
+        }
+        sfx(300, 0.15, 'sine', 0.08);
+      }
+      if (p.justEliminated) {
+        // Trigger elimination effects (was the 'eliminated' handler).
+        addKillFeed(p.name + ' eliminated (#' + (p.eliminatedRank || '?') + ')', 5);
+        if (p.id === S.myId) {
+          sfxDeath();
+          S.perkMenuOpen = false;
+          S.pendingLevelUps = 0;
+          const pm = document.getElementById('perkMenu'); if (pm) pm.style.display = 'none';
+          if (S.killerId) S.spectateTargetId = S.killerId;
+          else {
+            const firstAlive = S.serverPlayers.find(sp => sp.alive && sp.id !== S.myId);
+            if (firstAlive) S.spectateTargetId = firstAlive.id;
+          }
+        }
+      }
+    }
+
     // Sync server-only movement gates onto predicted player.
     const me = S.serverPlayers.find(p => p.id === S.myId);
     if (me && S.mePredicted) {
@@ -853,22 +883,7 @@ export const handlers = {
     sfxExplosion(0.15, { x: ex, y: th + 10, z: ey });
   },
 
-  eliminated(msg) {
-    addKillFeed(msg.name + ' eliminated (#' + (msg.rank || '?') + ')', 5);
-    if (msg.playerId === S.myId) {
-      sfxDeath();
-      // Hide perk menu on death
-      S.perkMenuOpen = false;
-      S.pendingLevelUps = 0;
-      const pm = document.getElementById('perkMenu'); if (pm) pm.style.display = 'none';
-      // If we have a tracked killer, lock spectate to them. Otherwise pick any alive player.
-      if (S.killerId) S.spectateTargetId = S.killerId;
-      else {
-        const firstAlive = S.serverPlayers.find(p => p.alive && p.id !== S.myId);
-        if (firstAlive) S.spectateTargetId = firstAlive.id;
-      }
-    }
-  },
+  // eliminated — now handled via justEliminated event flag in tick handler.
 
   chat(msg) {
     S.chatLog.push({ name: msg.name, color: msg.color, text: msg.text, t: 10 });
@@ -1176,29 +1191,7 @@ export const handlers = {
     addKillFeed('Bot free will ' + (msg.enabled ? 'granted' : 'revoked'), 3);
   },
 
-  dash(msg) {
-    const dasher = S.serverPlayers.find(p => p.id === msg.playerId);
-    if (dasher) {
-      // Use interpolated position for remote dashers so the dust lands on
-      // the visible cow, not 100 ms ahead of it.
-      const smooth = dasher.id === S.myId
-        ? { x: dasher.x, y: dasher.y }
-        : getInterpolatedEntity(dasher);
-      const th = getTerrainHeight(smooth.x, smooth.y);
-      for (let i = 0; i < 15; i++) {
-        const sz = 3 + Math.random() * 4;
-        spawnParticle({
-          geo: PGEO_SPHERE_LO, color: 0xcccccc,
-          x: smooth.x + (Math.random() - 0.5) * 20,
-          y: th + 5 + Math.random() * 15,
-          z: smooth.y + (Math.random() - 0.5) * 20,
-          sx: sz, life: 0.8 + Math.random() * 0.4, peakOpacity: 0.6,
-          vy: 30, growth: 1.8,
-        });
-      }
-    }
-    sfx(300, 0.15, 'sine', 0.08);
-  },
+  // dash — now handled via justDashed event flag in tick handler.
 
   weaponPickup(msg) {
     S.clientWeapons = S.clientWeapons.filter(w => w.id !== msg.pickupId);
