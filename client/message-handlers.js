@@ -34,11 +34,31 @@ const _tmpDir = new THREE.Vector3();
 
 // Play a sound file with slight pitch + volume randomization to reduce
 // repetitiveness. Games use ±5-10% pitch variation per shot.
+// Preloaded audio cache — prevents network fetch stutter on first shot.
+// Each file is loaded once, then cloneNode'd for concurrent playback.
+const _audioCache = {};
+function _preload(file) {
+  if (_audioCache[file]) return;
+  const a = new Audio(file);
+  a.preload = 'auto';
+  a.load();
+  _audioCache[file] = a;
+}
+// Preload all weapon sounds at module init
+['mp5sd-shot.ogg', 'python-shot.ogg', 'thompson-shot.ogg', 'ak-shot.ogg',
+ 'm16-shot.ogg', 'aug-shot.ogg', 'headshot.mp3', 'hitmarker.mp3',
+ 'weapon-pickup.mp3', 'shield-pickup.mp3',
+ 'minigunA.ogg', 'minigunB.ogg', 'minigunC.ogg', 'minigunD.ogg',
+ 'LRA.ogg', 'LRB.ogg', 'LRC.ogg', 'LRD.ogg',
+].forEach(_preload);
+
 function playSfx(file, baseVol = 0.3) {
-  const snd = new Audio(file);
+  const cached = _audioCache[file];
+  const snd = cached ? cached.cloneNode() : new Audio(file);
+  if (!cached) _preload(file); // cache for next time
   const vol = (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5) * baseVol;
-  snd.volume = vol * (0.9 + Math.random() * 0.2); // ±10% volume
-  snd.playbackRate = 0.93 + Math.random() * 0.14; // ±7% pitch
+  snd.volume = vol * (0.9 + Math.random() * 0.2);
+  snd.playbackRate = 0.93 + Math.random() * 0.14;
   snd.play().catch(() => {});
 }
 
