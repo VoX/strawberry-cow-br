@@ -18,8 +18,12 @@
 
 const gameState = require('./game-state');
 const { broadcast } = require('./network');
-// applyHungerDelta removed — firing no longer drains milk (ammo system replaces it).
 const { BURST_FAMILY, MAG_SIZES } = require('../shared/constants');
+const ballistics = require('./ballistics');
+const { getTerrainHeight, WALL_HEIGHT } = require('./terrain');
+
+const GRAVITY = 600; // must match shared/constants
+const MAX_HITSCAN_RANGE = 3000; // max ray length in units
 
 // --- Player base stats ----------------------------------------------------
 // Every cost/gate has the shape (minFloor, base) so `Math.max(minFloor, base - hungerDiscount)`
@@ -223,6 +227,125 @@ function _spawnProjectile(shooter, posX, posY, posZ, dirX, dirY, dirZ, speed, dm
   };
   if (delayMs) gameState.scheduleRoundTimer(() => broadcast(bc), delayMs);
   else broadcast(bc);
+}
+
+// --- Hitscan fire -----------------------------------------------------------
+// Instant ray trace with analytical bullet drop. Damage delayed by travel time.
+// No projectile entity created. Broadcasts unreliable tracer for visuals.
+function fireHitscan(shooter, weapon, aim, stats, opts = {}) {
+  const { dualWield = false, dmgMult = 1, eyeHeight, fireServerTime = null, walkSpreadMult = 1 } = opts;
+  const perkDmgMult = (shooter.perks && shooter.perks.damage) || 1;
+  const eyeZ = shooter.z + (eyeHeight ? eyeHeight(shooter) : 0);
+  let ax = aim.ax, ay = aim.ay, az = aim.az;
+
+  // Apply spread
+  if (stats.spreadBase > 0) {
+    const spread = stats.spreadBase * walkSpreadMult * (dualWield ? 1.5 : 1);
+    ax += (Math.random() - 0.5) * spread * 2;
+    ay += (Math.random() - 0.5) * spread * 2;
+    az += (Math.random() - 0.5) * (stats.vzSpreadBase || spread) * 2;
+  }
+  const alen = Math.hypot(ax, ay, az);
+  if (alen > 0.01) { ax /= alen; ay /= alen; az /= alen; }
+
+  // Ray endpoints
+  const fromX = shooter.x, fromY = shooter.y, fromZ = eyeZ;
+  const range = MAX_HITSCAN_RANGE;
+  const toX = fromX + ax * range, toY = fromY + ay * range;
+  // Apply analytical drop at max range for the endpoint
+  const maxTravelTime = range / stats.speed;
+  const maxDrop = 0.5 * GRAVITY * maxTravelTime * maxTravelTime;
+  const toZ = fromZ + az * range - maxDrop;
+
+  // Lag compensation — rewind players for hit check
+  const players = gameState.getPlayers();
+  let playersForHit = players;
+  if (fireServerTime != null) {
+    let _SI = null;
+    try { _SI = require('./game').SI; } catch (e) {}
+    if (_SI) {
+      const siVault = _SI.vault;
+      const snapPair = siVault.get(fireServerTime);
+      if (snapPair && snapPair.older && snapPair.newer) {
+        const interp = _SI.interpolate(snapPair.older, snapPair.newer, fireServerTime, 'x y z');
+        if (interp && interp.state) {
+          const { _buildRewoundPlayers } = require('./combat');
+          if (_buildRewoundPlayers) playersForHit = _buildRewoundPlayers(interp.state, players);
+        }
+      }
+    }
+  }
+
+  // Check walls/barricades along the ray
+  const walls = gameState.getWalls();
+  const barricades = gameState.getBarricades();
+  let blockT = 1.01;
+  if (!stats.wallPiercing) {
+    const wres = ballistics.segVsWalls(fromX, fromY, fromZ, toX, toY, toZ, walls, getTerrainHeight, WALL_HEIGHT);
+    blockT = wres.blockT;
+  }
+  const bres = ballistics.segVsBarricades(fromX, fromY, fromZ, toX, toY, toZ, barricades, blockT);
+  if (bres.hitBarricade) blockT = bres.blockT;
+
+  // Check player hit
+  const hitPlayer = ballistics.findPlayerHit(fromX, fromY, fromZ, toX, toY, toZ, playersForHit, shooter.id, blockT, eyeHeight || (() => 40));
+
+  // Compute impact point
+  let impactX, impactY, impactZ;
+  let hitTargetId = null;
+  let headshot = false;
+  const dmg = stats.dmg * perkDmgMult * dmgMult;
+
+  if (hitPlayer) {
+    const p = hitPlayer._rewound ? players.get(hitPlayer.id) : hitPlayer;
+    if (p && p.alive) {
+      hitTargetId = p.id;
+      headshot = !!hitPlayer._wasHeadshot;
+      impactX = p.x; impactY = p.y; impactZ = p.z + 20;
+      const dist = Math.hypot(p.x - fromX, p.y - fromY);
+      const travelTime = dist / stats.speed;
+
+      // Delayed damage
+      const finalDmg = headshot ? dmg * 1.8 : dmg;
+      const { applyHungerDelta, applyArmorDelta } = require('./player');
+      gameState.scheduleRoundTimer(() => {
+        const target = gameState.getPlayer(hitTargetId);
+        if (!target || !target.alive) return;
+        if (target.armor > 0) {
+          applyArmorDelta(target, -finalDmg * 0.5);
+          const remaining = finalDmg * 0.5;
+          applyHungerDelta(target, -remaining, shooter.id);
+        } else {
+          applyHungerDelta(target, -finalDmg, shooter.id);
+        }
+        target.lastAttacker = shooter.id;
+        target.stunTimer = Math.max(target.stunTimer || 0, 0.1);
+      }, travelTime * 1000);
+    }
+  }
+
+  if (!impactX) {
+    // Hit wall/terrain/max range
+    const t = Math.min(blockT, 1);
+    impactX = fromX + (toX - fromX) * t;
+    impactY = fromY + (toY - fromY) * t;
+    impactZ = fromZ + (toZ - fromZ) * t;
+  }
+
+  const dist = Math.hypot(impactX - fromX, impactY - fromY);
+  const travelTime = dist / stats.speed;
+
+  // Broadcast unreliable tracer
+  broadcast({
+    type: 'tracer',
+    fromX, fromY, fromZ,
+    toX: impactX, toY: impactY, toZ: impactZ,
+    weapon, ownerId: shooter.id, color: shooter.color,
+    travelTime,
+    hit: hitTargetId, headshot,
+  });
+
+  return true;
 }
 
 // Main entry point. `stats` is the resolved (post-perk) per-shot numbers.
@@ -433,4 +556,4 @@ function resetAfterCowtank(shooter) {
   // No broadcast — weapon change rides next tick's player state.
 }
 
-module.exports = { fireWeapon, resolvePlayerStats, extractShooterModifiers, BOT_STATS, resetAfterCowtank };
+module.exports = { fireWeapon, fireHitscan, resolvePlayerStats, extractShooterModifiers, BOT_STATS, resetAfterCowtank };

@@ -21,6 +21,7 @@ const S2C = Object.freeze({
   inputAck: 'inputAck',
   projectile: 'projectile',
   projectileHit: 'projectileHit',
+  tracer: 'tracer',
   wallImpact: 'wallImpact',
   explosion: 'explosion',
   chat: 'chat',

@@ -913,6 +913,74 @@ export const handlers = {
     }
   },
 
+  // Hitscan tracer — cosmetic visual from shooter to impact point.
+  // Animated at bullet speed, auto-disposes on arrival.
+  tracer(msg) {
+    const fromX = msg.fromX, fromY = msg.fromY, fromZ = msg.fromZ;
+    let toX = msg.toX, toY = msg.toY, toZ = msg.toZ;
+    const travelTime = (msg.travelTime || 0.1) * 1000; // ms
+
+    // Own shots: offset from to muzzle position
+    let spawnX = fromX, spawnY = fromY, spawnZ = fromZ;
+    if (msg.ownerId === S.myId) {
+      const wep = S.me ? S.me.weapon : 'normal';
+      const MUZZLES = {
+        normal: { x: 2, y: -2.8, z: -13 }, minigun: { x: 0, y: -3, z: -24 },
+        m249: { x: 3, y: -2.5, z: -22 }, python: { x: 2, y: -2.8, z: -10 },
+      };
+      const m = MUZZLES[wep] || MUZZLES.normal;
+      const mDir = new THREE.Vector3(m.x, m.y, m.z).applyQuaternion(cam.quaternion);
+      spawnX = cam.position.x + mDir.x;
+      spawnZ = cam.position.y + mDir.y;
+      spawnY = cam.position.z + mDir.z;
+      // Own weapon sound
+      sfxShoot();
+    } else {
+      // Remote weapon sound
+      const th = getTerrainHeight(fromX, fromY);
+      sfxShoot(0.07, { x: fromX, y: th + 50, z: fromY });
+    }
+
+    // Create tracer mesh
+    const sz = 0.75;
+    const length = sz * 4, radius = sz * 0.8;
+    const group = new THREE.Group();
+    const casingMat = new THREE.MeshBasicMaterial({ color: 0xaa7744 });
+    const casing = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, length * 0.6, 8), casingMat);
+    casing.rotation.x = Math.PI / 2; group.add(casing);
+    const tipMat = new THREE.MeshBasicMaterial({ color: 0xffdd88 });
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(radius, length * 0.4, 8), tipMat);
+    tip.rotation.x = Math.PI / 2; tip.position.z = length / 2; group.add(tip);
+    const glow = new THREE.Mesh(new THREE.CylinderGeometry(radius * 2.4, radius * 0.6, length * 1.5, 6), new THREE.MeshBasicMaterial({ color: 0xffdd88, transparent: true, opacity: 0.25 }));
+    glow.rotation.x = Math.PI / 2; glow.position.z = -length * 0.6; group.add(glow);
+    group.position.set(spawnX, spawnZ, spawnY);
+    scene.add(group);
+
+    const startT = performance.now();
+    const anim = () => {
+      const elapsed = performance.now() - startT;
+      const progress = Math.min(1, elapsed / travelTime);
+      const x = spawnX + (toX - spawnX) * progress;
+      const y = spawnY + (toY - spawnY) * progress;
+      const z = spawnZ + (toZ - spawnZ) * progress;
+      group.position.set(x, z, y);
+      // Look at the next point
+      const ahead = Math.min(1, progress + 0.05);
+      const ax = spawnX + (toX - spawnX) * ahead;
+      const ay = spawnY + (toY - spawnY) * ahead;
+      const az = spawnZ + (toZ - spawnZ) * ahead;
+      group.lookAt(ax, az, ay);
+      if (progress >= 1) {
+        scene.remove(group);
+        casingMat.dispose(); tipMat.dispose(); glow.material.dispose();
+        casing.geometry.dispose(); tip.geometry.dispose(); glow.geometry.dispose();
+        return;
+      }
+      requestAnimationFrame(anim);
+    };
+    requestAnimationFrame(anim);
+  },
+
   explosion(msg) {
     const ex = msg.x, ey = msg.y, er = msg.radius || 120;
     const th = getTerrainHeight(ex, ey);

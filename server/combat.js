@@ -64,6 +64,21 @@ function handleAttack(player, msg) {
     ax = dd[0]; ay = dd[1]; az = 0;
   } else { ax /= alen3d; ay /= alen3d; az /= alen3d; }
 
+  // Minigun uses hitscan — 2 rays per shot for visual 1200 RPM
+  if (weapon === 'minigun') {
+    const hsOpts = {
+      dualWield, dmgMult, eyeHeight,
+      walkSpreadMult: player.walking ? 0.73 : 1,
+      fireServerTime: typeof msg.serverTime === 'number' ? msg.serverTime : null,
+    };
+    for (let i = 0; i < (stats.pellets || 2); i++) {
+      weaponFire.fireHitscan(player, weapon, { ax, ay, az }, stats, hsOpts);
+    }
+    player.attackCooldown = stats.cooldown * cdMult;
+    if (MAG_SIZES[weapon]) player.ammo = Math.max(0, player.ammo - 1);
+    return;
+  }
+
   const fired = weaponFire.fireWeapon(player, weapon, { ax, ay, az }, stats, {
     walkSpreadMult: player.walking ? 0.73 : 1,
     dualWield,
@@ -489,4 +504,4 @@ function cancelReload(player) {
   if (player.reloadTimer) { clearTimeout(player.reloadTimer); player.reloadTimer = null; }
 }
 
-module.exports = { handleAttack, handleMelee, updateProjectiles, handleDash, handleReload, cancelReload, getMaxAmmo, placeBarricadeForPlayer, eyeHeight };
+module.exports = { handleAttack, handleMelee, updateProjectiles, handleDash, handleReload, cancelReload, getMaxAmmo, placeBarricadeForPlayer, eyeHeight, _buildRewoundPlayers };
