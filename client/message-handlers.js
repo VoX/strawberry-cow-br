@@ -934,10 +934,22 @@ export const handlers = {
         minigun: { x: 0, y: -3, z: -24 },
       };
       const m = MUZZLES[wep] || MUZZLES.normal;
-      const mDir = new THREE.Vector3(m.x, m.y, m.z).applyQuaternion(cam.quaternion);
-      spawnX = cam.position.x + mDir.x;
-      spawnZ = cam.position.y + mDir.y;
-      spawnY = cam.position.z + mDir.z;
+      // Skip muzzle offset at steep pitch angles — the muzzle position
+      // diverges too much from the server's ray origin, causing the
+      // tracer to fly flat instead of downward. At steep angles the
+      // player is looking at the ground, not their gun, so the visual
+      // difference is negligible.
+      const pitchSteep = Math.abs(S.pitch) > 0.6;
+      if (pitchSteep) {
+        spawnX = cam.position.x;
+        spawnZ = cam.position.y;
+        spawnY = cam.position.z;
+      } else {
+        const mDir = new THREE.Vector3(m.x, m.y, m.z).applyQuaternion(cam.quaternion);
+        spawnX = cam.position.x + mDir.x;
+        spawnZ = cam.position.y + mDir.y;
+        spawnY = cam.position.z + mDir.z;
+      }
       // Own weapon sound
       if (wep === 'bolty') { sfxBolty(); setTimeout(() => { forceUnADS(); S._boltRacking = true; }, 100); setTimeout(() => { S._boltRacking = false; }, 2500); }
       else if (wep === 'shotgun') sfxShotgun(0.1);
