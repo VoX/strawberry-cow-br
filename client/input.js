@@ -66,7 +66,15 @@ export function toggleFullscreen() {
 // Fire mode toggle for LR-300
 S.fireMode = 'burst';
 let mouseDown = false, autoFireActive = false, nextFireTime = 0;
-const AUTO_FIRE_INTERVAL = 72; // ms between shots — slightly over server cooldown (67ms) to avoid rejected shots
+// Dynamic fire interval based on weapon — slightly over server cooldown to avoid rejected shots.
+const WEAPON_FIRE_INTERVALS = {
+  mp5k: 70, thompson: 90, burst: 78, aug: 91, akm: 103,
+  m249: 74, minigun: 23, normal: 155, python: 155, sks: 180,
+};
+function getAutoFireInterval() {
+  const wep = S.me ? S.me.weapon : 'normal';
+  return WEAPON_FIRE_INTERVALS[wep] || 75;
+}
 
 function autoFireLoop() {
   if (!autoFireActive) return;
@@ -77,7 +85,7 @@ function autoFireLoop() {
   const now = performance.now();
   if (now >= nextFireTime) {
     doAttack();
-    nextFireTime = now + AUTO_FIRE_INTERVAL;
+    nextFireTime = now + getAutoFireInterval();
   }
   requestAnimationFrame(autoFireLoop);
 }
@@ -232,7 +240,7 @@ if (isMobile) {
     const now = performance.now();
     if (now >= nextFireTime) {
       doAttack();
-      nextFireTime = now + AUTO_FIRE_INTERVAL;
+      nextFireTime = now + getAutoFireInterval();
     }
     requestAnimationFrame(touchAutoLoop);
   }
@@ -241,7 +249,7 @@ if (isMobile) {
     e.preventDefault();
     doAttack();
     _touchFiring = true;
-    if (nextFireTime < performance.now()) nextFireTime = performance.now() + AUTO_FIRE_INTERVAL;
+    if (nextFireTime < performance.now()) nextFireTime = performance.now() + getAutoFireInterval();
     touchAutoLoop();
   }, { passive: false });
   shootBtn.addEventListener('touchend', e => { _touchFiring = false; }, { passive: true });

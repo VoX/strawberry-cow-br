@@ -44,7 +44,7 @@ const PLAYER_STATS_BASE = {
     // 92 ms intra-burst = ~650 RPM, which is +30% over the auto rate by design.
     cooldown: 0.8, dmg: 14, speed: 7286, spreadBase: 0, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
     burstStepMs: 92,
-    auto: { hungerCost: [1, 2], cooldown: 0.12, dmg: 14, speed: 6624, spreadBase: 0.022, pellets: 1, dualPelletMult: 2 },
+    auto: { hungerCost: [1, 2], cooldown: 0.075, dmg: 8.7, speed: 6624, spreadBase: 0.022, pellets: 1, dualPelletMult: 2 },
     semi: { hungerCost: [1, 2], cooldown: 0.24, dmg: 14, speed: 7286, spreadBase: 0, pellets: 1, dualPelletMult: 2 },
   },
   shotgun: {
@@ -70,13 +70,12 @@ const PLAYER_STATS_BASE = {
     hungerGate: [2, 5], hungerCost: [1, 3],
     cooldown: 0.6, dmg: 9, speed: 2848, spreadBase: 0.022, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
     burstStepMs: 92, defaultMode: 'auto',
-    auto: { hungerCost: [1, 2], cooldown: 0.1, dmg: 9, speed: 2588, spreadBase: 0.044, pellets: 1, dualPelletMult: 2 },
+    auto: { hungerCost: [1, 2], cooldown: 0.067, dmg: 6, speed: 2588, spreadBase: 0.044, pellets: 1, dualPelletMult: 2 },
   },
-  // Thompson — classic SMG. Full auto only, no burst/semi. Higher damage
-  // and spread than MP5K but slower fire rate (462 RPM). Cannot dual-wield.
+  // Thompson — 700 RPM full auto. Classic SMG.
   thompson: {
     hungerGate: [2, 5], hungerCost: [1, 3],
-    cooldown: 0.13, dmg: 8, speed: 2622, spreadBase: 0.0506, pellets: 1, spawnOffset: 40,
+    cooldown: 0.086, dmg: 5.3, speed: 2622, spreadBase: 0.0506, pellets: 1, spawnOffset: 40,
     autoOnly: true,
   },
   // AKM — assault rifle. Semi + full auto, no burst. Higher damage than
@@ -84,7 +83,7 @@ const PLAYER_STATS_BASE = {
   akm: {
     hungerGate: [2, 6], hungerCost: [2, 5],
     cooldown: 0.3, dmg: 13, speed: 4934, spreadBase: 0, pellets: 1, spawnOffset: 40,
-    auto: { hungerCost: [1, 3], cooldown: 0.133, dmg: 13, speed: 4934, spreadBase: 0.03, pellets: 1, dualPelletMult: 1 },
+    auto: { hungerCost: [1, 3], cooldown: 0.1, dmg: 9.8, speed: 4934, spreadBase: 0.03, pellets: 1, dualPelletMult: 1 },
     semi: { hungerCost: [1, 3], cooldown: 0.22, dmg: 13, speed: 4934, spreadBase: 0.008, pellets: 1, dualPelletMult: 1 },
     defaultMode: 'auto',
   },
@@ -112,21 +111,21 @@ const PLAYER_STATS_BASE = {
   // 50% move speed penalty. 5.56 NATO damage. MP5K spread.
   m249: {
     hungerGate: [2, 6], hungerCost: [2, 5],
-    cooldown: 0.1, dmg: 14, speed: 6624, spreadBase: 0.044, pellets: 1, spawnOffset: 40,
+    cooldown: 0.071, dmg: 9.9, speed: 6624, spreadBase: 0.044, pellets: 1, spawnOffset: 40,
     autoOnly: true,
   },
   // Minigun — 300 rounds, 600 RPM full auto. 30% move speed.
   // Minigun: 1200 RPM single pellet hitscan. No server cost per shot.
   minigun: {
     hungerGate: [2, 6], hungerCost: [2, 5],
-    cooldown: 0.05, dmg: 4.5, speed: 6624, spreadBase: 0.088, pellets: 1, spawnOffset: 40,
+    cooldown: 0.02, dmg: 1.8, speed: 6624, spreadBase: 0.088, pellets: 1, spawnOffset: 40,
     autoOnly: true, volleyed: true, vzSpreadBase: 0.08, life: 1.0,
   },
   aug: {
     hungerGate: [2, 6], hungerCost: [2, 5],
     cooldown: 0.615, dmg: 14, speed: 9816, spreadBase: 0, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
     burstStepMs: 92,
-    auto: { hungerCost: [1, 2], cooldown: 0.133, dmg: 14, speed: 8924, spreadBase: 0.022, pellets: 1, dualPelletMult: 1 },
+    auto: { hungerCost: [1, 2], cooldown: 0.088, dmg: 9.3, speed: 8924, spreadBase: 0.022, pellets: 1, dualPelletMult: 1 },
     semi: { hungerCost: [1, 2], cooldown: 0.266, dmg: 14, speed: 9816, spreadBase: 0, pellets: 1, dualPelletMult: 1 },
   },
 };

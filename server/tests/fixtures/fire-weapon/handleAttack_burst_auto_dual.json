@@ -33,7 +33,7 @@
   ],
   "mutations": {
     "ammo": 48,
-    "attackCooldown": 0.12
+    "attackCooldown": 0.075
   },
   "projectiles": []
 }
