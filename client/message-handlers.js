@@ -935,6 +935,27 @@ export const handlers = {
       spawnY = cam.position.z + mDir.z;
       // Own weapon sound
       sfxShoot();
+
+      // Apply recoil (mirrors projectile handler logic)
+      const recoilPattern = [
+        { p: 0.005, y: () => (Math.random() - 0.5) * 0.006 },
+      ];
+      if (S.me) {
+        const now = performance.now();
+        if (now - S.recoilTimer > 500) S.recoilIndex = 0;
+        S.recoilTimer = now;
+        const r = recoilPattern[S.recoilIndex % recoilPattern.length];
+        const tacticowMod = S.me.recoilMult || 1;
+        const walkingMod = S.crouching ? 0.73 : 1;
+        const dualMod = S.me.dualWield ? 1.3 : 1;
+        const recoilMult = tacticowMod * walkingMod * dualMod;
+        const rp = typeof r.p === 'function' ? r.p() : r.p;
+        const ry = typeof r.y === 'function' ? r.y() : r.y;
+        S.pitch += rp * recoilMult;
+        S.yaw += ry * recoilMult;
+        S.pitch = Math.max(-1.2, Math.min(1.2, S.pitch));
+        S.recoilIndex++;
+      }
     } else {
       // Remote weapon sound
       const th = getTerrainHeight(fromX, fromY);
