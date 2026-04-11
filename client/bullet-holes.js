@@ -76,9 +76,7 @@ export function updateBulletHoles(dt) {
       _holes.splice(i, 1);
       continue;
     }
-    if (h.life < HOLE_FADE) {
-      h.mat.opacity = (h.life / HOLE_FADE) * HOLE_PEAK_OPACITY;
-    }
+    // No fade — holes stay fully opaque until removed by lifetime or cap
   }
 }
 
