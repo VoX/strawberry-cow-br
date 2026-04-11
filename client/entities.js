@@ -507,6 +507,8 @@ export function updateCows(time, dt) {
         cowObj.shieldBubble.material.dispose();
         cowObj.shieldBubble = null;
       } else {
+        // Hide blue shield when gold spawn protection is active
+        cowObj.shieldBubble.visible = !p.spawnProt;
         cowObj.shieldBubble.material.opacity = Math.max(0.2, armorVal / 100 * 0.6);
       }
     }
