@@ -32,27 +32,27 @@ const MAX_HITSCAN_RANGE = 3000; // max ray length in units
 const PLAYER_STATS_BASE = {
   normal: {
     hungerGate: [1, 3], hungerCost: [1, 2],
-    cooldown: 0.15, dmg: 9, speed: 1294, spreadBase: 0.0286, pellets: 1, spawnOffset: 40,
+    cooldown: 0.15, dmg: 9, speed: 2588, spreadBase: 0.0286, pellets: 1, spawnOffset: 40,
   },
   burst: {
     hungerGate: [2, 6], hungerCost: [2, 5],
     // Burst-cycle cooldown (time between 3-round bursts, not between rounds
     // inside a burst — that's the 92 ms delay hardcoded in the burst loop).
     // 92 ms intra-burst = ~650 RPM, which is +30% over the auto rate by design.
-    cooldown: 0.8, dmg: 14, speed: 3643, spreadBase: 0, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
+    cooldown: 0.8, dmg: 14, speed: 7286, spreadBase: 0, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
     burstStepMs: 92,
-    auto: { hungerCost: [1, 2], cooldown: 0.12, dmg: 14, speed: 3312, spreadBase: 0.022, pellets: 1, dualPelletMult: 2 },
-    semi: { hungerCost: [1, 2], cooldown: 0.24, dmg: 14, speed: 3643, spreadBase: 0, pellets: 1, dualPelletMult: 2 },
+    auto: { hungerCost: [1, 2], cooldown: 0.12, dmg: 14, speed: 6624, spreadBase: 0.022, pellets: 1, dualPelletMult: 2 },
+    semi: { hungerCost: [1, 2], cooldown: 0.24, dmg: 14, speed: 7286, spreadBase: 0, pellets: 1, dualPelletMult: 2 },
   },
   shotgun: {
     hungerGate: [3, 10], hungerCost: [3, 9],
     cooldown: 0.9, cooldownDualMult: 0.55 / 0.9, // dual benelli halves cooldown; matches original 0.55
-    dmg: 4, speed: 1380, spreadBase: 0.157, pellets: 10, spawnOffset: 40,
+    dmg: 4, speed: 2760, spreadBase: 0.157, pellets: 10, spawnOffset: 40,
     volleyed: true, broadcastTag: 'shotgun', vzSpreadBase: 0.2,
   },
   bolty: {
     hungerGate: [3, 8], hungerCost: [3, 7],
-    cooldown: 2.5, dmg: 50, speed: 16800, spreadBase: 0, pellets: 1, spawnOffset: 40,
+    cooldown: 2.5, dmg: 50, speed: 33600, spreadBase: 0, pellets: 1, spawnOffset: 40,
     wallPiercing: true, broadcastTag: 'bolty',
   },
   cowtank: {
@@ -65,31 +65,31 @@ const PLAYER_STATS_BASE = {
   // 3-round burst with 92ms step). Faster cycle than LR in all modes.
   mp5k: {
     hungerGate: [2, 5], hungerCost: [1, 3],
-    cooldown: 0.6, dmg: 9, speed: 1424, spreadBase: 0.022, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
+    cooldown: 0.6, dmg: 9, speed: 2848, spreadBase: 0.022, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
     burstStepMs: 92, defaultMode: 'auto',
-    auto: { hungerCost: [1, 2], cooldown: 0.1, dmg: 9, speed: 1294, spreadBase: 0.044, pellets: 1, dualPelletMult: 2 },
+    auto: { hungerCost: [1, 2], cooldown: 0.1, dmg: 9, speed: 2588, spreadBase: 0.044, pellets: 1, dualPelletMult: 2 },
   },
   // Thompson — classic SMG. Full auto only, no burst/semi. Higher damage
   // and spread than MP5K but slower fire rate (462 RPM). Cannot dual-wield.
   thompson: {
     hungerGate: [2, 5], hungerCost: [1, 3],
-    cooldown: 0.13, dmg: 8, speed: 1311, spreadBase: 0.0506, pellets: 1, spawnOffset: 40,
+    cooldown: 0.13, dmg: 8, speed: 2622, spreadBase: 0.0506, pellets: 1, spawnOffset: 40,
     autoOnly: true,
   },
   // AKM — assault rifle. Semi + full auto, no burst. Higher damage than
   // M16 family, more spread and recoil. 450 RPM. 30 round mag.
   akm: {
     hungerGate: [2, 6], hungerCost: [2, 5],
-    cooldown: 0.3, dmg: 13, speed: 2467, spreadBase: 0, pellets: 1, spawnOffset: 40,
-    auto: { hungerCost: [1, 3], cooldown: 0.133, dmg: 13, speed: 2467, spreadBase: 0.03, pellets: 1, dualPelletMult: 1 },
-    semi: { hungerCost: [1, 3], cooldown: 0.22, dmg: 13, speed: 2467, spreadBase: 0.008, pellets: 1, dualPelletMult: 1 },
+    cooldown: 0.3, dmg: 13, speed: 4934, spreadBase: 0, pellets: 1, spawnOffset: 40,
+    auto: { hungerCost: [1, 3], cooldown: 0.133, dmg: 13, speed: 4934, spreadBase: 0.03, pellets: 1, dualPelletMult: 1 },
+    semi: { hungerCost: [1, 3], cooldown: 0.22, dmg: 13, speed: 4934, spreadBase: 0.008, pellets: 1, dualPelletMult: 1 },
     defaultMode: 'auto',
   },
   // SKS — semi-auto marksman rifle. Higher damage + velocity than AUG,
   // lower spread. 340 RPM. Random per-shot recoil (no pattern).
   sks: {
     hungerGate: [2, 6], hungerCost: [1, 4],
-    cooldown: 0.176, dmg: 16, speed: 3381, spreadBase: 0.015, pellets: 1, spawnOffset: 40,
+    cooldown: 0.176, dmg: 16, speed: 6762, spreadBase: 0.015, pellets: 1, spawnOffset: 40,
     semiOnly: true,
   },
   // AUG — bullpup rifle with integrated 2x optic. Solo only (the
@@ -102,14 +102,14 @@ const PLAYER_STATS_BASE = {
   // Damage between AK (13) and L96 (50). High vertical recoil. Dual-wieldable.
   python: {
     hungerGate: [2, 6], hungerCost: [1, 4],
-    cooldown: 0.15, dmg: 30, speed: 5520, spreadBase: 0.015, pellets: 1, spawnOffset: 40,
+    cooldown: 0.15, dmg: 30, speed: 11040, spreadBase: 0.015, pellets: 1, spawnOffset: 40,
     semiOnly: true,
   },
   // M249 SAW — belt-fed LMG. 100 rounds, 600 RPM full auto.
   // 50% move speed penalty. 5.56 NATO damage. MP5K spread.
   m249: {
     hungerGate: [2, 6], hungerCost: [2, 5],
-    cooldown: 0.1, dmg: 14, speed: 3312, spreadBase: 0.044, pellets: 1, spawnOffset: 40,
+    cooldown: 0.1, dmg: 14, speed: 6624, spreadBase: 0.044, pellets: 1, spawnOffset: 40,
     autoOnly: true,
   },
   // Minigun — 300 rounds, 600 RPM full auto. 30% move speed.
@@ -118,15 +118,15 @@ const PLAYER_STATS_BASE = {
   // for visual 1200 RPM effect. 1.0s lifetime for shorter range.
   minigun: {
     hungerGate: [2, 6], hungerCost: [2, 5],
-    cooldown: 0.1, dmg: 4.5, speed: 3312, spreadBase: 0.088, pellets: 2, spawnOffset: 40,
+    cooldown: 0.1, dmg: 4.5, speed: 6624, spreadBase: 0.088, pellets: 2, spawnOffset: 40,
     autoOnly: true, volleyed: true, vzSpreadBase: 0.08, life: 1.0,
   },
   aug: {
     hungerGate: [2, 6], hungerCost: [2, 5],
-    cooldown: 0.615, dmg: 14, speed: 4908, spreadBase: 0, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
+    cooldown: 0.615, dmg: 14, speed: 9816, spreadBase: 0, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
     burstStepMs: 92,
-    auto: { hungerCost: [1, 2], cooldown: 0.133, dmg: 14, speed: 4462, spreadBase: 0.022, pellets: 1, dualPelletMult: 1 },
-    semi: { hungerCost: [1, 2], cooldown: 0.266, dmg: 14, speed: 4908, spreadBase: 0, pellets: 1, dualPelletMult: 1 },
+    auto: { hungerCost: [1, 2], cooldown: 0.133, dmg: 14, speed: 8924, spreadBase: 0.022, pellets: 1, dualPelletMult: 1 },
+    semi: { hungerCost: [1, 2], cooldown: 0.266, dmg: 14, speed: 9816, spreadBase: 0, pellets: 1, dualPelletMult: 1 },
   },
 };
 
@@ -134,27 +134,27 @@ const PLAYER_STATS_BASE = {
 // Final values (no hungerDiscount). Kept separate so bot nerfs can diverge
 // from player numbers at will.
 const BOT_STATS = {
-  normal:  { hungerGate: 10, hungerCost: 3, cooldown: 0.3, dmg: 9,  speed: 1294, spreadBase: 0, pellets: 1, spawnOffset: 40 },
+  normal:  { hungerGate: 10, hungerCost: 3, cooldown: 0.3, dmg: 9,  speed: 2588, spreadBase: 0, pellets: 1, spawnOffset: 40 },
   burst:   {
-    hungerGate: 4, hungerCost: 5, cooldown: 0.8, dmg: 14, speed: 3643, spreadBase: 0, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
-    auto: { hungerCost: 1, cooldown: 0.1, dmg: 14, speed: 3312, spreadBase: 0.035, pellets: 1 },
+    hungerGate: 4, hungerCost: 5, cooldown: 0.8, dmg: 14, speed: 7286, spreadBase: 0, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
+    auto: { hungerCost: 1, cooldown: 0.1, dmg: 14, speed: 6624, spreadBase: 0.035, pellets: 1 },
   },
-  shotgun: { hungerGate: 7, hungerCost: 7, cooldown: 1.0, dmg: 4, speed: 1380, spreadBase: 0.2, pellets: 10, spawnOffset: 40, volleyed: true, broadcastTag: 'shotgun', vzSpreadBase: 0.2 },
-  bolty:   { hungerGate: 12, hungerCost: 8, cooldown: 2.5, dmg: 50, speed: 16800, spreadBase: 0, pellets: 1, spawnOffset: 40, broadcastTag: 'bolty' },
-  cowtank: { hungerGate: 6, hungerCost: 5, cooldown: 1.0, dmg: 38, speed: 2070, spreadBase: 0, pellets: 1, spawnOffset: 40, explosive: true, blastRadius: 180, broadcastTag: 'cowtank' },
-  thompson: { hungerGate: 4, hungerCost: 3, cooldown: 0.13, dmg: 8, speed: 1311, spreadBase: 0.0506, pellets: 1, spawnOffset: 40 },
+  shotgun: { hungerGate: 7, hungerCost: 7, cooldown: 1.0, dmg: 4, speed: 2760, spreadBase: 0.2, pellets: 10, spawnOffset: 40, volleyed: true, broadcastTag: 'shotgun', vzSpreadBase: 0.2 },
+  bolty:   { hungerGate: 12, hungerCost: 8, cooldown: 2.5, dmg: 50, speed: 33600, spreadBase: 0, pellets: 1, spawnOffset: 40, broadcastTag: 'bolty' },
+  cowtank: { hungerGate: 6, hungerCost: 5, cooldown: 1.0, dmg: 38, speed: 4140, spreadBase: 0, pellets: 1, spawnOffset: 40, explosive: true, blastRadius: 180, broadcastTag: 'cowtank' },
+  thompson: { hungerGate: 4, hungerCost: 3, cooldown: 0.13, dmg: 8, speed: 2622, spreadBase: 0.0506, pellets: 1, spawnOffset: 40 },
   akm: {
-    hungerGate: 5, hungerCost: 4, cooldown: 0.3, dmg: 13, speed: 2467, spreadBase: 0, pellets: 1, spawnOffset: 40,
-    auto: { hungerCost: 2, cooldown: 0.133, dmg: 13, speed: 2467, spreadBase: 0.04, pellets: 1 },
+    hungerGate: 5, hungerCost: 4, cooldown: 0.3, dmg: 13, speed: 4934, spreadBase: 0, pellets: 1, spawnOffset: 40,
+    auto: { hungerCost: 2, cooldown: 0.133, dmg: 13, speed: 4934, spreadBase: 0.04, pellets: 1 },
   },
-  sks: { hungerGate: 5, hungerCost: 4, cooldown: 0.176, dmg: 3.9, speed: 2450, spreadBase: 0.015, pellets: 1, spawnOffset: 40 },
+  sks: { hungerGate: 5, hungerCost: 4, cooldown: 0.176, dmg: 3.9, speed: 4900, spreadBase: 0.015, pellets: 1, spawnOffset: 40 },
   mp5k: {
-    hungerGate: 4, hungerCost: 3, cooldown: 0.6, dmg: 4, speed: 1300, spreadBase: 0.022, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
-    auto: { hungerCost: 1, cooldown: 0.1, dmg: 2, speed: 1300, spreadBase: 0.055, pellets: 1 },
+    hungerGate: 4, hungerCost: 3, cooldown: 0.6, dmg: 4, speed: 2600, spreadBase: 0.022, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
+    auto: { hungerCost: 1, cooldown: 0.1, dmg: 2, speed: 2600, spreadBase: 0.055, pellets: 1 },
   },
-  python: { hungerGate: 5, hungerCost: 4, cooldown: 0.15, dmg: 25, speed: 5520, spreadBase: 0.015, pellets: 1, spawnOffset: 40 },
-  m249: { hungerGate: 5, hungerCost: 5, cooldown: 0.1, dmg: 12, speed: 3312, spreadBase: 0.044, pellets: 1, spawnOffset: 40 },
-  minigun: { hungerGate: 5, hungerCost: 5, cooldown: 0.1, dmg: 3.5, speed: 3312, spreadBase: 0.088, pellets: 2, spawnOffset: 40, volleyed: true, vzSpreadBase: 0.08, life: 1.0 },
+  python: { hungerGate: 5, hungerCost: 4, cooldown: 0.15, dmg: 25, speed: 11040, spreadBase: 0.015, pellets: 1, spawnOffset: 40 },
+  m249: { hungerGate: 5, hungerCost: 5, cooldown: 0.1, dmg: 12, speed: 6624, spreadBase: 0.044, pellets: 1, spawnOffset: 40 },
+  minigun: { hungerGate: 5, hungerCost: 5, cooldown: 0.1, dmg: 3.5, speed: 6624, spreadBase: 0.088, pellets: 2, spawnOffset: 40, volleyed: true, vzSpreadBase: 0.08, life: 1.0 },
 };
 
 // Extract cooldown / damage / hungerDiscount multipliers from a shooter's

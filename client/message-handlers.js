@@ -978,9 +978,9 @@ export const handlers = {
       else sfxShoot(0.07, pos);
     }
 
-    // Create tracer mesh
+    // Create tracer mesh — elongated for visual speed effect
     const sz = 0.75;
-    const length = sz * 4, radius = sz * 0.8;
+    const length = sz * 12, radius = sz * 0.7;
     const group = new THREE.Group();
     const casingMat = new THREE.MeshBasicMaterial({ color: 0xaa7744 });
     const casing = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, length * 0.6, 8), casingMat);

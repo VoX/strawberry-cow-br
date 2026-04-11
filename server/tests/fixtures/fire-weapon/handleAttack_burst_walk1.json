@@ -10,8 +10,8 @@
       "ownerId": 100,
       "toX": 3996.257017,
       "toY": 1000,
-      "toZ": -37.8814,
-      "travelTime": 0.82247,
+      "toZ": 114.701788,
+      "travelTime": 0.411235,
       "type": "tracer",
       "weapon": "burst"
     },
@@ -25,8 +25,8 @@
       "ownerId": 100,
       "toX": 3996.257017,
       "toY": 1000,
-      "toZ": -37.8814,
-      "travelTime": 0.82247,
+      "toZ": 114.701788,
+      "travelTime": 0.411235,
       "type": "tracer",
       "weapon": "burst"
     },
@@ -40,8 +40,8 @@
       "ownerId": 100,
       "toX": 3996.257017,
       "toY": 1000,
-      "toZ": -37.8814,
-      "travelTime": 0.82247,
+      "toZ": 114.701788,
+      "travelTime": 0.411235,
       "type": "tracer",
       "weapon": "burst"
     }
