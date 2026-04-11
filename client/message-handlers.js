@@ -1093,10 +1093,10 @@ export const handlers = {
           // Wall/terrain impact — sparks + bullet hole (fewer for shotgun pellets)
           const terrH = getTerrainHeight(impX, impY);
           const iz = impZ || terrH + 5;
-          if (!isShotgun) spawnBulletHole(impX, impY, iz, null);
+          spawnBulletHole(impX, impY, iz, null);
           const onGround = Math.abs(iz - terrH) < 1.5;
           const sparkColor = onGround ? 0x55cc33 : 0xffdd44;
-          const sparkCount = isShotgun ? 1 : (onGround ? 7 : 4);
+          const sparkCount = isShotgun ? 2 : (onGround ? 7 : 4);
           for (let i = 0; i < sparkCount; i++) {
             spawnParticle({ geo: PGEO_SPHERE_LO, color: sparkColor, x: impX + (Math.random()-0.5)*4, y: iz + (Math.random()-0.5)*4, z: impY + (Math.random()-0.5)*4, sx: 0.6, life: 0.4, peakOpacity: 1, vx: (Math.random()-0.5)*40, vy: 10 + Math.random()*20, vz: (Math.random()-0.5)*40, gy: 60 });
           }
