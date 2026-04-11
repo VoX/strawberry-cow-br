@@ -64,14 +64,21 @@ function handleAttack(player, msg) {
     ax = dd[0]; ay = dd[1]; az = 0;
   } else { ax /= alen3d; ay /= alen3d; az /= alen3d; }
 
-  // Minigun uses hitscan — 2 rays per shot for visual 1200 RPM
-  if (weapon === 'minigun') {
+  // Hitscan weapons — instant ray trace, no projectile entity.
+  // All bullet weapons except cowtank (explosive projectile).
+  const HITSCAN_WEAPONS = new Set([
+    'normal', 'burst', 'shotgun', 'bolty', 'mp5k', 'thompson',
+    'akm', 'sks', 'aug', 'python', 'm249', 'minigun',
+  ]);
+  if (HITSCAN_WEAPONS.has(weapon)) {
     const hsOpts = {
       dualWield, dmgMult, eyeHeight,
       walkSpreadMult: player.walking ? 0.73 : 1,
       fireServerTime: typeof msg.serverTime === 'number' ? msg.serverTime : null,
     };
-    for (let i = 0; i < (stats.pellets || 2); i++) {
+    // Multi-pellet weapons (shotgun, minigun) fire multiple rays per shot
+    const pelletCount = stats.pellets || 1;
+    for (let i = 0; i < pelletCount; i++) {
       weaponFire.fireHitscan(player, weapon, { ax, ay, az }, stats, hsOpts);
     }
     player.attackCooldown = stats.cooldown * cdMult;

@@ -925,8 +925,13 @@ export const handlers = {
     if (msg.ownerId === S.myId) {
       const wep = S.me ? S.me.weapon : 'normal';
       const MUZZLES = {
-        normal: { x: 2, y: -2.8, z: -13 }, minigun: { x: 0, y: -3, z: -24 },
-        m249: { x: 3, y: -2.5, z: -22 }, python: { x: 2, y: -2.8, z: -10 },
+        normal: { x: 2, y: -2.8, z: -13 }, shotgun: { x: 2, y: -0.8, z: -24 },
+        burst: { x: 3.5, y: -2.6, z: -22 }, bolty: { x: 0, y: -4, z: -26 },
+        cowtank: { x: 2, y: -3, z: -22 }, aug: { x: 3.5, y: -2.6, z: -22 },
+        mp5k: { x: 2, y: -2.8, z: -16 }, thompson: { x: 2, y: -2.5, z: -18 },
+        sks: { x: 2.5, y: -2.6, z: -22 }, akm: { x: 2.5, y: -2.6, z: -20 },
+        python: { x: 2, y: -2.8, z: -10 }, m249: { x: 3, y: -2.5, z: -22 },
+        minigun: { x: 0, y: -3, z: -24 },
       };
       const m = MUZZLES[wep] || MUZZLES.normal;
       const mDir = new THREE.Vector3(m.x, m.y, m.z).applyQuaternion(cam.quaternion);
@@ -934,32 +939,43 @@ export const handlers = {
       spawnZ = cam.position.y + mDir.y;
       spawnY = cam.position.z + mDir.z;
       // Own weapon sound
-      sfxShoot();
+      if (wep === 'bolty') { sfxBolty(); setTimeout(() => { forceUnADS(); S._boltRacking = true; }, 100); setTimeout(() => { S._boltRacking = false; }, 2500); }
+      else if (wep === 'shotgun') sfxShotgun(0.1);
+      else if (BURST_FAMILY.has(wep)) sfxLR(0.1);
+      else sfxShoot();
 
-      // Apply recoil (mirrors projectile handler logic)
-      const recoilPattern = [
-        { p: 0.005, y: () => (Math.random() - 0.5) * 0.006 },
-      ];
+      // Apply recoil — per-weapon default kick values
+      const HITSCAN_RECOIL = {
+        normal:  { p: 0.008, y: 0 }, minigun: { p: 0.005, y: 0 },
+        m249:    { p: 0.015, y: 0.003 }, python: { p: 0.04, y: 0 },
+        thompson:{ p: 0.016, y: 0.002 }, mp5k: { p: 0.014, y: -0.005 },
+        burst:   { p: 0.012, y: 0.003 }, aug: { p: 0.012, y: 0.003 },
+        akm:     { p: 0.018, y: 0.004 }, sks: { p: 0.015, y: 0 },
+        bolty:   { p: 0.05, y: 0.005 }, shotgun: { p: 0.06, y: 0 },
+      };
       if (S.me) {
+        const r = HITSCAN_RECOIL[wep] || HITSCAN_RECOIL.normal;
         const now = performance.now();
         if (now - S.recoilTimer > 500) S.recoilIndex = 0;
         S.recoilTimer = now;
-        const r = recoilPattern[S.recoilIndex % recoilPattern.length];
         const tacticowMod = S.me.recoilMult || 1;
         const walkingMod = S.crouching ? 0.73 : 1;
         const dualMod = S.me.dualWield ? 1.3 : 1;
-        const recoilMult = tacticowMod * walkingMod * dualMod;
-        const rp = typeof r.p === 'function' ? r.p() : r.p;
-        const ry = typeof r.y === 'function' ? r.y() : r.y;
-        S.pitch += rp * recoilMult;
-        S.yaw += ry * recoilMult;
+        const augHipMod = (wep === 'aug' && !S.adsActive) ? 2.25 : 1;
+        const recoilMult = tacticowMod * walkingMod * dualMod * augHipMod;
+        S.pitch += r.p * recoilMult;
+        S.yaw += (typeof r.y === 'number' ? r.y : (Math.random() - 0.5) * 0.006) * recoilMult;
         S.pitch = Math.max(-1.2, Math.min(1.2, S.pitch));
         S.recoilIndex++;
       }
     } else {
       // Remote weapon sound
       const th = getTerrainHeight(fromX, fromY);
-      sfxShoot(0.07, { x: fromX, y: th + 50, z: fromY });
+      const pos = { x: fromX, y: th + 50, z: fromY };
+      if (msg.weapon === 'bolty') sfxBolty(0.1, pos);
+      else if (msg.weapon === 'shotgun') sfxShotgun(0.1, pos);
+      else if (BURST_FAMILY.has(msg.weapon)) sfxLR(0.1, pos);
+      else sfxShoot(0.07, pos);
     }
 
     // Create tracer mesh
