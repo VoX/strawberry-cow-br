@@ -981,6 +981,11 @@ export const handlers = {
         snd.volume = (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5) * 0.3;
         snd.play().catch(() => {});
       }
+      else if (wep === 'akm' || wep === 'sks') {
+        const snd = new Audio('ak-shot.ogg');
+        snd.volume = (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5) * 0.35;
+        snd.play().catch(() => {});
+      }
       else if (BURST_FAMILY.has(wep)) sfxLR(0.1);
       else sfxShoot();
 
@@ -1027,6 +1032,11 @@ export const handlers = {
       else if (msg.weapon === 'thompson') {
         const snd = new Audio('thompson-shot.ogg');
         snd.volume = (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5) * 0.15;
+        snd.play().catch(() => {});
+      }
+      else if (msg.weapon === 'akm' || msg.weapon === 'sks') {
+        const snd = new Audio('ak-shot.ogg');
+        snd.volume = (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5) * 0.17;
         snd.play().catch(() => {});
       }
       else if (BURST_FAMILY.has(msg.weapon)) sfxLR(0.1, pos);
