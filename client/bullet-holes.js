@@ -1,5 +1,5 @@
-// Client-side bullet hole decals — flat textured planes projected onto
-// surfaces. Ground hits face up; wall hits face the wall's nearest face.
+// Client-side bullet hole decals — canvas-generated dark circle sprites
+// projected as flat planes onto terrain and walls.
 
 import * as THREE from 'three';
 import { scene } from './renderer.js';
@@ -8,115 +8,120 @@ import S from './state.js';
 
 const HOLE_LIFE = 30;
 const MAX_HOLES = 200;
-const HOLE_SIZE = 3.5;
+const HOLE_SIZE = 3;
 
 const _geo = new THREE.PlaneGeometry(HOLE_SIZE, HOLE_SIZE);
 
-const _loader = new THREE.TextureLoader();
-const _textures = [];
-let _texturesLoaded = false;
-function loadTextures() {
-  if (_texturesLoaded) return;
-  _texturesLoaded = true;
-  for (const file of ['bullethole1.png', 'bullethole2.png']) {
-    const tex = _loader.load(file);
-    tex.minFilter = THREE.LinearFilter;
-    tex.magFilter = THREE.NearestFilter;
-    _textures.push(tex);
+// Programmatically generate bullet hole texture — dark circle with cracks.
+// Canvas guarantees true transparency, no external asset needed.
+let _tex = null;
+function getTexture() {
+  if (_tex) return _tex;
+  const sz = 64;
+  const c = document.createElement('canvas');
+  c.width = sz; c.height = sz;
+  const ctx = c.getContext('2d');
+  // Radial gradient — dark center fading to transparent
+  const g = ctx.createRadialGradient(sz/2, sz/2, 0, sz/2, sz/2, sz/2);
+  g.addColorStop(0, 'rgba(15,15,15,0.95)');
+  g.addColorStop(0.3, 'rgba(25,25,25,0.85)');
+  g.addColorStop(0.6, 'rgba(40,40,40,0.5)');
+  g.addColorStop(0.85, 'rgba(50,50,50,0.15)');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, sz, sz);
+  // Add some random crack lines
+  ctx.strokeStyle = 'rgba(20,20,20,0.6)';
+  ctx.lineWidth = 1.5;
+  for (let i = 0; i < 5; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const len = 8 + Math.random() * 16;
+    ctx.beginPath();
+    ctx.moveTo(sz/2, sz/2);
+    ctx.lineTo(sz/2 + Math.cos(angle) * len, sz/2 + Math.sin(angle) * len);
+    ctx.stroke();
   }
+  _tex = new THREE.CanvasTexture(c);
+  _tex.minFilter = THREE.LinearFilter;
+  return _tex;
 }
 
 const _holes = [];
 
-// Find which face of a wall AABB the impact point is closest to.
-// Returns a three.js Euler that orients the decal to face outward from that face.
-function getWallFaceRotation(gameX, gameY, gameZ) {
-  const walls = S.mapFeatures.walls || [];
-  let bestDist = Infinity, bestRot = null;
-
-  for (const w of walls) {
-    // Wall AABB in game coords: x, y, w (width along X), h (height along Y)
-    const cx = w.x + w.w / 2, cy = w.y + w.h / 2;
-    // Distance to each face
-    const dLeft = Math.abs(gameX - w.x);
-    const dRight = Math.abs(gameX - (w.x + w.w));
-    const dTop = Math.abs(gameY - w.y);
-    const dBottom = Math.abs(gameY - (w.y + w.h));
-
-    // Only consider walls within reasonable range
-    if (gameX < w.x - 10 || gameX > w.x + w.w + 10) continue;
-    if (gameY < w.y - 10 || gameY > w.y + w.h + 10) continue;
-
-    const minD = Math.min(dLeft, dRight, dTop, dBottom);
-    if (minD < bestDist) {
-      bestDist = minD;
-      if (minD === dLeft || minD === dRight) {
-        // East/West face — plane faces along X axis
-        bestRot = new THREE.Euler(0, Math.PI / 2, Math.random() * Math.PI * 2);
-      } else {
-        // North/South face — plane faces along Z (game Y) axis
-        bestRot = new THREE.Euler(Math.PI / 2, 0, Math.random() * Math.PI * 2);
-      }
-    }
-  }
-
-  // Also check barricades
-  for (const b of S.barricades) {
-    const dx = gameX - b.cx, dy = gameY - b.cy;
-    const dist = Math.hypot(dx, dy);
-    if (dist < bestDist && dist < 30) {
-      bestDist = dist;
-      // Barricade face normal is perpendicular to its angle
-      const angle = b.angle || 0;
-      bestRot = new THREE.Euler(0, angle + Math.PI / 2, Math.random() * Math.PI * 2);
-    }
-  }
-
-  return bestRot;
-}
-
 export function spawnBulletHole(gameX, gameY, gameZ, surfaceKey) {
-  loadTextures();
   if (typeof gameX !== 'number' || typeof gameY !== 'number' || typeof gameZ !== 'number') return;
-  if (_textures.length === 0) return;
   if (_holes.length >= MAX_HOLES) {
     const old = _holes.shift();
     scene.remove(old.mesh);
     old.mat.dispose();
   }
 
-  const tex = _textures[Math.random() * _textures.length | 0];
   const mat = new THREE.MeshBasicMaterial({
-    map: tex,
+    map: getTexture(),
     transparent: true,
-    alphaTest: 0.1, // discard near-black pixels from the background
     depthWrite: false,
     polygonOffset: true,
     polygonOffsetFactor: -1,
     polygonOffsetUnits: -1,
     side: THREE.DoubleSide,
-    color: 0x222222, // darken the texture for a more subtle look
   });
 
   const mesh = new THREE.Mesh(_geo, mat);
-  const threeX = gameX, threeZ = gameY, threeY = gameZ;
-  mesh.position.set(threeX, threeY, threeZ);
+
+  // Three.js coords: (gameX, gameZ, gameY)
+  mesh.position.set(gameX, gameZ, gameY);
 
   const terrH = getTerrainHeight(gameX, gameY);
   const isGround = Math.abs(gameZ - terrH) < 3;
 
   if (isGround) {
-    mesh.rotation.x = -Math.PI / 2;
-    mesh.rotation.z = Math.random() * Math.PI * 2;
+    // Ground — plane faces +Y (up). PlaneGeometry default faces +Z,
+    // so rotate -90° around X to face up.
+    mesh.rotation.set(-Math.PI / 2, 0, Math.random() * Math.PI * 2);
     mesh.position.y = terrH + 0.1;
   } else {
-    // Wall/barricade hit — find the surface face and orient the decal
-    const rot = getWallFaceRotation(gameX, gameY, gameZ);
-    if (rot) {
-      mesh.rotation.copy(rot);
+    // Wall/barricade — find nearest wall face normal.
+    // Walls are axis-aligned boxes in game coords (x, y horizontal).
+    // In three.js: wall X-faces → plane faces ±X, wall Y-faces → plane faces ±Z.
+    let oriented = false;
+    const walls = S.mapFeatures.walls || [];
+    for (const w of walls) {
+      if (gameX < w.x - 5 || gameX > w.x + w.w + 5) continue;
+      if (gameY < w.y - 5 || gameY > w.y + w.h + 5) continue;
+
+      const dLeft = Math.abs(gameX - w.x);
+      const dRight = Math.abs(gameX - (w.x + w.w));
+      const dFront = Math.abs(gameY - w.y);
+      const dBack = Math.abs(gameY - (w.y + w.h));
+      const minD = Math.min(dLeft, dRight, dFront, dBack);
+
+      if (minD > 5) continue;
+
+      if (minD === dLeft) {
+        // Hit left face — normal points -X in game = -X in three.js
+        mesh.rotation.set(0, -Math.PI / 2, Math.random() * Math.PI * 2);
+        mesh.position.x = w.x - 0.1;
+      } else if (minD === dRight) {
+        mesh.rotation.set(0, Math.PI / 2, Math.random() * Math.PI * 2);
+        mesh.position.x = w.x + w.w + 0.1;
+      } else if (minD === dFront) {
+        // Hit front face — normal points -Y in game = -Z in three.js
+        mesh.rotation.set(0, 0, Math.random() * Math.PI * 2);
+        mesh.position.z = w.y - 0.1;
+      } else {
+        mesh.rotation.set(0, Math.PI, Math.random() * Math.PI * 2);
+        mesh.position.z = w.y + w.h + 0.1;
+      }
+      oriented = true;
+      break;
     }
-    // Nudge slightly away from the wall to prevent z-fighting
-    mesh.position.y = threeY;
+
+    if (!oriented) {
+      // Barricade or unknown surface — face toward camera
+      const cam = scene.getObjectByProperty('isCamera', true);
+      if (cam) mesh.lookAt(cam.position);
+      mesh.rotation.z = Math.random() * Math.PI * 2;
+    }
   }
 
   scene.add(mesh);
