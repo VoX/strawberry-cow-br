@@ -46,7 +46,7 @@ const BURST_FAMILY = new Set(['burst', 'aug', 'mp5k', 'akm']);
 // Dual-wield: only lightweight weapons. M16 + Benelli disabled for now
 // (too heavy to dual-wield realistically). Re-enable by adding back
 // 'shotgun' and 'burst' to this set.
-const DUAL_WIELD_FAMILY = new Set(['normal', 'mp5k', 'python']);
+const DUAL_WIELD_FAMILY = new Set(['normal', 'python']);
 
 // Base magazine capacity by weapon. Single source of truth for hud.js,
 // server/weapon-fire.js, and server/combat.js reload/extMag math.
