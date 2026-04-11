@@ -317,8 +317,20 @@ function fireHitscan(shooter, weapon, aim, stats, opts = {}) {
       const dist = Math.hypot(p.x - fromX, p.y - fromY);
       const travelTime = dist / stats.speed;
 
+      // Damage dropoff for shotgun — full damage within 230u (~10m),
+      // linear falloff to 0 at 500u (~22m). Beyond that, no damage.
+      let dropoffMult = 1;
+      if (weapon === 'shotgun') {
+        const dropoffStart = 230, dropoffEnd = 500;
+        if (dist > dropoffEnd) { hitTargetId = null; } // too far, no damage
+        else if (dist > dropoffStart) {
+          dropoffMult = 1 - (dist - dropoffStart) / (dropoffEnd - dropoffStart);
+        }
+      }
+      if (!hitTargetId) { /* shotgun out of range, skip damage */ }
+      else {
       // Delayed damage
-      const finalDmg = headshot ? dmg * 1.8 : dmg;
+      const finalDmg = (headshot ? dmg * 1.8 : dmg) * dropoffMult;
       const { applyHungerDelta, applyArmorDelta } = require('./player');
       gameState.scheduleRoundTimer(() => {
         const target = gameState.getPlayer(hitTargetId);
@@ -333,6 +345,7 @@ function fireHitscan(shooter, weapon, aim, stats, opts = {}) {
         target.lastAttacker = shooter.id;
         target.stunTimer = Math.max(target.stunTimer || 0, 0.1);
       }, travelTime * 1000);
+      } // end dropoff else
     }
   }
 
