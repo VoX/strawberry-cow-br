@@ -6,11 +6,12 @@ How the client and server talk to each other. Covers transport, prediction, inte
 
 - **Dual transport**: WebSocket (TCP, reliable) + geckos.io WebRTC data channels (UDP, unreliable). Client auto-selects geckos, falls back to WS if UDP is blocked.
 - **Authority**: 100% server-authoritative. The client sends inputs (dx/dy/aim), never positions.
-- **Tick rate**: 30 Hz (`server/config.js::TICK_RATE = 30`).
+- **Tick rate**: 40 Hz (`shared/constants.js::TICK_RATE = 40`).
 - **Local player**: client-side prediction with seq-based Bernier reconciliation. Zero-latency response to WASD; server corrections absorbed by a 150ms render-offset smoother.
-- **Remote players**: snapshot interpolation via `@geckos.io/snapshot-interpolation`. Renders 100ms in the past with smooth lerp between server snapshots.
+- **Remote players**: snapshot interpolation via `@geckos.io/snapshot-interpolation`. Renders 75ms in the past with smooth lerp between server snapshots.
 - **Encoding**: WS uses MessagePack binary. Geckos uses geckos.io's internal JSON serialization (raw binary doesn't survive the library's emit API).
-- **Two-channel broadcast**: mutable state via 30Hz `tick` messages; sticky fields via event-driven `playerSnapshot` messages.
+- **Per-client delta compression**: each client receives only fields that changed since the last snapshot they acknowledged. Full keyframe sent when no acked baseline exists.
+- **Unified tick broadcast**: all player state (mutable + sticky) rides every tick. `playerSnapshot` was eliminated.
 
 ## Transport layer
 
@@ -21,7 +22,7 @@ Both WebSocket and geckos.io (WebRTC) transports run simultaneously. `server/tra
 **WebSocket** (`server/transports/ws.js`, `client/transports/ws.js`):
 - Reliable TCP. Both reliable and unreliable sends go through `ws.send()`.
 - MessagePack binary encoding for all messages (`@msgpack/msgpack`).
-- `perMessageDeflate: false` — latency > bandwidth for a 30Hz action game.
+- `perMessageDeflate: false` — latency > bandwidth for a 40Hz action game.
 - `maxPayload: 16KB`, `setNoDelay(true)`, kernel keepalive at 10s.
 - 5-second WebSocket-level heartbeat (ping/pong) catches frozen tabs.
 
@@ -49,10 +50,10 @@ Both WebSocket and geckos.io (WebRTC) transports run simultaneously. `server/tra
 
 `client/prediction.js` implements Source/CS-style prediction:
 
-1. **Fixed timestep** at 30Hz (`TICK_DT = 1/30`). The render loop accumulates frame time; the predict loop runs 0-2 steps per render frame.
+1. **Fixed timestep** at 40Hz (`TICK_DT = 1/40`). The render loop accumulates frame time; the predict loop runs 0-2 steps per render frame.
 2. **Send and predict are lockstep.** Each fixed step: send a `move` message (which increments `S.inputSeq`), then run `stepPlayerMovement()` on `S.mePredicted`, then push `{seq, state, input}` onto the prediction ring.
 3. **Shared movement function** (`shared/movement.js::stepPlayerMovement`): identical code runs on both client and server. This is the load-bearing invariant — if client and server diverge, you get rubber-banding.
-4. **Sub-tick interpolation**: `getRenderedPredicted()` lerps between the previous and current predicted position based on the accumulator fraction, so 60fps rendering doesn't show the 30Hz step cadence.
+4. **Sub-tick interpolation**: `getRenderedPredicted()` lerps between the previous and current predicted position based on the accumulator fraction, so 60fps rendering doesn't show the 40Hz step cadence.
 
 ### Reconciliation
 
@@ -68,7 +69,7 @@ When the server sends an `inputAck` (15Hz, every 2nd tick):
 
 - `STATEFUL_INPUT_TYPES = Set(['move'])`. Only moves get seq numbers. Adding seq to attack/jump would create gaps the server can't match.
 - `stunTimer` and `spawnProtection` are server-only — synced via the tick handler. The client can't predict getting hit.
-- The prediction ring holds 60 entries (2 seconds at 30Hz).
+- The prediction ring holds 60 entries (1.5 seconds at 40Hz).
 
 ## Remote player interpolation
 
@@ -81,7 +82,7 @@ When the server sends an `inputAck` (15Hz, every 2nd tick):
 3. **Once per frame**, `updateInterpolation(frameId)` calls `SI.calcInterpolation('x y z aimAngle(rad)')`. This finds two server snapshots bracketing `now - timeOffset - interpolationBuffer` and lerps between them.
 4. **Per-entity lookup**: `getInterpolatedEntity(p)` scans the cached result for a matching `id`. Falls back to raw tick position if SI doesn't have enough data yet.
 
-The interpolation buffer is `(1000/30) * 3 = 100ms` — remote entities render 100ms in the past for smooth motion. This trades display latency for perfectly smooth interpolation instead of 30Hz step-jitter.
+The interpolation buffer is `(1000/40) * 3 = 75ms` — remote entities render 75ms in the past for smooth motion. This trades display latency for perfectly smooth interpolation instead of 40Hz step-jitter.
 
 ### Why SI for remotes but not local player
 
@@ -99,15 +100,23 @@ We tried using SI for local player reconciliation. It doesn't work:
 {
   type: 'tick',
   tickNum: number,
-  snapshot: { id, time, state: [...players] },  // SI snapshot
+  snapSeq: number,                              // per-client delta sequence
+  snapshot: { id, time, state: [...players] },  // SI snapshot (delta or full)
   zone: { x, y, w, h },
-  gameTime: number
+  gameTime: number,
+  keyframe: bool,                               // true = full state, absent = delta
+  walls: [...],                                 // world entity arrays
+  barricades: [...],
+  foodIds: [...],
+  weaponPickups: [...],
+  armorPickups: [...],
+  removedIds: [...],                            // players removed since baseline
 }
 ```
 
-The `snapshot` field is an SI-format timestamped envelope. `state` contains `getPlayerTick()` output for each alive/spectatable player — mutable fields only (position, aim, hunger, ammo, cooldowns, etc.).
+The `snapshot.state` contains `getPlayerTick()` output — all player fields (mutable + sticky) per alive/spectatable player. With delta compression, unchanged fields are omitted; new players carry a `_full: true` flag. When `keyframe` is true, all fields are present.
 
-### inputAck (15 Hz)
+### inputAck (20 Hz)
 
 Every 2nd tick, the server sends each human player their ack:
 
@@ -145,9 +154,7 @@ Jump is deferred via `_pendingJump` flag — applied at drain time, not receipt 
 
 ### New player field
 
-**Mutable (changes every tick)**: add to `server/player.js::getPlayerTick()`. Client automatically receives it via the tick handler's `Object.assign` merge. If you need it for prediction, sync it from the tick handler onto `S.mePredicted`.
-
-**Sticky (changes on events)**: add to `server/player.js::getPlayerSnapshot()`. Call `broadcastPlayerSnapshot(p)` at every mutation site. If you forget, the client stays stale until the next unrelated snapshot event — this is silent and hard to catch.
+Add to `server/player.js::getPlayerTick()`. All fields (mutable and sticky) ride every tick via delta compression — unchanged fields cost zero bandwidth. Client automatically receives it via the tick handler's `Object.assign` merge. If you need it for prediction, sync it from the tick handler onto `S.mePredicted`.
 
 ### New movement mechanic
 
@@ -175,10 +182,10 @@ If it depends on position (particles at a player's feet, laser dot): use `getInt
 | `client/network.js` | Transport selection, reconnect, `send()` with seq injection |
 | `client/transports/ws.js` | WebSocket transport (msgpack binary) |
 | `client/transports/geckos.js` | geckos.io WebRTC transport (plain objects) |
-| `server/game.js` | 30Hz tick loop, SI snapshot creation, inputAck broadcast |
+| `server/game.js` | 40Hz tick loop, SI snapshot creation, per-client delta compression, inputAck broadcast |
 | `server/dispatch.js` | C2S message routing, move queue, player creation |
 | `server/transport.js` | Transport facade routing to WS/geckos impls |
 | `server/transports/ws.js` | WS impl with rate limiting + heartbeat |
 | `server/transports/geckos.js` | geckos impl with deferred close for reliable flush |
 | `server/network.js` | `broadcast()` + `sendTo()`, reliability routing, backpressure |
-| `server/player.js` | `getPlayerTick`, `getPlayerSnapshot`, death/armor/hunger funnels |
+| `server/player.js` | `getPlayerTick` (unified mutable+sticky), death/armor/hunger funnels |

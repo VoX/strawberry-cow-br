@@ -4,7 +4,7 @@ const { SnapshotInterpolation } = require('@geckos.io/snapshot-interpolation');
 // Server-side SI — creates timestamped snapshots and stores them in a vault
 // for lag-compensated hit detection (time rewind).
 const SI = new SnapshotInterpolation(TICK_RATE);
-SI.vault.setMaxSize(300); // 10 seconds at 30 FPS
+SI.vault.setMaxSize(400); // 10 seconds at 40 Hz
 const { stepPlayerMovement } = require('../shared/movement');
 const { broadcast, sendTo } = require('./network');
 const transport = require('./transport');

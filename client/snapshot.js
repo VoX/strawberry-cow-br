@@ -10,8 +10,8 @@
 
 import { SnapshotInterpolation } from '@geckos.io/snapshot-interpolation';
 
-// Server sends at 30 FPS. SI sets interpolation buffer to (1000/30)*3 = 100ms.
-const SI = new SnapshotInterpolation(30);
+// Server sends at 40 Hz. SI sets interpolation buffer to (1000/40)*3 = 75ms.
+const SI = new SnapshotInterpolation(40);
 
 // Add a server snapshot to the SI vault. Called from tick handler.
 export function addSnapshot(snapshot) {
