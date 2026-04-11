@@ -32,6 +32,16 @@ import { spawnBulletHole, clearBulletHoles, removeBulletHolesBySurfaceKey } from
 // Reusable temp vector for the projectile muzzle-offset transform.
 const _tmpDir = new THREE.Vector3();
 
+// Play a sound file with slight pitch + volume randomization to reduce
+// repetitiveness. Games use ±5-10% pitch variation per shot.
+function playSfx(file, baseVol = 0.3) {
+  const snd = new Audio(file);
+  const vol = (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5) * baseVol;
+  snd.volume = vol * (0.9 + Math.random() * 0.2); // ±10% volume
+  snd.playbackRate = 0.93 + Math.random() * 0.14; // ±7% pitch
+  snd.play().catch(() => {});
+}
+
 // Pending L96 laser origins — keyed by projectile ID. When the bolty
 // fires we stash the muzzle position; when projectileHit arrives we
 // draw a laser line from origin to impact.
@@ -471,14 +481,10 @@ export const handlers = {
     }
     // Weapon pickup/armor pickup sound — detect changes on local player
     if (S.me && S.me.weapon && S._lastWeapon && S.me.weapon !== S._lastWeapon && S.me.weapon !== 'normal') {
-      const snd = new Audio('weapon-pickup.mp3');
-      snd.volume = (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5) * 0.4;
-      snd.play().catch(() => {});
+      playSfx('weapon-pickup.mp3', 0.4);
     }
     if (S.me && S._lastArmor !== undefined && S.me.armor > S._lastArmor) {
-      const snd = new Audio('shield-pickup.mp3');
-      snd.volume = (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5) * 0.4;
-      snd.play().catch(() => {});
+      playSfx('shield-pickup.mp3', 0.4);
     }
     if (S.me) { S._lastWeapon = S.me.weapon; S._lastArmor = S.me.armor || 0; }
     if (msg.zone) S.serverZone = msg.zone;
@@ -967,24 +973,16 @@ export const handlers = {
       if (wep === 'bolty') { sfxBolty(); setTimeout(() => { forceUnADS(); S._boltRacking = true; }, 100); setTimeout(() => { S._boltRacking = false; }, 2500); }
       else if (wep === 'shotgun') sfxShotgun(0.1);
       else if (wep === 'mp5k') {
-        const snd = new Audio('mp5sd-shot.ogg');
-        snd.volume = (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5) * 0.3;
-        snd.play().catch(() => {});
+        playSfx('mp5sd-shot.ogg', 0.3);
       }
       else if (wep === 'python') {
-        const snd = new Audio('python-shot.ogg');
-        snd.volume = (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5) * 0.4;
-        snd.play().catch(() => {});
+        playSfx('python-shot.ogg', 0.4);
       }
       else if (wep === 'thompson') {
-        const snd = new Audio('thompson-shot.ogg');
-        snd.volume = (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5) * 0.3;
-        snd.play().catch(() => {});
+        playSfx('thompson-shot.ogg', 0.3);
       }
       else if (wep === 'akm' || wep === 'sks') {
-        const snd = new Audio('ak-shot.ogg');
-        snd.volume = (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5) * 0.35;
-        snd.play().catch(() => {});
+        playSfx('ak-shot.ogg', 0.35);
       }
       else if (BURST_FAMILY.has(wep)) sfxLR(0.1);
       else sfxShoot();
@@ -1020,24 +1018,16 @@ export const handlers = {
       if (msg.weapon === 'bolty') sfxBolty(0.1, pos);
       else if (msg.weapon === 'shotgun') sfxShotgun(0.1, pos);
       else if (msg.weapon === 'mp5k') {
-        const snd = new Audio('mp5sd-shot.ogg');
-        snd.volume = (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5) * 0.15;
-        snd.play().catch(() => {});
+        playSfx('mp5sd-shot.ogg', 0.15);
       }
       else if (msg.weapon === 'python') {
-        const snd = new Audio('python-shot.ogg');
-        snd.volume = (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5) * 0.2;
-        snd.play().catch(() => {});
+        playSfx('python-shot.ogg', 0.2);
       }
       else if (msg.weapon === 'thompson') {
-        const snd = new Audio('thompson-shot.ogg');
-        snd.volume = (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5) * 0.15;
-        snd.play().catch(() => {});
+        playSfx('thompson-shot.ogg', 0.15);
       }
       else if (msg.weapon === 'akm' || msg.weapon === 'sks') {
-        const snd = new Audio('ak-shot.ogg');
-        snd.volume = (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5) * 0.17;
-        snd.play().catch(() => {});
+        playSfx('ak-shot.ogg', 0.17);
       }
       else if (BURST_FAMILY.has(msg.weapon)) sfxLR(0.1, pos);
       else sfxShoot(0.07, pos);
