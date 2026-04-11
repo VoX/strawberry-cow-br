@@ -1,10 +1,9 @@
-// Client-side bullet hole decals — canvas-generated dark circle sprites
-// projected as flat planes onto terrain and walls.
+// Client-side bullet hole decals — canvas-generated dark circle.
+// Oriented to face the shooter (opposite of the incoming ray direction).
 
 import * as THREE from 'three';
-import { scene } from './renderer.js';
+import { scene, cam } from './renderer.js';
 import { getTerrainHeight } from './terrain.js';
-import S from './state.js';
 
 const HOLE_LIFE = 30;
 const MAX_HOLES = 200;
@@ -12,8 +11,6 @@ const HOLE_SIZE = 3;
 
 const _geo = new THREE.PlaneGeometry(HOLE_SIZE, HOLE_SIZE);
 
-// Programmatically generate bullet hole texture — dark circle with cracks.
-// Canvas guarantees true transparency, no external asset needed.
 let _tex = null;
 function getTexture() {
   if (_tex) return _tex;
@@ -21,7 +18,6 @@ function getTexture() {
   const c = document.createElement('canvas');
   c.width = sz; c.height = sz;
   const ctx = c.getContext('2d');
-  // Radial gradient — dark center fading to transparent
   const g = ctx.createRadialGradient(sz/2, sz/2, 0, sz/2, sz/2, sz/2);
   g.addColorStop(0, 'rgba(15,15,15,0.95)');
   g.addColorStop(0.3, 'rgba(25,25,25,0.85)');
@@ -30,7 +26,6 @@ function getTexture() {
   g.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, sz, sz);
-  // Add some random crack lines
   ctx.strokeStyle = 'rgba(20,20,20,0.6)';
   ctx.lineWidth = 1.5;
   for (let i = 0; i < 5; i++) {
@@ -47,6 +42,9 @@ function getTexture() {
 }
 
 const _holes = [];
+
+// Temp vector for lookAt computation
+const _tmpLook = new THREE.Vector3();
 
 export function spawnBulletHole(gameX, gameY, gameZ, surfaceKey) {
   if (typeof gameX !== 'number' || typeof gameY !== 'number' || typeof gameZ !== 'number') return;
@@ -68,60 +66,24 @@ export function spawnBulletHole(gameX, gameY, gameZ, surfaceKey) {
 
   const mesh = new THREE.Mesh(_geo, mat);
 
-  // Three.js coords: (gameX, gameZ, gameY)
+  // Three.js coords: (gameX, gameZ_vertical, gameY_horizontal)
   mesh.position.set(gameX, gameZ, gameY);
 
   const terrH = getTerrainHeight(gameX, gameY);
   const isGround = Math.abs(gameZ - terrH) < 3;
 
   if (isGround) {
-    // Ground — plane faces +Y (up). PlaneGeometry default faces +Z,
-    // so rotate -90° around X to face up.
+    // Ground — lay flat, face up
     mesh.rotation.set(-Math.PI / 2, 0, Math.random() * Math.PI * 2);
-    mesh.position.y = terrH + 0.1;
+    mesh.position.y = terrH + 0.05;
   } else {
-    // Wall/barricade — find nearest wall face normal.
-    // Walls are axis-aligned boxes in game coords (x, y horizontal).
-    // In three.js: wall X-faces → plane faces ±X, wall Y-faces → plane faces ±Z.
-    let oriented = false;
-    const walls = S.mapFeatures.walls || [];
-    for (const w of walls) {
-      if (gameX < w.x - 5 || gameX > w.x + w.w + 5) continue;
-      if (gameY < w.y - 5 || gameY > w.y + w.h + 5) continue;
-
-      const dLeft = Math.abs(gameX - w.x);
-      const dRight = Math.abs(gameX - (w.x + w.w));
-      const dFront = Math.abs(gameY - w.y);
-      const dBack = Math.abs(gameY - (w.y + w.h));
-      const minD = Math.min(dLeft, dRight, dFront, dBack);
-
-      if (minD > 5) continue;
-
-      if (minD === dLeft) {
-        // Hit left face — normal points -X in game = -X in three.js
-        mesh.rotation.set(0, -Math.PI / 2, Math.random() * Math.PI * 2);
-        mesh.position.x = w.x - 0.1;
-      } else if (minD === dRight) {
-        mesh.rotation.set(0, Math.PI / 2, Math.random() * Math.PI * 2);
-        mesh.position.x = w.x + w.w + 0.1;
-      } else if (minD === dFront) {
-        // Hit front face — normal points -Y in game = -Z in three.js
-        mesh.rotation.set(0, 0, Math.random() * Math.PI * 2);
-        mesh.position.z = w.y - 0.1;
-      } else {
-        mesh.rotation.set(0, Math.PI, Math.random() * Math.PI * 2);
-        mesh.position.z = w.y + w.h + 0.1;
-      }
-      oriented = true;
-      break;
-    }
-
-    if (!oriented) {
-      // Barricade or unknown surface — face toward camera
-      const cam = scene.getObjectByProperty('isCamera', true);
-      if (cam) mesh.lookAt(cam.position);
-      mesh.rotation.z = Math.random() * Math.PI * 2;
-    }
+    // Wall/barricade — face toward the camera (the shooter).
+    // This gives correct orientation regardless of surface angle.
+    _tmpLook.copy(cam.position);
+    // Only use horizontal direction (keep decal vertical on walls)
+    _tmpLook.y = mesh.position.y;
+    mesh.lookAt(_tmpLook);
+    mesh.rotation.z = Math.random() * Math.PI * 2;
   }
 
   scene.add(mesh);
