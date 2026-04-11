@@ -74,8 +74,11 @@ function handleAttack(player, msg) {
   if (HITSCAN_WEAPONS.has(weapon)) {
     const walkSpreadMult = player.walking ? 0.73 : 1;
     const fireServerTime = typeof msg.serverTime === 'number' ? msg.serverTime : null;
+    // Use client camera position for hitscan ray origin if provided
+    const camPos = (typeof msg.camX === 'number' && typeof msg.camY === 'number' && typeof msg.camZ === 'number')
+      ? { x: msg.camX, y: msg.camY, z: msg.camZ } : null;
     const hsOpts = {
-      dualWield, dmgMult, eyeHeight, walkSpreadMult, fireServerTime,
+      dualWield, dmgMult, eyeHeight, walkSpreadMult, fireServerTime, camPos,
     };
 
     // Burst-family: respect fire mode (auto / semi / burst)

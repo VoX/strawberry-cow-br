@@ -42,6 +42,8 @@ export function doAttack() {
     aimX: _inputDir.x, aimY: _inputDir.z, aimZ: _inputDir.y,
     fireMode: S.fireMode,
     serverTime: getServerTime(),
+    // Camera position for hitscan ray origin — matches what the player sees
+    camX: cam.position.x, camY: cam.position.z, camZ: cam.position.y,
   });
 }
 

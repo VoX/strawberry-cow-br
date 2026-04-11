@@ -233,9 +233,11 @@ function _spawnProjectile(shooter, posX, posY, posZ, dirX, dirY, dirZ, speed, dm
 // Instant ray trace with analytical bullet drop. Damage delayed by travel time.
 // No projectile entity created. Broadcasts unreliable tracer for visuals.
 function fireHitscan(shooter, weapon, aim, stats, opts = {}) {
-  const { dualWield = false, dmgMult = 1, eyeHeight, fireServerTime = null, walkSpreadMult = 1 } = opts;
+  const { dualWield = false, dmgMult = 1, eyeHeight, fireServerTime = null, walkSpreadMult = 1, camPos = null } = opts;
   const perkDmgMult = (shooter.perks && shooter.perks.damage) || 1;
-  const eyeZ = shooter.z + (eyeHeight ? eyeHeight(shooter) : 0);
+  // Use client camera position if provided (matches what the player sees).
+  // Falls back to cow head position for bots and legacy clients.
+  const eyeZ = camPos ? camPos.z : (shooter.z + (eyeHeight ? eyeHeight(shooter) : 0));
   let ax = aim.ax, ay = aim.ay, az = aim.az;
 
   // Apply spread
@@ -248,8 +250,10 @@ function fireHitscan(shooter, weapon, aim, stats, opts = {}) {
   const alen = Math.hypot(ax, ay, az);
   if (alen > 0.01) { ax /= alen; ay /= alen; az /= alen; }
 
-  // Ray endpoints
-  const fromX = shooter.x, fromY = shooter.y, fromZ = eyeZ;
+  // Ray endpoints — use camera position if available
+  const fromX = camPos ? camPos.x : shooter.x;
+  const fromY = camPos ? camPos.y : shooter.y;
+  const fromZ = eyeZ;
   const range = MAX_HITSCAN_RANGE;
   // True 3D ray — direction × range, then apply gravity drop
   const toX = fromX + ax * range;
