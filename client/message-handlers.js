@@ -978,9 +978,11 @@ export const handlers = {
       else sfxShoot(0.07, pos);
     }
 
-    // Create tracer mesh — elongated for visual speed effect
-    const sz = 0.75;
-    const length = sz * 12, radius = sz * 0.7;
+    // Create tracer mesh — elongated for visual speed effect.
+    // Bolty gets a larger, brighter tracer with extended glow trail.
+    const isBolty = msg.weapon === 'bolty';
+    const sz = isBolty ? 1.5 : 0.75;
+    const length = sz * (isBolty ? 16 : 12), radius = sz * 0.7;
     const group = new THREE.Group();
     const casingMat = new THREE.MeshBasicMaterial({ color: 0xaa7744 });
     const casing = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, length * 0.6, 8), casingMat);
@@ -988,7 +990,10 @@ export const handlers = {
     const tipMat = new THREE.MeshBasicMaterial({ color: 0xffdd88 });
     const tip = new THREE.Mesh(new THREE.ConeGeometry(radius, length * 0.4, 8), tipMat);
     tip.rotation.x = Math.PI / 2; tip.position.z = length / 2; group.add(tip);
-    const glow = new THREE.Mesh(new THREE.CylinderGeometry(radius * 2.4, radius * 0.6, length * 1.5, 6), new THREE.MeshBasicMaterial({ color: 0xffdd88, transparent: true, opacity: 0.25 }));
+    const glowColor = isBolty ? 0xffffcc : 0xffdd88;
+    const glowOpacity = isBolty ? 0.5 : 0.25;
+    const glowLen = isBolty ? length * 3 : length * 1.5;
+    const glow = new THREE.Mesh(new THREE.CylinderGeometry(radius * 2.4, radius * 0.6, glowLen, 6), new THREE.MeshBasicMaterial({ color: glowColor, transparent: true, opacity: glowOpacity }));
     glow.rotation.x = Math.PI / 2; glow.position.z = -length * 0.6; group.add(glow);
     group.position.set(spawnX, spawnZ, spawnY);
     // Initial orientation toward the impact point
@@ -1013,6 +1018,45 @@ export const handlers = {
         scene.remove(group);
         casingMat.dispose(); tipMat.dispose(); glow.material.dispose();
         casing.geometry.dispose(); tip.geometry.dispose(); glow.geometry.dispose();
+        // Impact effects at arrival point
+        const impX = toX, impY = toY, impZ = toZ;
+        if (msg.hit) {
+          // Player hit — blood particles
+          const target = S.serverPlayers.find(p => p.id === msg.hit);
+          if (target) {
+            const tz = (target.z || 0) + getTerrainHeight(target.x, target.y);
+            const impactY3d = msg.headshot ? tz + 36 : tz + 20;
+            const count = msg.headshot ? 18 : 8;
+            for (let i = 0; i < count; i++) {
+              spawnParticle({ geo: PGEO_SPHERE_LO, color: 0xff2222, x: target.x + (Math.random()-0.5)*8, y: impactY3d + (Math.random()-0.5)*8, z: target.y + (Math.random()-0.5)*8, sx: msg.headshot ? 1.2 : 0.8, life: 0.6, peakOpacity: 1, vx: (Math.random()-0.5)*60, vy: 10 + Math.random()*30, vz: (Math.random()-0.5)*60, gy: 80 });
+            }
+          }
+          // Hitmarker for attacker
+          if (msg.ownerId === S.myId && msg.hit !== S.myId) {
+            sfx(600, 0.06, 'square', 0.07);
+            const hm = document.getElementById('hitMarker');
+            if (hm) { hm.style.display = 'block'; setTimeout(() => { hm.style.display = 'none'; }, 150); }
+          }
+          // Got hit
+          if (msg.hit === S.myId) {
+            sfxHit(); flashHit(0.5, 150); flashEdge('damageEdgeFlash');
+            const newEnd = performance.now() + HIT_SLOW_DURATION_MS;
+            if (newEnd > S.localHitSlowEndsAt) S.localHitSlowEndsAt = newEnd;
+          }
+        } else {
+          // Wall/terrain impact — sparks + bullet hole
+          const terrH = getTerrainHeight(impX, impY);
+          const iz = impZ || terrH + 5;
+          spawnBulletHole(impX, impY, iz, null);
+          const onGround = Math.abs(iz - terrH) < 1.5;
+          const sparkColor = onGround ? 0x55cc33 : 0xffdd44;
+          for (let i = 0; i < (onGround ? 7 : 4); i++) {
+            spawnParticle({ geo: PGEO_SPHERE_LO, color: sparkColor, x: impX + (Math.random()-0.5)*4, y: iz + (Math.random()-0.5)*4, z: impY + (Math.random()-0.5)*4, sx: 0.6, life: 0.4, peakOpacity: 1, vx: (Math.random()-0.5)*40, vy: 10 + Math.random()*20, vz: (Math.random()-0.5)*40, gy: 60 });
+          }
+          if (!onGround) {
+            spawnParticle({ geo: PGEO_SPHERE_LO, color: 0xbbbbbb, x: impX, y: iz, z: impY, sx: 2, life: 0.5, peakOpacity: 0.5, growth: 4, vy: 12 });
+          }
+        }
         return;
       }
       requestAnimationFrame(anim);
