@@ -10,7 +10,7 @@
       "ownerId": 100,
       "toX": 3949.662743,
       "toY": 949.257804,
-      "toZ": 206.206668,
+      "toZ": 472.038426,
       "travelTime": 1.068877,
       "type": "tracer",
       "weapon": "shotgun"
@@ -25,7 +25,7 @@
       "ownerId": 100,
       "toX": 3978.527143,
       "toY": 684.966815,
-      "toZ": -168.016775,
+      "toZ": 97.814983,
       "travelTime": 1.085196,
       "type": "tracer",
       "weapon": "shotgun"
@@ -40,7 +40,7 @@
       "ownerId": 100,
       "toX": 3931.136854,
       "toY": 1136.535412,
-      "toZ": 285.643164,
+      "toZ": 551.474922,
       "travelTime": 1.063158,
       "type": "tracer",
       "weapon": "shotgun"
@@ -55,7 +55,7 @@
       "ownerId": 100,
       "toX": 3928.304347,
       "toY": 745.473286,
-      "toZ": 261.515788,
+      "toZ": 527.347546,
       "travelTime": 1.06498,
       "type": "tracer",
       "weapon": "shotgun"
@@ -70,7 +70,7 @@
       "ownerId": 100,
       "toX": 3987.970486,
       "toY": 816.959342,
-      "toZ": -534.979106,
+      "toZ": -269.147348,
       "travelTime": 1.084627,
       "type": "tracer",
       "weapon": "shotgun"
@@ -85,7 +85,7 @@
       "ownerId": 100,
       "toX": 3980.667791,
       "toY": 1191.438856,
-      "toZ": -57.675109,
+      "toZ": 208.15665,
       "travelTime": 1.082177,
       "type": "tracer",
       "weapon": "shotgun"
@@ -100,7 +100,7 @@
       "ownerId": 100,
       "toX": 3927.727746,
       "toY": 964.484942,
-      "toZ": 314.87397,
+      "toZ": 580.705728,
       "travelTime": 1.060849,
       "type": "tracer",
       "weapon": "shotgun"
@@ -115,7 +115,7 @@
       "ownerId": 100,
       "toX": 3958.997197,
       "toY": 1111.232504,
-      "toZ": -820.31763,
+      "toZ": -554.485872,
       "travelTime": 1.072858,
       "type": "tracer",
       "weapon": "shotgun"
@@ -130,7 +130,7 @@
       "ownerId": 100,
       "toX": 3950.680234,
       "toY": 516.029873,
-      "toZ": -582.124211,
+      "toZ": -316.292453,
       "travelTime": 1.083372,
       "type": "tracer",
       "weapon": "shotgun"
@@ -145,7 +145,7 @@
       "ownerId": 100,
       "toX": 3975.966149,
       "toY": 1028.315031,
-      "toZ": -716.612626,
+      "toZ": -450.780868,
       "travelTime": 1.078297,
       "type": "tracer",
       "weapon": "shotgun"

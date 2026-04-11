@@ -76,9 +76,10 @@ function handleAttack(player, msg) {
       walkSpreadMult: player.walking ? 0.73 : 1,
       fireServerTime: typeof msg.serverTime === 'number' ? msg.serverTime : null,
     };
-    // Multi-pellet weapons (shotgun, minigun) fire multiple rays per shot
-    const pelletCount = stats.pellets || 1;
-    for (let i = 0; i < pelletCount; i++) {
+    // Multi-pellet weapons fire multiple simultaneous rays.
+    // Burst/semi weapons use pellets for burst count, not simultaneous — fire 1 ray.
+    const simultaneous = stats.volleyed ? (stats.pellets || 1) : 1;
+    for (let i = 0; i < simultaneous; i++) {
       weaponFire.fireHitscan(player, weapon, { ax, ay, az }, stats, hsOpts);
     }
     player.attackCooldown = stats.cooldown * cdMult;

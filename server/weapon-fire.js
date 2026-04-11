@@ -22,7 +22,10 @@ const { BURST_FAMILY, MAG_SIZES } = require('../shared/constants');
 const ballistics = require('./ballistics');
 const { getTerrainHeight, WALL_HEIGHT } = require('./terrain');
 
-const GRAVITY = 600; // must match shared/constants
+// Bullet gravity — lower than player gravity (600) because real bullets
+// experience less relative drop. 150 gives ~3 unit drop at 500 range
+// for the slowest weapons, noticeable at long range but not distracting.
+const BULLET_GRAVITY = 150;
 const MAX_HITSCAN_RANGE = 3000; // max ray length in units
 
 // --- Player base stats ----------------------------------------------------
@@ -254,7 +257,7 @@ function fireHitscan(shooter, weapon, aim, stats, opts = {}) {
   const toX = fromX + ax * range, toY = fromY + ay * range;
   // Apply analytical drop at max range for the endpoint
   const maxTravelTime = range / stats.speed;
-  const maxDrop = 0.5 * GRAVITY * maxTravelTime * maxTravelTime;
+  const maxDrop = 0.5 * BULLET_GRAVITY * maxTravelTime * maxTravelTime;
   const toZ = fromZ + az * range - maxDrop;
 
   // Lag compensation — rewind players for hit check
