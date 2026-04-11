@@ -469,6 +469,13 @@ export const handlers = {
       iw.lastMeX = S.me.x;
       iw.lastMeY = S.me.y;
     }
+    // Weapon pickup/armor pickup sound — detect changes on local player
+    if (S.me && S.me.weapon && S._lastWeapon && S.me.weapon !== S._lastWeapon && S.me.weapon !== 'normal') {
+      const snd = new Audio('weapon-pickup.mp3');
+      snd.volume = (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5) * 0.4;
+      snd.play().catch(() => {});
+    }
+    if (S.me) S._lastWeapon = S.me.weapon;
     if (msg.zone) S.serverZone = msg.zone;
     if (S.pingLast > 0) { const pd = performance.now() - S.pingLast; if (pd < 2000) S.pingVal = S.pingVal * 0.7 + pd * 0.3; S.pingLast = 0; }
   },
