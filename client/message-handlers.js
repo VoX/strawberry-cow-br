@@ -1020,13 +1020,14 @@ export const handlers = {
         casing.geometry.dispose(); tip.geometry.dispose(); glow.geometry.dispose();
         // Impact effects at arrival point
         const impX = toX, impY = toY, impZ = toZ;
+        const isShotgun = msg.weapon === 'shotgun';
         if (msg.hit) {
-          // Player hit — blood particles
+          // Player hit — blood particles (fewer for shotgun pellets)
           const target = S.serverPlayers.find(p => p.id === msg.hit);
           if (target) {
             const tz = (target.z || 0) + getTerrainHeight(target.x, target.y);
             const impactY3d = msg.headshot ? tz + 36 : tz + 20;
-            const count = msg.headshot ? 18 : 8;
+            const count = isShotgun ? 2 : (msg.headshot ? 18 : 8);
             for (let i = 0; i < count; i++) {
               spawnParticle({ geo: PGEO_SPHERE_LO, color: 0xff2222, x: target.x + (Math.random()-0.5)*8, y: impactY3d + (Math.random()-0.5)*8, z: target.y + (Math.random()-0.5)*8, sx: msg.headshot ? 1.2 : 0.8, life: 0.6, peakOpacity: 1, vx: (Math.random()-0.5)*60, vy: 10 + Math.random()*30, vz: (Math.random()-0.5)*60, gy: 80 });
             }
@@ -1044,16 +1045,17 @@ export const handlers = {
             if (newEnd > S.localHitSlowEndsAt) S.localHitSlowEndsAt = newEnd;
           }
         } else {
-          // Wall/terrain impact — sparks + bullet hole
+          // Wall/terrain impact — sparks + bullet hole (fewer for shotgun pellets)
           const terrH = getTerrainHeight(impX, impY);
           const iz = impZ || terrH + 5;
-          spawnBulletHole(impX, impY, iz, null);
+          if (!isShotgun) spawnBulletHole(impX, impY, iz, null);
           const onGround = Math.abs(iz - terrH) < 1.5;
           const sparkColor = onGround ? 0x55cc33 : 0xffdd44;
-          for (let i = 0; i < (onGround ? 7 : 4); i++) {
+          const sparkCount = isShotgun ? 1 : (onGround ? 7 : 4);
+          for (let i = 0; i < sparkCount; i++) {
             spawnParticle({ geo: PGEO_SPHERE_LO, color: sparkColor, x: impX + (Math.random()-0.5)*4, y: iz + (Math.random()-0.5)*4, z: impY + (Math.random()-0.5)*4, sx: 0.6, life: 0.4, peakOpacity: 1, vx: (Math.random()-0.5)*40, vy: 10 + Math.random()*20, vz: (Math.random()-0.5)*40, gy: 60 });
           }
-          if (!onGround) {
+          if (!onGround && !isShotgun) {
             spawnParticle({ geo: PGEO_SPHERE_LO, color: 0xbbbbbb, x: impX, y: iz, z: impY, sx: 2, life: 0.5, peakOpacity: 0.5, growth: 4, vy: 12 });
           }
         }

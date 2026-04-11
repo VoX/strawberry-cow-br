@@ -129,7 +129,7 @@ function handleAttack(player, msg) {
     // High-RPM weapons (minigun, etc) fire multiple shots per client attack
     // message since the client caps at 20 attacks/sec.
     const simultaneous = stats.volleyed ? (stats.pellets || 1) : 1;
-    const shotsPerAttack = Math.max(1, Math.floor(0.05 / (stats.cooldown * cdMult)));
+    const shotsPerAttack = Math.max(1, Math.round(0.05 / (stats.cooldown * cdMult)));
     for (let shot = 0; shot < shotsPerAttack; shot++) {
       if (MAG_SIZES[weapon] && player.ammo <= 0) break;
       for (let i = 0; i < simultaneous; i++) {
