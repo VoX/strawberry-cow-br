@@ -984,6 +984,9 @@ export const handlers = {
       else if (wep === 'akm' || wep === 'sks') {
         playSfx('ak-shot.ogg', 0.35);
       }
+      else if (wep === 'burst') playSfx('m16-shot.ogg', 0.35);
+      else if (wep === 'aug') playSfx('aug-shot.ogg', 0.35);
+      else if (wep === 'm249') playSfx(['LRA.ogg','LRB.ogg','LRC.ogg','LRD.ogg'][Math.random()*4|0], 0.3);
       else if (BURST_FAMILY.has(wep)) sfxLR(0.1);
       else sfxShoot();
 
@@ -1029,6 +1032,9 @@ export const handlers = {
       else if (msg.weapon === 'akm' || msg.weapon === 'sks') {
         playSfx('ak-shot.ogg', 0.17);
       }
+      else if (msg.weapon === 'burst') playSfx('m16-shot.ogg', 0.17);
+      else if (msg.weapon === 'aug') playSfx('aug-shot.ogg', 0.17);
+      else if (msg.weapon === 'm249') playSfx(['LRA.ogg','LRB.ogg','LRC.ogg','LRD.ogg'][Math.random()*4|0], 0.15);
       else if (BURST_FAMILY.has(msg.weapon)) sfxLR(0.1, pos);
       else sfxShoot(0.07, pos);
     }
