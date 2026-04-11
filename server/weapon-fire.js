@@ -116,12 +116,10 @@ const PLAYER_STATS_BASE = {
     autoOnly: true,
   },
   // Minigun — 300 rounds, 600 RPM full auto. 30% move speed.
-  // Double MP5K spread, MP5K damage. Extreme suppression weapon.
-  // Minigun: fires at 600 RPM internally but spawns 2 pellets per shot
-  // for visual 1200 RPM effect. 1.0s lifetime for shorter range.
+  // Minigun: 1200 RPM single pellet hitscan. No server cost per shot.
   minigun: {
     hungerGate: [2, 6], hungerCost: [2, 5],
-    cooldown: 0.1, dmg: 4.5, speed: 6624, spreadBase: 0.088, pellets: 2, spawnOffset: 40,
+    cooldown: 0.05, dmg: 4.5, speed: 6624, spreadBase: 0.088, pellets: 1, spawnOffset: 40,
     autoOnly: true, volleyed: true, vzSpreadBase: 0.08, life: 1.0,
   },
   aug: {
