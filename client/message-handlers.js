@@ -475,7 +475,12 @@ export const handlers = {
       snd.volume = (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5) * 0.4;
       snd.play().catch(() => {});
     }
-    if (S.me) S._lastWeapon = S.me.weapon;
+    if (S.me && S._lastArmor !== undefined && S.me.armor > S._lastArmor) {
+      const snd = new Audio('shield-pickup.mp3');
+      snd.volume = (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5) * 0.4;
+      snd.play().catch(() => {});
+    }
+    if (S.me) { S._lastWeapon = S.me.weapon; S._lastArmor = S.me.armor || 0; }
     if (msg.zone) S.serverZone = msg.zone;
     if (S.pingLast > 0) { const pd = performance.now() - S.pingLast; if (pd < 2000) S.pingVal = S.pingVal * 0.7 + pd * 0.3; S.pingLast = 0; }
   },
