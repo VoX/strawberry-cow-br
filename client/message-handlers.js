@@ -987,6 +987,7 @@ export const handlers = {
       else if (wep === 'burst') playSfx('m16-shot.ogg', 0.35);
       else if (wep === 'aug') playSfx('aug-shot.ogg', 0.35);
       else if (wep === 'm249') playSfx(['LRA.ogg','LRB.ogg','LRC.ogg','LRD.ogg'][Math.random()*4|0], 0.3);
+      else if (wep === 'minigun') playSfx(['minigunA.ogg','minigunB.ogg','minigunC.ogg','minigunD.ogg'][Math.random()*4|0], 0.25);
       else if (BURST_FAMILY.has(wep)) sfxLR(0.1);
       else sfxShoot();
 
@@ -1035,6 +1036,7 @@ export const handlers = {
       else if (msg.weapon === 'burst') playSfx('m16-shot.ogg', 0.17);
       else if (msg.weapon === 'aug') playSfx('aug-shot.ogg', 0.17);
       else if (msg.weapon === 'm249') playSfx(['LRA.ogg','LRB.ogg','LRC.ogg','LRD.ogg'][Math.random()*4|0], 0.15);
+      else if (msg.weapon === 'minigun') playSfx(['minigunA.ogg','minigunB.ogg','minigunC.ogg','minigunD.ogg'][Math.random()*4|0], 0.12);
       else if (BURST_FAMILY.has(msg.weapon)) sfxLR(0.1, pos);
       else sfxShoot(0.07, pos);
     }
