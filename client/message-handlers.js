@@ -1008,6 +1008,10 @@ export const handlers = {
       const y = spawnY + (toY - spawnY) * progress;
       const z = spawnZ + (toZ - spawnZ) * progress;
       group.position.set(x, z, y);
+      // Bolty lingering trail — spawn glowing particles along the path
+      if (isBolty && progress < 1 && Math.random() < 0.7) {
+        spawnParticle({ geo: PGEO_SPHERE_LO, color: 0xffffcc, x, y: z, z: y, sx: 0.9, life: 1.0, peakOpacity: 0.9 });
+      }
       // Look at the next point
       const ahead = Math.min(1, progress + 0.05);
       const ax = spawnX + (toX - spawnX) * ahead;
