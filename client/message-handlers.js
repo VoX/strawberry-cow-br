@@ -834,12 +834,13 @@ export const handlers = {
     }
     // Hitmarker for attacker — overlays the crosshair without disturbing its layout
     if (msg.targetId && msg.ownerId === S.myId && msg.targetId !== S.myId) {
-      sfx(600, 0.06, 'square', 0.07);
+      const snd = new Audio(msg.headshot ? 'headshot.mp3' : 'hitmarker.mp3');
+      snd.volume = (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5) * 0.5;
+      snd.play().catch(() => {});
       const hm = document.getElementById('hitMarker');
       if (hm) {
         hm.classList.toggle('head', !!msg.headshot);
         hm.classList.add('show');
-        if (msg.headshot) { sfx(1200, 0.15, 'sine', 0.08); sfx(1800, 0.1, 'sine', 0.06); }
         clearTimeout(window._hitMarkerTimer);
         window._hitMarkerTimer = setTimeout(() => { hm.classList.remove('show'); }, msg.headshot ? 260 : 160);
       }
@@ -1062,11 +1063,13 @@ export const handlers = {
               spawnParticle({ geo: PGEO_SPHERE_LO, color: 0xff2222, x: target.x + (Math.random()-0.5)*8, y: impactY3d + (Math.random()-0.5)*8, z: target.y + (Math.random()-0.5)*8, sx: msg.headshot ? 1.2 : 0.8, life: 0.6, peakOpacity: 1, vx: (Math.random()-0.5)*60, vy: 10 + Math.random()*30, vz: (Math.random()-0.5)*60, gy: 80 });
             }
           }
-          // Hitmarker for attacker
+          // Hitmarker for attacker — use custom sound files
           if (msg.ownerId === S.myId && msg.hit !== S.myId) {
-            sfx(600, 0.06, 'square', 0.07);
+            const snd = new Audio(msg.headshot ? 'headshot.mp3' : 'hitmarker.mp3');
+            snd.volume = (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5) * 0.5;
+            snd.play().catch(() => {});
             const hm = document.getElementById('hitMarker');
-            if (hm) { hm.style.display = 'block'; setTimeout(() => { hm.style.display = 'none'; }, 150); }
+            if (hm) { hm.style.display = 'block'; setTimeout(() => { hm.style.display = 'none'; }, msg.headshot ? 250 : 150); }
           }
           // Got hit
           if (msg.hit === S.myId) {
