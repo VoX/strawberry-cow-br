@@ -971,6 +971,11 @@ export const handlers = {
         snd.volume = (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5) * 0.3;
         snd.play().catch(() => {});
       }
+      else if (wep === 'python') {
+        const snd = new Audio('python-shot.ogg');
+        snd.volume = (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5) * 0.4;
+        snd.play().catch(() => {});
+      }
       else if (BURST_FAMILY.has(wep)) sfxLR(0.1);
       else sfxShoot();
 
@@ -1007,6 +1012,11 @@ export const handlers = {
       else if (msg.weapon === 'mp5k') {
         const snd = new Audio('mp5sd-shot.ogg');
         snd.volume = (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5) * 0.15;
+        snd.play().catch(() => {});
+      }
+      else if (msg.weapon === 'python') {
+        const snd = new Audio('python-shot.ogg');
+        snd.volume = (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5) * 0.2;
         snd.play().catch(() => {});
       }
       else if (BURST_FAMILY.has(msg.weapon)) sfxLR(0.1, pos);
