@@ -213,7 +213,7 @@ function _buildWeaponPickupModel(type) {
   return g;
 }
 
-const _WP_LABELS = { shotgun: 'XM1014', burst: 'M16A2', bolty: 'L96', cowtank: 'M72 LAW', aug: 'AUG', mp5k: 'MP5', thompson: 'THOMPSON', sks: 'SKS', akm: 'AK', python: 'PYTHON', m249: 'M249', minigun: 'MINIGUN' };
+const _WP_LABELS = { shotgun: 'XM1014', burst: 'M16A2', bolty: 'L96', cowtank: 'M72 LAW', aug: 'AUG', mp5k: 'MP5SD', thompson: 'THOMPSON', sks: 'SKS', akm: 'AK', python: 'PYTHON', m249: 'M249', minigun: 'MINIGUN' };
 
 function _buildWeaponPickupGroup(w) {
   const g = new THREE.Group();

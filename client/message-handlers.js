@@ -966,6 +966,11 @@ export const handlers = {
       // Own weapon sound
       if (wep === 'bolty') { sfxBolty(); setTimeout(() => { forceUnADS(); S._boltRacking = true; }, 100); setTimeout(() => { S._boltRacking = false; }, 2500); }
       else if (wep === 'shotgun') sfxShotgun(0.1);
+      else if (wep === 'mp5k') {
+        const snd = new Audio('mp5sd-shot.ogg');
+        snd.volume = (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5) * 0.3;
+        snd.play().catch(() => {});
+      }
       else if (BURST_FAMILY.has(wep)) sfxLR(0.1);
       else sfxShoot();
 
@@ -999,6 +1004,11 @@ export const handlers = {
       const pos = { x: fromX, y: th + 50, z: fromY };
       if (msg.weapon === 'bolty') sfxBolty(0.1, pos);
       else if (msg.weapon === 'shotgun') sfxShotgun(0.1, pos);
+      else if (msg.weapon === 'mp5k') {
+        const snd = new Audio('mp5sd-shot.ogg');
+        snd.volume = (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5) * 0.15;
+        snd.play().catch(() => {});
+      }
       else if (BURST_FAMILY.has(msg.weapon)) sfxLR(0.1, pos);
       else sfxShoot(0.07, pos);
     }
