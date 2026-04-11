@@ -67,6 +67,19 @@ function spawnInitialFood() {
     const ap = safeRandPos(200, MAP_W-200, 200, MAP_H-200);
     gameState.addArmorPickup({ id: gameState.nextEntityId(), x: ap.x, y: ap.y });
   }
+  // Spawn one of every weapon type in a ring around the center flag.
+  const uniqueWeapons = [...new Set(WEAPON_TYPES)];
+  const cx = MAP_W / 2, cy = MAP_H / 2, radius = 80;
+  for (let i = 0; i < uniqueWeapons.length; i++) {
+    const angle = (i / uniqueWeapons.length) * Math.PI * 2;
+    gameState.addWeaponPickup({
+      id: gameState.nextEntityId(),
+      x: cx + Math.cos(angle) * radius,
+      y: cy + Math.sin(angle) * radius,
+      weapon: uniqueWeapons[i],
+      spawnTime: null, // null = never despawn
+    });
+  }
 }
 
 module.exports = { spawnFood, spawnGoldenFood, spawnWeaponPickup, spawnInitialFood, safeRandPos };

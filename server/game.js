@@ -125,6 +125,7 @@ function gameTick() {
   const weaponPickups = gameState.getWeaponPickups();
   for (let i = weaponPickups.length - 1; i >= 0; i--) {
     const w = weaponPickups[i];
+    if (w.spawnTime === null) continue; // permanent pickup (center ring)
     if (!w.spawnTime) w.spawnTime = nowMs;
     if (nowMs - w.spawnTime > 15000) {
       gameState.removeWeaponPickupAt(i);
