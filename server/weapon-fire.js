@@ -43,7 +43,7 @@ const PLAYER_STATS_BASE = {
     // inside a burst — that's the 92 ms delay hardcoded in the burst loop).
     // 92 ms intra-burst = ~650 RPM, which is +30% over the auto rate by design.
     cooldown: 0.8, dmg: 14, speed: 7286, spreadBase: 0, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
-    burstStepMs: 92,
+    burstStepMs: 58,
     auto: { hungerCost: [1, 2], cooldown: 0.075, dmg: 8.7, speed: 6624, spreadBase: 0.022, pellets: 1, dualPelletMult: 2 },
     semi: { hungerCost: [1, 2], cooldown: 0.24, dmg: 14, speed: 7286, spreadBase: 0, pellets: 1, dualPelletMult: 2 },
   },
@@ -69,7 +69,7 @@ const PLAYER_STATS_BASE = {
   mp5k: {
     hungerGate: [2, 5], hungerCost: [1, 3],
     cooldown: 0.6, dmg: 9, speed: 2848, spreadBase: 0.022, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
-    burstStepMs: 92, defaultMode: 'auto',
+    burstStepMs: 52, defaultMode: 'auto',
     auto: { hungerCost: [1, 2], cooldown: 0.067, dmg: 6, speed: 2588, spreadBase: 0.044, pellets: 1, dualPelletMult: 2 },
   },
   // Thompson — 700 RPM full auto. Classic SMG.
@@ -124,7 +124,7 @@ const PLAYER_STATS_BASE = {
   aug: {
     hungerGate: [2, 6], hungerCost: [2, 5],
     cooldown: 0.615, dmg: 14, speed: 9816, spreadBase: 0, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
-    burstStepMs: 92,
+    burstStepMs: 68,
     auto: { hungerCost: [1, 2], cooldown: 0.088, dmg: 9.3, speed: 8924, spreadBase: 0.022, pellets: 1, dualPelletMult: 1 },
     semi: { hungerCost: [1, 2], cooldown: 0.266, dmg: 14, speed: 9816, spreadBase: 0, pellets: 1, dualPelletMult: 1 },
   },

@@ -1094,20 +1094,20 @@ export const handlers = {
       sx: er * 0.3,
       life: 0.5, peakOpacity: 0.6, growth: 3,
     });
-    // Lingering smoke cloud (16 drifting puffs)
+    // Lingering smoke cloud — stays at impact site, opaque, slow rise
     for (let sc = 0; sc < 16; sc++) {
       const smokeSize = 12 + Math.random() * 16;
       spawnParticle({
         geo: PGEO_SPHERE_MED, color: 0x2a2a2a,
-        x: ex + (Math.random() - 0.5) * er * 0.5,
-        y: th + 10 + Math.random() * 25,
-        z: ey + (Math.random() - 0.5) * er * 0.5,
+        x: ex + (Math.random() - 0.5) * er * 0.4,
+        y: th + 5 + Math.random() * 15,
+        z: ey + (Math.random() - 0.5) * er * 0.4,
         sx: smokeSize,
-        life: 6 + Math.random() * 1.5, peakOpacity: 0.85,
-        vx: (Math.random() - 0.5) * 8,
-        vy: 5 + Math.random() * 4,
-        vz: (Math.random() - 0.5) * 8,
-        growth: 0.7,
+        life: 6 + Math.random() * 1.5, peakOpacity: 1.0,
+        vx: (Math.random() - 0.5) * 2,
+        vy: 2 + Math.random() * 2,
+        vz: (Math.random() - 0.5) * 2,
+        growth: 0.3,
       });
     }
     // Shockwave ring

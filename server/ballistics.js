@@ -281,7 +281,7 @@ function blastKnockback(pr, players, walls, blastRadius, eyeHeightFn) {
     if (distSq < blastRadiusSq && distSq > 1) {
       const bdist = Math.sqrt(distSq);
       const falloff = 1 - bdist / blastRadius;
-      const pushForce = 300 * falloff;
+      const pushForce = 150 * falloff; // halved from 300
       const nx = dx / bdist, ny = dy / bdist, nz = dz / bdist;
       t.x += nx * pushForce; t.y += ny * pushForce;
       t.vz = (t.vz || 0) + nz * pushForce + 80 * falloff;
