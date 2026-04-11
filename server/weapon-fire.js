@@ -251,8 +251,9 @@ function fireHitscan(shooter, weapon, aim, stats, opts = {}) {
   // Ray endpoints
   const fromX = shooter.x, fromY = shooter.y, fromZ = eyeZ;
   const range = MAX_HITSCAN_RANGE;
-  const toX = fromX + ax * range, toY = fromY + ay * range;
-  // Apply analytical drop at max range for the endpoint
+  // True 3D ray — direction × range, then apply gravity drop
+  const toX = fromX + ax * range;
+  const toY = fromY + ay * range;
   const maxTravelTime = range / stats.speed;
   const maxDrop = 0.5 * BULLET_GRAVITY * maxTravelTime * maxTravelTime;
   const toZ = fromZ + az * range - maxDrop;

@@ -22,7 +22,7 @@ const HOLE_FADE = 4;      // seconds spent fading at the end of life
 const MAX_HOLES = 200;    // FIFO cap
 const HOLE_RADIUS = 2.5;  // sphere radius — needs to poke noticeably out
                           // of whatever surface it's half-buried in
-const HOLE_PEAK_OPACITY = 0.9;
+const HOLE_PEAK_OPACITY = 1.0;
 
 // Shared low-poly sphere — small enough that 200 of them is trivial.
 const _geo = markSharedGeometry(new THREE.SphereGeometry(HOLE_RADIUS, 6, 4));
