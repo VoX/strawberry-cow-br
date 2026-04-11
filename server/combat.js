@@ -125,13 +125,19 @@ function handleAttack(player, msg) {
       return;
     }
 
-    // Multi-pellet weapons (shotgun, minigun) fire simultaneous rays.
+    // Multi-pellet weapons (shotgun) fire simultaneous rays per shot.
+    // High-RPM weapons (minigun, etc) fire multiple shots per client attack
+    // message since the client caps at 20 attacks/sec.
     const simultaneous = stats.volleyed ? (stats.pellets || 1) : 1;
-    for (let i = 0; i < simultaneous; i++) {
-      weaponFire.fireHitscan(player, weapon, { ax, ay, az }, stats, hsOpts);
+    const shotsPerAttack = Math.max(1, Math.floor(0.05 / (stats.cooldown * cdMult)));
+    for (let shot = 0; shot < shotsPerAttack; shot++) {
+      if (MAG_SIZES[weapon] && player.ammo <= 0) break;
+      for (let i = 0; i < simultaneous; i++) {
+        weaponFire.fireHitscan(player, weapon, { ax, ay, az }, stats, hsOpts);
+      }
+      if (MAG_SIZES[weapon]) player.ammo = Math.max(0, player.ammo - 1);
     }
-    player.attackCooldown = stats.cooldown * cdMult;
-    if (MAG_SIZES[weapon]) player.ammo = Math.max(0, player.ammo - 1);
+    player.attackCooldown = stats.cooldown * cdMult * shotsPerAttack;
     return;
   }
 

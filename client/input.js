@@ -66,15 +66,10 @@ export function toggleFullscreen() {
 // Fire mode toggle for LR-300
 S.fireMode = 'burst';
 let mouseDown = false, autoFireActive = false, nextFireTime = 0;
-// Dynamic fire interval based on weapon — slightly over server cooldown to avoid rejected shots.
-const WEAPON_FIRE_INTERVALS = {
-  mp5k: 70, thompson: 90, burst: 78, aug: 91, akm: 103,
-  m249: 74, minigun: 23, normal: 155, python: 155, sks: 180,
-};
-function getAutoFireInterval() {
-  const wep = S.me ? S.me.weapon : 'normal';
-  return WEAPON_FIRE_INTERVALS[wep] || 75;
-}
+// Client auto-fire capped at 50ms (20/sec max) to avoid flooding the
+// network. The server fires multiple hitscan rays per attack for weapons
+// with RPM higher than 1200 (minigun, etc).
+function getAutoFireInterval() { return 50; }
 
 function autoFireLoop() {
   if (!autoFireActive) return;
