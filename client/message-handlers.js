@@ -991,6 +991,8 @@ export const handlers = {
     const glow = new THREE.Mesh(new THREE.CylinderGeometry(radius * 2.4, radius * 0.6, length * 1.5, 6), new THREE.MeshBasicMaterial({ color: 0xffdd88, transparent: true, opacity: 0.25 }));
     glow.rotation.x = Math.PI / 2; glow.position.z = -length * 0.6; group.add(glow);
     group.position.set(spawnX, spawnZ, spawnY);
+    // Initial orientation toward the impact point
+    group.lookAt(toX, toZ, toY);
     scene.add(group);
 
     const startT = performance.now();
