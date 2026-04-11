@@ -33,7 +33,7 @@ const TICK_HZ = TICK_RATE;
 const TICK_DT = 1 / TICK_HZ;
 // Divergence threshold before we snap. 1 world unit is ~1cm of visible
 // drift; tighter and floating-point noise triggers spurious snaps.
-const RECONCILE_EPSILON = 1.0;
+const RECONCILE_EPSILON = 2.0;
 // Ring cap for predicted states per input seq. 60 entries = 2 seconds at
 // TICK_RATE Hz, plenty of headroom for any reasonable RTT + ack delay.
 const PREDICT_RING_CAP = 60;
