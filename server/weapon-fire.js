@@ -332,11 +332,25 @@ function fireHitscan(shooter, weapon, aim, stats, opts = {}) {
   }
 
   if (!impactX) {
-    // Hit wall/terrain/max range
+    // Hit wall/terrain/max range. Check terrain intersection by stepping
+    // along the ray and finding where Z drops below terrain height.
     const t = Math.min(blockT, 1);
     impactX = fromX + (toX - fromX) * t;
     impactY = fromY + (toY - fromY) * t;
     impactZ = fromZ + (toZ - fromZ) * t;
+    // Terrain collision — bisect to find where the ray crosses the ground
+    const steps = 8;
+    for (let s = 1; s <= steps; s++) {
+      const st = (s / steps) * t;
+      const sx = fromX + (toX - fromX) * st;
+      const sy = fromY + (toY - fromY) * st;
+      const sz = fromZ + (toZ - fromZ) * st;
+      const th = getTerrainHeight(sx, sy);
+      if (sz < th) {
+        impactX = sx; impactY = sy; impactZ = th;
+        break;
+      }
+    }
   }
 
   const dist = Math.hypot(impactX - fromX, impactY - fromY);

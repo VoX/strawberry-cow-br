@@ -1008,9 +1008,14 @@ export const handlers = {
       const y = spawnY + (toY - spawnY) * progress;
       const z = spawnZ + (toZ - spawnZ) * progress;
       group.position.set(x, z, y);
-      // Bolty lingering trail — spawn glowing particles along the path
-      if (isBolty && progress < 1 && Math.random() < 0.7) {
-        spawnParticle({ geo: PGEO_SPHERE_LO, color: 0xffffcc, x, y: z, z: y, sx: 0.9, life: 1.0, peakOpacity: 0.9 });
+      // Bolty lingering trail — dense glowing particles along the path
+      if (isBolty && progress < 1) {
+        for (let ti = 0; ti < 4; ti++) {
+          spawnParticle({ geo: PGEO_SPHERE_LO, color: 0xffffcc,
+            x: x + (Math.random()-0.5)*2, y: z + (Math.random()-0.5)*2, z: y + (Math.random()-0.5)*2,
+            sx: 0.7 + Math.random()*0.5, life: 1.2, peakOpacity: 0.85, growth: -0.3,
+          });
+        }
       }
       // Look at the next point
       const ahead = Math.min(1, progress + 0.05);
@@ -1025,6 +1030,15 @@ export const handlers = {
         // Impact effects at arrival point
         const impX = toX, impY = toY, impZ = toZ;
         const isShotgun = msg.weapon === 'shotgun';
+        // Debug: red cube at impact location
+        if (S.debugMode && msg.ownerId === S.myId) {
+          const dbgGeo = new THREE.BoxGeometry(3, 3, 3);
+          const dbgMat = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.7 });
+          const dbgCube = new THREE.Mesh(dbgGeo, dbgMat);
+          dbgCube.position.set(impX, impZ || getTerrainHeight(impX, impY), impY);
+          scene.add(dbgCube);
+          setTimeout(() => { scene.remove(dbgCube); dbgGeo.dispose(); dbgMat.dispose(); }, 10000);
+        }
         if (msg.hit) {
           // Player hit — blood particles (fewer for shotgun pellets)
           const target = S.serverPlayers.find(p => p.id === msg.hit);
