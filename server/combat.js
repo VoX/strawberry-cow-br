@@ -5,11 +5,18 @@ const { getTerrainHeight, getGroundHeight, WALL_HEIGHT } = require('./terrain');
 const ballistics = require('./ballistics');
 const weaponFire = require('./weapon-fire');
 const { applyHungerDelta, applyArmorDelta } = require('./player');
-const { MAG_SIZES, EXT_MAG_SIZES, DUAL_WIELD_FAMILY, KNIFE_MELEE_RANGE, KNIFE_MELEE_CONE_COS, KNIFE_MELEE_DAMAGE, KNIFE_MELEE_CD_MS } = require('../shared/constants');
+const { MAG_SIZES, EXT_MAG_SIZES, DUAL_WIELD_FAMILY, BURST_FAMILY, KNIFE_MELEE_RANGE, KNIFE_MELEE_CONE_COS, KNIFE_MELEE_DAMAGE, KNIFE_MELEE_CD_MS } = require('../shared/constants');
 // Lazy-require to avoid circular dependency (game.js requires combat.js).
 let _SI = null;
 function getSI() { if (!_SI) _SI = require('./game').SI; return _SI; }
 
+
+// Hitscan weapons — instant ray trace, no projectile entity.
+// All bullet weapons except cowtank (explosive projectile).
+const HITSCAN_WEAPONS = new Set([
+  'normal', 'burst', 'shotgun', 'bolty', 'mp5k', 'thompson',
+  'akm', 'sks', 'aug', 'python', 'm249', 'minigun',
+]);
 
 const BASE_EYE_HEIGHT = 35;
 function eyeHeight(p) {
@@ -64,20 +71,61 @@ function handleAttack(player, msg) {
     ax = dd[0]; ay = dd[1]; az = 0;
   } else { ax /= alen3d; ay /= alen3d; az /= alen3d; }
 
-  // Hitscan weapons — instant ray trace, no projectile entity.
-  // All bullet weapons except cowtank (explosive projectile).
-  const HITSCAN_WEAPONS = new Set([
-    'normal', 'burst', 'shotgun', 'bolty', 'mp5k', 'thompson',
-    'akm', 'sks', 'aug', 'python', 'm249', 'minigun',
-  ]);
   if (HITSCAN_WEAPONS.has(weapon)) {
+    const walkSpreadMult = player.walking ? 0.73 : 1;
+    const fireServerTime = typeof msg.serverTime === 'number' ? msg.serverTime : null;
     const hsOpts = {
-      dualWield, dmgMult, eyeHeight,
-      walkSpreadMult: player.walking ? 0.73 : 1,
-      fireServerTime: typeof msg.serverTime === 'number' ? msg.serverTime : null,
+      dualWield, dmgMult, eyeHeight, walkSpreadMult, fireServerTime,
     };
-    // Multi-pellet weapons fire multiple simultaneous rays.
-    // Burst/semi weapons use pellets for burst count, not simultaneous — fire 1 ray.
+
+    // Burst-family: respect fire mode (auto / semi / burst)
+    if (BURST_FAMILY.has(weapon)) {
+      const requestedMode = msg.fireMode === 'auto' ? 'auto' : msg.fireMode === 'semi' ? 'semi' : 'burst';
+      let effectiveMode = requestedMode;
+      if (effectiveMode === 'burst' && !stats.burstStepMs) effectiveMode = 'auto';
+      if (effectiveMode === 'semi' && !stats.semi) effectiveMode = 'auto';
+
+      if (effectiveMode === 'auto' && stats.auto) {
+        const a = stats.auto;
+        const autoCount = dualWield ? (a.dualPelletMult || 1) : 1;
+        const autoOpts = { ...hsOpts, walkSpreadMult: walkSpreadMult * (dualWield ? 1.5 : 1) };
+        const autoStats = { ...stats, ...a, spreadBase: a.spreadBase };
+        for (let ac = 0; ac < autoCount; ac++) {
+          weaponFire.fireHitscan(player, weapon, { ax, ay, az }, autoStats, autoOpts);
+        }
+        player.attackCooldown = a.cooldown * cdMult;
+        if (MAG_SIZES[weapon]) player.ammo = Math.max(0, player.ammo - autoCount);
+        return;
+      }
+      if (effectiveMode === 'semi' && stats.semi) {
+        const s = stats.semi;
+        const semiCount = dualWield ? (s.dualPelletMult || 1) : 1;
+        const semiStats = { ...stats, ...s, spreadBase: s.spreadBase };
+        for (let sc = 0; sc < semiCount; sc++) {
+          weaponFire.fireHitscan(player, weapon, { ax, ay, az }, semiStats, hsOpts);
+        }
+        player.attackCooldown = s.cooldown * cdMult;
+        if (MAG_SIZES[weapon]) player.ammo = Math.max(0, player.ammo - semiCount);
+        return;
+      }
+      // Burst mode — 3 rays with delayed damage, spread per round
+      const burstCount = stats.pellets || 3;
+      const volleys = dualWield ? 2 : 1;
+      for (let b = 0; b < burstCount; b++) {
+        for (let v = 0; v < volleys; v++) {
+          const delay = b * stats.burstStepMs + v * 25;
+          gameState.scheduleRoundTimer(() => {
+            if (!player.alive) return;
+            weaponFire.fireHitscan(player, weapon, { ax, ay, az }, stats, hsOpts);
+          }, delay);
+        }
+      }
+      player.attackCooldown = stats.cooldown * cdMult;
+      if (MAG_SIZES[weapon]) player.ammo = Math.max(0, player.ammo - burstCount * volleys);
+      return;
+    }
+
+    // Multi-pellet weapons (shotgun, minigun) fire simultaneous rays.
     const simultaneous = stats.volleyed ? (stats.pellets || 1) : 1;
     for (let i = 0; i < simultaneous; i++) {
       weaponFire.fireHitscan(player, weapon, { ax, ay, az }, stats, hsOpts);

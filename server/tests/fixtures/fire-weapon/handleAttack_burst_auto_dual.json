@@ -8,17 +8,32 @@
       "headshot": false,
       "hit": null,
       "ownerId": 100,
-      "toX": 3996.257017,
-      "toY": 1000,
-      "toZ": 172.097585,
-      "travelTime": 0.411235,
+      "toX": 3989.409777,
+      "toY": 984.829428,
+      "toZ": 271.010404,
+      "travelTime": 0.451306,
+      "type": "tracer",
+      "weapon": "burst"
+    },
+    {
+      "color": 16777215,
+      "fromX": 1000,
+      "fromY": 1000,
+      "fromZ": 35,
+      "headshot": false,
+      "hit": null,
+      "ownerId": 100,
+      "toX": 3994.488437,
+      "toY": 905.073836,
+      "toZ": 174.625976,
+      "travelTime": 0.452294,
       "type": "tracer",
       "weapon": "burst"
     }
   ],
   "mutations": {
-    "ammo": 49,
-    "attackCooldown": 0.8
+    "ammo": 48,
+    "attackCooldown": 0.12
   },
   "projectiles": []
 }

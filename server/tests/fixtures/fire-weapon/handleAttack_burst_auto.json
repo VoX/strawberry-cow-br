@@ -8,17 +8,17 @@
       "headshot": false,
       "hit": null,
       "ownerId": 100,
-      "toX": 3996.257017,
-      "toY": 1000,
-      "toZ": 172.097585,
-      "travelTime": 0.411235,
+      "toX": 3993.628782,
+      "toY": 993.210582,
+      "toZ": 214.912457,
+      "travelTime": 0.451938,
       "type": "tracer",
       "weapon": "burst"
     }
   ],
   "mutations": {
     "ammo": 49,
-    "attackCooldown": 0.8
+    "attackCooldown": 0.12
   },
   "projectiles": []
 }
