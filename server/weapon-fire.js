@@ -343,18 +343,34 @@ function fireHitscan(shooter, weapon, aim, stats, opts = {}) {
     impactX = fromX + (toX - fromX) * t;
     impactY = fromY + (toY - fromY) * t;
     impactZ = fromZ + (toZ - fromZ) * t;
-    // Terrain collision — bisect to find where the ray crosses the ground
-    const steps = 8;
-    for (let s = 1; s <= steps; s++) {
-      const st = (s / steps) * t;
+    // Terrain collision — coarse scan then binary search refinement.
+    // Coarse scan at 32 steps to find the first below-ground segment,
+    // then bisect within that segment for precise ground intersection.
+    const coarseSteps = 32;
+    let hitStep = -1;
+    for (let s = 1; s <= coarseSteps; s++) {
+      const st = (s / coarseSteps) * t;
+      const sz = fromZ + (toZ - fromZ) * st;
       const sx = fromX + (toX - fromX) * st;
       const sy = fromY + (toY - fromY) * st;
-      const sz = fromZ + (toZ - fromZ) * st;
-      const th = getTerrainHeight(sx, sy);
-      if (sz < th) {
-        impactX = sx; impactY = sy; impactZ = th;
-        break;
+      if (sz < getTerrainHeight(sx, sy)) { hitStep = s; break; }
+    }
+    if (hitStep > 0) {
+      // Binary search between hitStep-1 and hitStep for precise intersection
+      let lo = ((hitStep - 1) / coarseSteps) * t;
+      let hi = (hitStep / coarseSteps) * t;
+      for (let iter = 0; iter < 6; iter++) {
+        const mid = (lo + hi) / 2;
+        const mx = fromX + (toX - fromX) * mid;
+        const my = fromY + (toY - fromY) * mid;
+        const mz = fromZ + (toZ - fromZ) * mid;
+        if (mz < getTerrainHeight(mx, my)) hi = mid;
+        else lo = mid;
       }
+      const ft = (lo + hi) / 2;
+      impactX = fromX + (toX - fromX) * ft;
+      impactY = fromY + (toY - fromY) * ft;
+      impactZ = getTerrainHeight(impactX, impactY);
     }
   }
 
