@@ -280,12 +280,21 @@ function fireHitscan(shooter, weapon, aim, stats, opts = {}) {
   const walls = gameState.getWalls();
   const barricades = gameState.getBarricades();
   let blockT = 1.01;
+  let hitWall = null;
   if (!stats.wallPiercing) {
     const wres = ballistics.segVsWalls(fromX, fromY, fromZ, toX, toY, toZ, walls, getTerrainHeight, WALL_HEIGHT);
     blockT = wres.blockT;
+    hitWall = wres.hitWall;
   }
   const bres = ballistics.segVsBarricades(fromX, fromY, fromZ, toX, toY, toZ, barricades, blockT);
-  if (bres.hitBarricade) blockT = bres.blockT;
+  let hitBarricade = null;
+  if (bres.hitBarricade) {
+    blockT = bres.blockT;
+    hitBarricade = bres.hitBarricade;
+    // Apply damage to barricade
+    hitBarricade.hp -= Math.round(stats.dmg * perkDmgMult * dmgMult);
+    if (hitBarricade.hp <= 0) gameState.removeBarricade(hitBarricade.id);
+  }
 
   // Check player hit
   const hitPlayer = ballistics.findPlayerHit(fromX, fromY, fromZ, toX, toY, toZ, playersForHit, shooter.id, blockT, eyeHeight || (() => 40));
