@@ -32,6 +32,10 @@ body{background:#1a0a2e;overflow:hidden;font-family:'Segoe UI',sans-serif}
 #hungerFill{height:100%;border-radius:4px;background:#ffffff;transition:width 0.15s}
 #hungerTxt{position:absolute;width:100%;text-align:center;top:7px;font-size:14px;font-weight:bold;text-shadow:1px 1px #000}
 #weapon{position:absolute;bottom:60px;right:15px;font-size:56px;color:#aaa;text-shadow:2px 2px #000;text-align:right}
+.ammoLow{padding:0 6px;border-radius:4px;animation:ammoLowFlash 0.9s ease-in-out infinite}
+@keyframes ammoLowFlash{0%,100%{background:rgba(255,40,40,0.1)}50%{background:rgba(255,40,40,0.55)}}
+.ammoCrit{padding:0 6px;border-radius:4px;animation:ammoCritFlash 0.25s steps(2,end) infinite;box-shadow:0 0 12px rgba(255,40,40,0.7)}
+@keyframes ammoCritFlash{0%{background:rgba(255,20,20,0.95);color:#fff}100%{background:rgba(255,200,40,0.25)}}
 #headshotMarker{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:18px;color:#ff2222;font-weight:bold;text-shadow:0 0 8px #ff0000;pointer-events:none;display:none;z-index:12}
 #playerCount{position:absolute;top:10px;right:10px;font-size:16px;font-weight:bold;color:#ff88aa;text-shadow:1px 1px #000}
 #lockMsg{display:none!important}

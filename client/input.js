@@ -4,21 +4,7 @@ import { cam, ren } from './renderer.js';
 import { initAudio } from './audio.js';
 import { send } from './network.js';
 import { getServerTime } from './snapshot.js';
-import { BURST_FAMILY, JUMP_VZ } from '../shared/constants.js';
-
-// Jump prediction: server applies vz=200 + onGround=false on receipt of
-// the jump message ONLY IF player.onGround was true. Mirror that gate
-// locally so the client predicts the jump immediately, before the
-// inputAck would arrive — otherwise pressing Space leaves the camera
-// glued to the ground for ~50-200 ms before snapping upward.
-function predictJump() {
-  const mp = S.mePredicted;
-  if (!mp || !mp.onGround) return;
-  // Minigun is too heavy to jump with — server enforces the same gate.
-  if (mp.weapon === 'minigun') return;
-  mp.vz = JUMP_VZ;
-  mp.onGround = false;
-}
+import { BURST_FAMILY } from '../shared/constants.js';
 
 // Lag comp: attack messages carry serverTime so the server can rewind
 // entity positions to what the shooter was seeing via SI vault.
@@ -66,9 +52,29 @@ export function toggleFullscreen() {
   }
 }
 
-// Pointer lock
-// Fire mode toggle for LR-300
-S.fireMode = 'burst';
+// Per-weapon supported fire modes. First entry wins as the priority
+// fallback when S.fireMode lands on something the current weapon can't
+// do (e.g. holding 'semi' on the M16, then swapping to MP5K which has
+// no semi). KeyX cycles only through this list. Weapons not in the
+// table either auto-fire only or don't expose a selector.
+export const FIRE_MODES = {
+  burst:    ['auto', 'burst', 'semi'],
+  aug:      ['auto', 'burst', 'semi'],
+  mp5k:     ['auto', 'burst'],
+  akm:      ['auto', 'semi'],
+  thompson: ['auto'],
+};
+// Snap S.fireMode to a mode the current weapon supports. Called on the
+// HUD update tick so weapon swaps and chat-set modes can never leave
+// fireMode invalid.
+export function clampFireMode(wep) {
+  const supported = FIRE_MODES[wep];
+  if (supported && !supported.includes(S.fireMode)) {
+    S.fireMode = supported[0];
+    stopAutoFire();
+  }
+}
+S.fireMode = 'auto';
 let mouseDown = false, autoFireActive = false, nextFireTime = 0;
 // Client auto-fire capped at 50ms (20/sec max) to avoid flooding the
 // network. The server fires multiple hitscan rays per attack for weapons
@@ -276,8 +282,13 @@ if (isMobile) {
   if (touchFireMode) touchFireMode.addEventListener('touchstart', e => {
     e.preventDefault();
     const myWep = S.me ? S.me.weapon : '';
-    if (myWep === 'mp5k') S.fireMode = S.fireMode === 'auto' ? 'burst' : 'auto';
-    else S.fireMode = S.fireMode === 'burst' ? 'auto' : S.fireMode === 'auto' ? 'semi' : 'burst';
+    const supported = FIRE_MODES[myWep];
+    if (supported && supported.length > 1) {
+      clampFireMode(myWep);
+      const idx = supported.indexOf(S.fireMode);
+      S.fireMode = supported[(idx + 1) % supported.length];
+      stopAutoFire();
+    }
   }, { passive: false });
   const touchADS = document.getElementById('touchADS');
   if (touchADS) {
@@ -356,7 +367,6 @@ addEventListener('keydown', e => {
     if (e.code === 'ArrowLeft' || e.code === 'KeyA') { cycleSpectate(-1); return; }
   }
   if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && S.state === 'playing') doDash();
-  if (e.code === 'Space') { e.preventDefault(); S._spaceHeld = true; send({ type: 'jump' }); predictJump(); }
   if (e.code === 'KeyQ' && S.state === 'playing') send({ type: 'dropWeapon' });
   if (e.code === 'KeyV' && !e.repeat && S.state === 'playing' && S.me && S.me.alive) send({ type: 'moo' });
   // F toggles between the held primary and the knife. Number keys are
@@ -393,22 +403,21 @@ addEventListener('keydown', e => {
   }
   if (e.code === 'KeyX' && S.state === 'playing') {
     const myWep = S.me ? S.me.weapon : '';
-    if (myWep === 'mp5k') {
-      S.fireMode = S.fireMode === 'auto' ? 'burst' : 'auto';
-    } else if (myWep === 'akm') {
-      // AKM: toggle auto ↔ semi only (no burst)
-      S.fireMode = S.fireMode === 'auto' ? 'semi' : 'auto';
-    } else {
-      // LR/AUG: cycle burst → auto → semi → burst
-      S.fireMode = S.fireMode === 'burst' ? 'auto'
-                 : S.fireMode === 'auto'  ? 'semi'
-                 : 'burst';
+    const supported = FIRE_MODES[myWep];
+    if (supported && supported.length > 1) {
+      clampFireMode(myWep);
+      const idx = supported.indexOf(S.fireMode);
+      S.fireMode = supported[(idx + 1) % supported.length];
+      // Mode change halts the trigger pull. Otherwise auto→semi while still
+      // holding click would keep slow-firing one-shot-per-tick from the auto
+      // loop instead of waiting for a fresh click.
+      stopAutoFire();
+      const wepLabel = { mp5k: 'MP5K', aug: 'AUG', akm: 'AK' }[myWep] || 'M16A2';
+      S.chatLog.push({ name: '', color: '', text: wepLabel + ': ' + S.fireMode.toUpperCase() + ' mode', t: 2, system: true });
+      if (S.chatLog.length > 10) S.chatLog.shift();
     }
-    const wepLabel = { mp5k: 'MP5K', aug: 'AUG', akm: 'AK' }[myWep] || 'M16A2';
-    S.chatLog.push({ name: '', color: '', text: wepLabel + ': ' + S.fireMode.toUpperCase() + ' mode', t: 2, system: true });
-    if (S.chatLog.length > 10) S.chatLog.shift();
   }
-  if (e.code === 'KeyC' && S.state === 'playing') {
+  if (e.code === 'KeyC' && !e.repeat && S.state === 'playing') {
     const meC = S.me;
     if (meC && meC.alive) S.crouching = !S.crouching;
   }
@@ -429,5 +438,4 @@ addEventListener('keydown', e => {
 });
 addEventListener('keyup', e => {
   S.keys[e.code] = false;
-  if (e.code === 'Space') S._spaceHeld = false;
 });

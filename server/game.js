@@ -1,5 +1,5 @@
 const { TICK_RATE, MAP_W, MAP_H } = require('./config');
-const { KNIFE_SPEED_MULT, JUMP_VZ } = require('../shared/constants');
+const { KNIFE_SPEED_MULT } = require('../shared/constants');
 const { SnapshotInterpolation } = require('@geckos.io/snapshot-interpolation');
 // Server-side SI — creates timestamped snapshots and stores them in a vault
 // for lag-compensated hit detection (time rewind).
@@ -82,7 +82,7 @@ function startGame() {
     players: getPlayerStates(),
     foods: gameState.getFoods().map(serializeFood),
     zone: gameState.getZone(),
-    map: { walls: gameState.getWalls(), mud: gameState.getMudPatches(), ponds: gameState.getHealPonds(), portals: gameState.getPortals(), shelters: gameState.getShelters(), houses: gameState.getHouses() },
+    map: { walls: gameState.getWalls(), shelters: gameState.getShelters(), houses: gameState.getHouses() },
     barricades: gameState.getBarricades(),
     armorPickups: gameState.getArmorPickups().map(a => ({ id: a.id, x: a.x, y: a.y })),
     weapons: gameState.getWeaponPickups().map(w => ({ id: w.id, x: w.x, y: w.y, weapon: w.weapon, spawnTime: w.spawnTime })),
@@ -138,14 +138,11 @@ function gameTick() {
   const zone = gameState.getZone();
 
   const walls = gameState.getWalls();
-  const mudPatches = gameState.getMudPatches();
-  const healPonds = gameState.getHealPonds();
-  const portals = gameState.getPortals();
 
   // Build the shared movement world + terrain shims once per tick so every
   // player call reuses the same references. Both objects are required by
   // shared/movement.js::stepPlayerMovement.
-  const moveWorld = { walls, barricades, mudPatches, portals, zone };
+  const moveWorld = { walls, barricades, zone };
   const moveTerrain = { getGroundHeight, WALL_HEIGHT };
 
   for (const [, p] of gameState.getPlayers()) {
@@ -175,21 +172,25 @@ function gameTick() {
       moveSpeedMult = KNIFE_SPEED_MULT;
     }
 
-    // Apply deferred jump at drain time so it's in sync with the client
-    // prediction cadence. Checked AFTER queue drain so it fires on the
-    // same tick as the move that was active when Space was pressed.
-    // Minigun blocks jump entirely (heavy weapon — too cumbersome to leap
-    // with). Pending flag is still cleared so a later weapon swap doesn't
-    // hold a stale jump.
-    if (p._pendingJump) {
-      if (p.onGround && p.weapon !== 'minigun') {
-        p.vz = JUMP_VZ;
-        p.onGround = false;
-      }
-      p._pendingJump = false;
-    }
-
     const wasSpawnProtected = p.spawnProtection > 0;
+
+    // Minigun spin timer must run BEFORE the integrator so the spin value the
+    // server uses for slowdown matches the value broadcast to clients (which
+    // they then mirror onto their predicted player). Otherwise the integrator
+    // uses tick T-1's value while the broadcast contains tick T's value, and
+    // the client systematically over- or under-applies slowdown during spin
+    // transitions → reconcile drift → inchworm.
+    if (p.weapon === 'minigun') {
+      if (p._minigunSpinning) {
+        p._minigunSpinTime = Math.min(1, (p._minigunSpinTime || 0) + dt);
+        if (p._minigunSpinTime >= 1) p._minigunSpun = true;
+      } else if (p._minigunSpinTime > 0) {
+        p._minigunSpinTime = Math.max(0, p._minigunSpinTime - dt * 1.25);
+        p._minigunSpun = false;
+      }
+    } else {
+      p._minigunSpinning = false; p._minigunSpun = false; p._minigunSpinTime = 0;
+    }
 
     stepPlayerMovement(p, dt, moveWorld, { dx: p.dx, dy: p.dy, walking: p.walking, speedMult: moveSpeedMult }, moveTerrain);
 
@@ -212,14 +213,6 @@ function gameTick() {
     // Debug scene: infinite milk for all players
     if (gameState.isDebugScene() && p.hunger < 50) p.hunger = 100;
 
-    // Heal ponds — hunger regen, stays here because stepPlayerMovement is
-    // movement-only.
-    for (const h of healPonds) {
-      if (Math.hypot(p.x - h.x, p.y - h.y) < h.r) {
-        applyHungerDelta(p, 3 * dt);
-      }
-    }
-
     // Zone damage disabled — no shrinking zone
 
     // Hunger drain (skip for bots when free will is off)
@@ -230,23 +223,10 @@ function gameTick() {
     // Cooldowns
     if (p.dashCooldown > 0) p.dashCooldown -= dt; if (p.pickupCooldown > 0) p.pickupCooldown -= dt;
     if (p.attackCooldown > 0) p.attackCooldown -= dt;
+    if (p._secondaryAttackCooldown > 0) p._secondaryAttackCooldown -= dt;
 
     // Eat timer
     if (p.eating) { p.eatTimer -= dt; if (p.eatTimer <= 0) p.eating = false; }
-
-    // Minigun spin-up/down timer — 1 second to fully spin, 0.8s to spin down
-    if (p.weapon === 'minigun') {
-      if (p._minigunSpinning) {
-        p._minigunSpinTime = Math.min(1, (p._minigunSpinTime || 0) + dt);
-        if (p._minigunSpinTime >= 1) p._minigunSpun = true;
-      } else if (p._minigunSpinTime > 0) {
-        // Gradual spin-down
-        p._minigunSpinTime = Math.max(0, p._minigunSpinTime - dt * 1.25);
-        p._minigunSpun = false;
-      }
-    } else {
-      p._minigunSpinning = false; p._minigunSpun = false; p._minigunSpinTime = 0;
-    }
 
     // Food collision
     const collectRadius = 35 + Math.min(20, p.foodEaten * 0.5);

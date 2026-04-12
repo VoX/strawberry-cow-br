@@ -104,6 +104,8 @@ function getPlayerTick(p) {
     personality: p.personality || null,
     // Minigun spin state for HUD bar
     minigunSpin: p._minigunSpinTime || 0,
+    // Tank rendering flag — client swaps cow mesh for hull+turret when true.
+    isTank: !!p.isTank,
     // Event flags — set for ONE tick then cleared by clearEventFlags().
     // Client detects rising edge to trigger visuals/audio.
     justDashed: !!p._justDashed,
@@ -136,7 +138,14 @@ function eliminatePlayer(p, reason) {
   if (!p.alive) return;
   p.alive = false;
   p.deathTime = Date.now();
-  p._pendingJump = false;
+  // Cancel any in-flight reload so player.reloading doesn't linger up to
+  // 750 ms past death (benelli shell loop) or longer (other weapons),
+  // which would otherwise serialize stale state on the tick payload.
+  // Lazy-require to avoid the player↔combat circular dep.
+  if (p.reloading) {
+    if (p.reloadTimer) { clearTimeout(p.reloadTimer); p.reloadTimer = null; }
+    p.reloading = 0;
+  }
   // countAlive iterates live players — p is already alive=false so we don't
   // subtract. rank = remaining_live + 1 == eliminated player's finishing rank.
   const remaining = gameState.countAlive(false);

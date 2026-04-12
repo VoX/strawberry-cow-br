@@ -35,9 +35,6 @@ class GameState {
 
     // static round features (rebuilt each round in generateMap)
     this._walls = [];
-    this._mudPatches = [];
-    this._healPonds = [];
-    this._portals = [];
     this._shelters = [];
     this._houses = [];
 
@@ -146,12 +143,6 @@ class GameState {
 
   // --- terrain features ----------------------------------------------------
   // Populated once per round in generateMap(), cleared by resetRound().
-  getMudPatches() { return this._mudPatches; }
-  addMudPatch(m) { this._mudPatches.push(m); }
-  getHealPonds() { return this._healPonds; }
-  addHealPond(h) { this._healPonds.push(h); }
-  getPortals() { return this._portals; }
-  addPortal(p) { this._portals.push(p); }
   getShelters() { return this._shelters; }
   addShelter(s) { this._shelters.push(s); }
   getHouses() { return this._houses; }
@@ -223,9 +214,6 @@ class GameState {
     this._armorPickups.length = 0;
     this._barricades.length = 0;
     this._walls.length = 0;
-    this._mudPatches.length = 0;
-    this._healPonds.length = 0;
-    this._portals.length = 0;
     this._shelters.length = 0;
     this._houses.length = 0;
     this._cowstrikeActive = false;

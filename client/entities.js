@@ -252,10 +252,11 @@ const SHIELD_BUBBLE_GEO = markSharedGeometry(new THREE.SphereGeometry(24, 12, 12
 const SPAWN_BUBBLE_GEO  = markSharedGeometry(new THREE.SphereGeometry(25, 12, 12));
 // Debug hitbox primitives — one per cow when debug mode is on, shared so that
 // toggling debug off and on again doesn't leak the old geometries.
-// Debug hitbox radii must match server/ballistics.js PLAYER_BODY_RADIUS
-// (14) and PLAYER_HEAD_RADIUS (10).
+// Debug hitbox radii / span must match server/ballistics.js
+// PLAYER_BODY_RADIUS (14), PLAYER_HEAD_RADIUS (10), PLAYER_HEAD_SPAN (20),
+// PLAYER_HEAD_HITBOX_FRAC (2/3 → head cylinder height = 20 * 2/3 ≈ 13.33).
 const DEBUG_BODY_GEO  = markSharedGeometry(new THREE.CylinderGeometry(14, 14, 1, 12)); // scaled per-cow in Y
-const DEBUG_HEAD_GEO  = markSharedGeometry(new THREE.CylinderGeometry(10, 10, 20, 12));
+const DEBUG_HEAD_GEO  = markSharedGeometry(new THREE.CylinderGeometry(10, 10, 20 * (2/3), 12));
 const DEBUG_ARROW_SHAFT_GEO = markSharedGeometry(new THREE.CylinderGeometry(0.8, 0.8, 30, 6));
 const DEBUG_ARROW_HEAD_GEO  = markSharedGeometry(new THREE.ConeGeometry(2.5, 5, 6));
 const DEBUG_BODY_MAT  = markSharedMaterial(new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: true }));
@@ -325,16 +326,69 @@ export function buildCow(color, personality) {
   // Two legs (biped)
   const legL = new THREE.Mesh(COW_GEO.leg, bodyMat); legL.position.set(-4, 3, 0); g.add(legL);
   const legR = new THREE.Mesh(COW_GEO.leg, bodyMat); legR.position.set(4, 3, 0); g.add(legR);
-  // Hooves
-  const hoof1 = new THREE.Mesh(COW_GEO.hoof, COW_HOOF_MAT); hoof1.position.set(-4, -1, 0); g.add(hoof1);
-  const hoof2 = new THREE.Mesh(COW_GEO.hoof, COW_HOOF_MAT); hoof2.position.set(4, -1, 0); g.add(hoof2);
+  // Hooves — sit at the bottom of the legs. Leg cylinder height=12 centered
+  // at y=3 → leg bottom at y=-3. Hoof box height=2, so hoof center at y=-4
+  // puts the hoof's top face flush with the leg's bottom.
+  const hoof1 = new THREE.Mesh(COW_GEO.hoof, COW_HOOF_MAT); hoof1.position.set(-4, -4, 0); g.add(hoof1);
+  const hoof2 = new THREE.Mesh(COW_GEO.hoof, COW_HOOF_MAT); hoof2.position.set(4, -4, 0); g.add(hoof2);
   // Udder
   const udder = new THREE.Mesh(COW_GEO.udder, COW_UDDER_MAT); udder.position.set(0, 13, 5.5); udder.scale.set(1, 0.7, 0.8); g.add(udder);
   const teat1 = new THREE.Mesh(COW_GEO.teat, COW_UDDER_MAT); teat1.position.set(-1.5, 13, 7); teat1.rotation.x = Math.PI / 2; g.add(teat1);
   const teat2 = new THREE.Mesh(COW_GEO.teat, COW_UDDER_MAT); teat2.position.set(1.5, 13, 7); teat2.rotation.x = Math.PI / 2; g.add(teat2);
-  // Arms (team-colored)
-  const armL = new THREE.Mesh(COW_GEO.arm, bodyMat); armL.position.set(-9, 20, 0); armL.rotation.z = 0.3; g.add(armL);
-  const armR = new THREE.Mesh(COW_GEO.arm, bodyMat); armR.position.set(9, 20, 0); armR.rotation.z = -0.3; g.add(armR);
+  // Arms (team-colored) — flipped 180° in pitch (X-axis) per design.
+  const armL = new THREE.Mesh(COW_GEO.arm, bodyMat); armL.position.set(-9, 20, 0); armL.rotation.x = Math.PI; armL.rotation.z = 0.3; g.add(armL);
+  const armR = new THREE.Mesh(COW_GEO.arm, bodyMat); armR.position.set(9, 20, 0); armR.rotation.x = Math.PI; armR.rotation.z = -0.3; g.add(armR);
+  return g;
+}
+
+// -----------------------------------------------------------------------------
+// M1 Bradley tank mesh — used when player.isTank is true. Same orientation
+// convention as the cow: forward = +Z in local mesh space, so cm.rotation.y
+// rotates the whole hull/turret/barrel as one rigid body. (We do NOT split
+// turret rotation from hull rotation — the slow turret traverse on the server
+// drives the whole p.aimAngle, and the rolled-up effect is what master asked
+// for: a tank that "delays turning toward the player".)
+const TANK_GEO = {
+  hull:        new THREE.BoxGeometry(34, 18, 56),
+  turret:      new THREE.BoxGeometry(26, 12, 30),
+  cannon:      new THREE.CylinderGeometry(2.0, 2.0, 44, 8),
+  cannonBase:  new THREE.BoxGeometry(8, 8, 6),
+  m249:        new THREE.CylinderGeometry(0.9, 0.9, 18, 6),
+  m249Mount:   new THREE.BoxGeometry(4, 4, 6),
+  tread:       new THREE.BoxGeometry(8, 12, 56),
+  hatch:       new THREE.CylinderGeometry(4, 4, 1.5, 8),
+};
+for (const g of Object.values(TANK_GEO)) markSharedGeometry(g);
+
+const TANK_HULL_MAT   = markSharedMaterial(new THREE.MeshLambertMaterial({ color: 0x4a5a3a })); // olive drab
+const TANK_TURRET_MAT = markSharedMaterial(new THREE.MeshLambertMaterial({ color: 0x404e30 }));
+const TANK_TREAD_MAT  = markSharedMaterial(new THREE.MeshLambertMaterial({ color: 0x222222 }));
+const TANK_BARREL_MAT = markSharedMaterial(new THREE.MeshLambertMaterial({ color: 0x2a2a2a }));
+
+export function buildTank() {
+  const g = new THREE.Group();
+  // Treads — flank the hull, sit on the ground.
+  const treadL = new THREE.Mesh(TANK_GEO.tread, TANK_TREAD_MAT); treadL.position.set(-19, 6, 0); treadL.castShadow = true; g.add(treadL);
+  const treadR = new THREE.Mesh(TANK_GEO.tread, TANK_TREAD_MAT); treadR.position.set(19, 6, 0); treadR.castShadow = true; g.add(treadR);
+  // Hull — sits on top of the treads.
+  const hull = new THREE.Mesh(TANK_GEO.hull, TANK_HULL_MAT); hull.position.set(0, 21, 0); hull.castShadow = true; g.add(hull);
+  // Turret — on top of hull, slightly back of center.
+  const turret = new THREE.Mesh(TANK_GEO.turret, TANK_TURRET_MAT); turret.position.set(0, 36, -2); turret.castShadow = true; g.add(turret);
+  // Hatch — flat disc on turret roof.
+  const hatch = new THREE.Mesh(TANK_GEO.hatch, TANK_TURRET_MAT); hatch.position.set(-6, 42.5, -4); g.add(hatch);
+  // Cannon base — block the barrel emerges from at the front of the turret.
+  const cBase = new THREE.Mesh(TANK_GEO.cannonBase, TANK_TURRET_MAT); cBase.position.set(0, 36, 14); g.add(cBase);
+  // Main cannon — M72 LAW launcher tube, points +Z (forward). Cylinder
+  // long axis is Y; rotate +90° on X to lay it along Z.
+  const cannon = new THREE.Mesh(TANK_GEO.cannon, TANK_BARREL_MAT);
+  cannon.rotation.x = Math.PI / 2; cannon.position.set(0, 36, 36); g.add(cannon);
+  // Coax M249 — mounted higher (on top of turret), forward-facing.
+  const m249Mount = new THREE.Mesh(TANK_GEO.m249Mount, TANK_TURRET_MAT); m249Mount.position.set(6, 44, 4); g.add(m249Mount);
+  const m249 = new THREE.Mesh(TANK_GEO.m249, TANK_BARREL_MAT);
+  m249.rotation.x = Math.PI / 2; m249.position.set(6, 45, 16); g.add(m249);
+  // Smoke origin matches cannon mouth so cig-style tracer wisps look right
+  // (we still use the cigarette smoke pipeline; minor visual cheat).
+  g.userData.smokeOrigin = new THREE.Vector3(0, 36, 58);
   return g;
 }
 
@@ -362,11 +416,11 @@ export function updateCows(time, dt) {
     // In third person, fall through and render it like any other cow so the
     // OTS shot has a body to look at. We still need the build/update path
     // to run for the local player in that mode.
-    if (p.id === S.myId && S.cameraMode !== 'third') continue;
+    if (p.id === S.myId && (S.cameraMode !== 'third' || S.adsActive)) continue;
     seen.add(String(p.id));
     const pid = String(p.id);
     if (!S.cowMeshes[pid]) {
-      const m = buildCow(p.color, p.personality); scene.add(m);
+      const m = p.isTank ? buildTank() : buildCow(p.color, p.personality); scene.add(m);
       const nameStr = p.name || 'Cow';
       // Auto-fit the name canvas to the actual text width so long names
       // (e.g. "Inchworm Survivor") aren't truncated. Canvas width grows
@@ -389,10 +443,13 @@ export function updateCows(time, dt) {
       const nsprite = new THREE.Sprite(nmat); nsprite.position.set(0, 50, 0);
       nsprite.scale.set(40 * (cw / 256), 10, 1);
       m.add(nsprite);
-      // 3D hat — pick stably from player id, clone the shared template
-      const hatType = ['cowboy', 'wizard', 'party', 'crown', 'cap', 'pompadour', 'afro', 'mohawk'][Math.abs(p.id || 0) % 8];
-      m.add(cloneHat(hatType));
-      S.cowMeshes[pid] = { mesh: m, nameSprite: nsprite };
+      // 3D hat — pick stably from player id, clone the shared template.
+      // Tanks don't wear hats. The turret IS the hat.
+      if (!p.isTank) {
+        const hatType = ['cowboy', 'wizard', 'party', 'crown', 'cap', 'pompadour', 'afro', 'mohawk'][Math.abs(p.id || 0) % 8];
+        m.add(cloneHat(hatType));
+      }
+      S.cowMeshes[pid] = { mesh: m, nameSprite: nsprite, isTank: !!p.isTank };
     }
     const cowObj = S.cowMeshes[pid];
     const cm = cowObj.mesh;
@@ -447,6 +504,11 @@ export function updateCows(time, dt) {
     if (S.debugMode && p.alive) {
       const eh = 35 * (p.sizeMult || 1);
       const headBase = eh * 0.75;
+      // Match server/ballistics.js: head cylinder is the top 2/3 of the
+      // 20-unit head span; body extends up to that boundary.
+      const headSpanLocal = 20;
+      const headHeight = headSpanLocal * (2 / 3);
+      const headBottom = headBase + (headSpanLocal - headHeight); // boundary between body + head
       if (!cowObj.debugBody) {
         cowObj.debugBody = new THREE.Mesh(DEBUG_BODY_GEO, DEBUG_BODY_MAT);
         cm.add(cowObj.debugBody);
@@ -464,10 +526,10 @@ export function updateCows(time, dt) {
         cm.add(arrowGroup);
         cowObj.debugArrow = arrowGroup;
       }
-      cowObj.debugBody.position.set(0, headBase / 2, 0);
-      cowObj.debugBody.scale.y = headBase;
+      cowObj.debugBody.position.set(0, headBottom / 2, 0);
+      cowObj.debugBody.scale.y = headBottom;
       cowObj.debugBody.visible = true;
-      cowObj.debugHead.position.set(0, headBase + 10, 0);
+      cowObj.debugHead.position.set(0, headBottom + headHeight / 2, 0);
       cowObj.debugHead.visible = true;
       if (cowObj.debugArrow) cowObj.debugArrow.visible = true;
     } else if (cowObj.debugBody) {

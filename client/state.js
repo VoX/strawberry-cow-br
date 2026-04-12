@@ -30,7 +30,7 @@ const S = {
   cowMeshes: {},
   mapBuilt: false,
   serverZone: { x: 0, y: 0, w: MW, h: MH },
-  mapFeatures: { walls: [], mud: [], ponds: [], portals: [], shelters: [], houses: [] },
+  mapFeatures: { walls: [], shelters: [], houses: [] },
   clientWeapons: [],
   pendingLevelUps: 0,
   perkMenuOpen: false,

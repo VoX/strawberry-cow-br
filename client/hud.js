@@ -1,7 +1,8 @@
 import { MW, MH, COL_HEX } from './config.js';
 import S from './state.js';
 import { BURST_FAMILY, DUAL_WIELD_FAMILY, MAG_SIZES, EXT_MAG_SIZES } from '../shared/constants.js';
-import { getTransportKind } from './network.js';
+import { getTransportKind, send } from './network.js';
+import { clampFireMode } from './input.js';
 
 const _escapeHtml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -193,55 +194,95 @@ export function updateHud(me, time, dt) {
   H.hungerTxt.textContent = 'MILK ' + Math.ceil(me.hunger) + '%';
   const wep = me.weapon || 'normal';
   const wepNames = { shotgun: 'XM1014', burst: 'M16A2', bolty: 'L96', cowtank: 'M72 LAW', normal: 'P250', aug: 'AUG', mp5k: 'MP5K', thompson: 'Thompson', sks: 'SKS', akm: 'AK', knife: 'Knife' };
-  let ammoTxt = '';
-  let reloadBlock = '';
+  // Compute ammo numbers + flash class for the persistent ammo span.
+  let ammoText = '', ammoCls = '';
   if (wep === 'cowtank') {
-    // M72 LAW is a single-shot disposable weapon
-    ammoTxt = ' 1/1';
+    ammoText = '1/1';
   } else if (me.ammo >= 0) {
     const hasExt = (me.extMagMult || 1) > 1;
     const baseMag = (hasExt ? EXT_MAG_SIZES[wep] : MAG_SIZES[wep]) || 0;
     const dualMult = (me.dualWield && DUAL_WIELD_FAMILY.has(wep)) ? 2 : 1;
     const maxMag = baseMag * dualMult;
-    ammoTxt = ' ' + me.ammo + '/' + maxMag;
-    // Reload progress bar — track start time and expected duration client-side
-    if (me.reloading) {
-      if (!S._reloadStart) {
-        S._reloadStart = performance.now();
-        const RELOAD_MS = { burst: 3000, mp5k: 3000, thompson: 3000, sks: 2500, akm: 3000, aug: 3500, bolty: 2500, normal: 2000 };
-        const reloadMult = me.dualWield ? 2 : 1;
-        if (wep === 'shotgun') S._reloadDuration = Math.max(750, (maxMag - me.ammo) * 750);
-        else S._reloadDuration = (RELOAD_MS[wep] || 2000) * reloadMult;
+    ammoText = me.ammo + '/' + maxMag;
+    // Auto-reload at 0. Server validates + no-ops dupes (player.reloading > 0
+    // gate in handleReload), but throttle so we don't spam the move queue
+    // while the reload-start ack is in flight (~RTT/2).
+    if (me.alive && me.ammo <= 0 && !me.reloading && wep !== 'minigun' && maxMag > 0) {
+      const now = performance.now();
+      if (!S._autoReloadAt || now - S._autoReloadAt > 300) {
+        S._autoReloadAt = now;
+        send({ type: 'reload' });
       }
-      const elapsed = performance.now() - S._reloadStart;
-      const pct = Math.min(100, (elapsed / S._reloadDuration) * 100);
-      reloadBlock =
-        '<div style="color:#ffaa44;font-size:0.35em;margin-bottom:4px;line-height:1">RELOADING...</div>' +
-        '<div style="width:260px;height:10px;background:rgba(0,0,0,0.6);border-radius:3px;margin:0 0 8px auto">' +
-          '<div style="height:100%;border-radius:3px;background:#ffaa44;width:' + pct + '%"></div>' +
-        '</div>';
-    } else {
-      S._reloadStart = null;
-      S._reloadDuration = null;
     }
+    // Two-stage low-ammo warning: mild pulse at ≤50%, hard strobe at ≤25%.
+    // Empty mag + reload keep strobing without restarting — the ammo span is
+    // updated via textContent/className below so the CSS animation isn't
+    // remounted by the reload bar's per-frame innerHTML rewrites.
+    const ammoFrac = maxMag > 0 ? me.ammo / maxMag : 1;
+    ammoCls = ammoFrac <= 0.25 ? 'ammoCrit' : ammoFrac <= 0.5 ? 'ammoLow' : '';
   }
-  // Fire mode indicator — shown for weapons with selector switches.
-  // Clamp displayed mode to what the weapon actually supports.
+  // Reload progress bar — tracked client-side; HTML lives in its own slot
+  // so the per-frame % update doesn't remount sibling DOM (and reset the
+  // ammo flash animation).
+  let reloadBlock = '';
+  if (me.ammo >= 0 && me.reloading) {
+    // Shotgun reloads shell-by-shell (750 ms each on the server). Reset the
+    // bar each time a shell lands so it visualizes "time to next shell,"
+    // not "time to full mag." Other weapons reload as one fixed-duration block.
+    if (wep === 'shotgun' && S._reloadLastAmmo != null && me.ammo !== S._reloadLastAmmo) {
+      S._reloadStart = null;
+    }
+    if (!S._reloadStart) {
+      S._reloadStart = performance.now();
+      const RELOAD_MS = { burst: 3000, mp5k: 3000, thompson: 3000, sks: 2500, akm: 3000, aug: 3500, bolty: 2500, normal: 2000 };
+      const reloadMult = me.dualWield ? 2 : 1;
+      S._reloadDuration = wep === 'shotgun' ? 750 : (RELOAD_MS[wep] || 2000) * reloadMult;
+    }
+    S._reloadLastAmmo = me.ammo;
+    const elapsed = performance.now() - S._reloadStart;
+    const pct = Math.min(100, (elapsed / S._reloadDuration) * 100);
+    reloadBlock =
+      '<div style="color:#ffaa44;font-size:0.35em;margin-bottom:4px;line-height:1">RELOADING...</div>' +
+      '<div style="width:260px;height:10px;background:rgba(0,0,0,0.6);border-radius:3px;margin:0 0 8px auto">' +
+        '<div style="height:100%;border-radius:3px;background:#ffaa44;width:' + pct + '%"></div>' +
+      '</div>';
+  } else {
+    S._reloadStart = null;
+    S._reloadDuration = null;
+    S._reloadLastAmmo = null;
+  }
+  // Snap fireMode into a mode the current weapon actually supports.
+  // The whitelist + priority lives in input.js (FIRE_MODES).
+  clampFireMode(wep);
   let fireModeBlock = '';
-  if (BURST_FAMILY.has(wep)) {
-    let mode = S.fireMode;
-    // AK: auto + semi only. MP5K: auto + burst only. Thompson: auto only.
-    if (wep === 'akm' && mode === 'burst') mode = 'auto';
-    if (wep === 'mp5k' && mode === 'semi') mode = 'auto';
-    if (wep === 'thompson') mode = 'auto';
-    const modeLabel = mode === 'auto' ? 'AUTO' : mode === 'semi' ? 'SEMI' : 'BURST';
-    fireModeBlock = wep === 'thompson' ? '' : '<div>' + modeLabel + '</div>';
+  if (BURST_FAMILY.has(wep) && wep !== 'thompson') {
+    const modeLabel = S.fireMode === 'auto' ? 'AUTO' : S.fireMode === 'semi' ? 'SEMI' : 'BURST';
+    fireModeBlock = '<div>' + modeLabel + '</div>';
   }
   const dualTag = me.dualWield ? ' ×2' : '';
-  const weaponSig = wep + '|' + ammoTxt + '|' + dualTag + '|' + fireModeBlock + '|' + reloadBlock;
-  if (S._weaponSig !== weaponSig) {
-    S._weaponSig = weaponSig;
-    H.weapon.innerHTML = reloadBlock + fireModeBlock + (wepNames[wep] || wep) + dualTag + ammoTxt;
+  // Lazy DOM scaffold: split #weapon into two stable children so the reload
+  // bar can update freely without nuking the persistent ammo span.
+  if (!S._weaponDomReady) {
+    H.weapon.innerHTML = '<div data-slot="reload"></div><div data-slot="body"></div>';
+    S._weaponReloadEl = H.weapon.firstChild;
+    S._weaponBodyEl = H.weapon.lastChild;
+    S._weaponDomReady = true;
+    S._reloadHtml = '';
+    S._bodySig = '';
+  }
+  if (S._reloadHtml !== reloadBlock) {
+    S._reloadHtml = reloadBlock;
+    S._weaponReloadEl.innerHTML = reloadBlock;
+  }
+  const bodySig = wep + '|' + dualTag + '|' + fireModeBlock;
+  if (S._bodySig !== bodySig) {
+    S._bodySig = bodySig;
+    S._weaponBodyEl.innerHTML = fireModeBlock + (wepNames[wep] || wep) + dualTag + ' <span data-slot="ammo"></span>';
+    S._ammoSpan = S._weaponBodyEl.querySelector('[data-slot="ammo"]');
+  }
+  if (S._ammoSpan) {
+    if (S._ammoSpan.textContent !== ammoText) S._ammoSpan.textContent = ammoText;
+    if (S._ammoSpan.className !== ammoCls) S._ammoSpan.className = ammoCls;
   }
   const armorVal = me.armor || 0;
   H.armorBar.style.display = (aliveHud && armorVal > 0) ? 'block' : 'none';

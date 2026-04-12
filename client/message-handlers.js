@@ -404,18 +404,9 @@ export const handlers = {
       }
     }
 
-    // Sync server-only movement gates onto predicted player.
-    const me = S.serverPlayers.find(p => p.id === S.myId);
-    if (me && S.mePredicted) {
-      S.mePredicted.stunTimer = me.stunTimer || 0;
-      S.mePredicted.spawnProtection = me.spawnProt ? 1 : 0;
-      // Mirror weapon + spin so the shared movement integrator can apply the
-      // heavy-weapon slow on the client predicted step too. Without this the
-      // CSP step ran at full speed even with the minigun spinning, then
-      // every server reconcile yanked the player backwards.
-      S.mePredicted.weapon = me.weapon || S.mePredicted.weapon;
-      S.mePredicted.minigunSpin = me.minigunSpin || 0;
-    }
+    // mirrorServerScalars() in prediction.js refreshes weapon/minigunSpin/
+    // foodEaten/stunTimer/spawnProtection/perks every predictStep, so we
+    // don't duplicate that work here.
 
     // Feed reconstructed full state to SI for remote player interpolation.
     if (msg.snapshot) {
@@ -592,6 +583,19 @@ export const handlers = {
       spawnX = cam.position.x + _tmpDir.x;
       spawnH = cam.position.y + _tmpDir.y;
       spawnZ = cam.position.z + _tmpDir.z;
+      // OTS override: when the camera is over the shoulder the camera-relative
+      // muzzle offset puts the visual tracer up by the player's ear. Anchor
+      // it to the cow's right-shoulder bone instead so the bullets read as
+      // coming out of the gun the cow is actually holding.
+      if (S.cameraMode === 'third' && !S.adsActive) {
+        const cm = S.cowMeshes[String(S.myId)] && S.cowMeshes[String(S.myId)].mesh;
+        if (cm) {
+          const cosY = Math.cos(S.yaw), sinY = Math.sin(S.yaw);
+          spawnX = cm.position.x + 9 * cosY;
+          spawnH = cm.position.y + 20;
+          spawnZ = cm.position.z - 9 * sinY;
+        }
+      }
     }
     if (msg.shotgun !== undefined) { vy3d += (Math.random() - 0.5) * 150; }
     // Muzzle-to-trajectory correction: the visual tracer starts at the
@@ -620,7 +624,13 @@ export const handlers = {
       // directional panning. Volume stays at full base level.
       const th = getTerrainHeight(msg.x, msg.y);
       const pos = { x: msg.x, y: th + 50, z: msg.y };
-      if (msg.bolty) sfxBolty(0.1, pos);
+      if (msg.tankCannon) {
+        // M1 Bradley main gun — rocket whoosh + explosion thump, loud.
+        // Stacked because the LAW sample alone doesn't sell "tank cannon".
+        sfxRocket(0.6, pos);
+        sfxExplosion(0.45, pos);
+      }
+      else if (msg.bolty) sfxBolty(0.1, pos);
       else if (msg.cowtank) sfxRocket(0.12, pos);
       else if (msg.shotgun !== undefined) sfxShotgun(0.1, pos);
       else if (msg.burst !== undefined) sfxLR(0.1, pos);
@@ -1015,6 +1025,17 @@ export const handlers = {
         spawnZ = cam.position.y + mDir.y;
         spawnY = cam.position.z + mDir.z;
       }
+      // OTS override: see projectile() — anchor to the right shoulder so the
+      // tracer reads as coming from the visible cow's gun, not the camera.
+      if (S.cameraMode === 'third' && !S.adsActive) {
+        const cm = S.cowMeshes[String(S.myId)] && S.cowMeshes[String(S.myId)].mesh;
+        if (cm) {
+          const cosY = Math.cos(S.yaw), sinY = Math.sin(S.yaw);
+          spawnX = cm.position.x + 9 * cosY;
+          spawnZ = cm.position.y + 20;
+          spawnY = cm.position.z - 9 * sinY;
+        }
+      }
       // Own weapon sound
       if (wep === 'bolty') { sfxBolty(); if (S.adsActive) S.adsLocked = true; setTimeout(() => { forceUnADS(); S._boltRacking = true; }, 100); setTimeout(() => { S._boltRacking = false; }, 2500); }
       else if (wep === 'shotgun') sfxShotgun(0.1);
@@ -1126,7 +1147,8 @@ export const handlers = {
           spawnParticle({
             geo: PGEO_TORUS, color: 0xffffff,
             x: wxX, y: WATER_Y + 0.3, z: wxY,
-            sx: 1.5, sy: 1.5, sz: 1.5,
+            // sz collapsed — see projectiles.js water-splash for the rotation/axis math.
+            sx: 1.5, sy: 1.5, sz: 0.001,
             rotX: Math.PI / 2,
             life: 0.6, peakOpacity: 1, growth: 5, side: THREE.DoubleSide,
           });

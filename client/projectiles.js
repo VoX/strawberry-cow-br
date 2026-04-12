@@ -119,7 +119,11 @@ export function updateProjectiles(dt) {
       spawnParticle({
         geo: PGEO_TORUS, color: 0xffffff,
         x: p.x, y: WATER_Y + 0.3, z: p.y,
-        sx: 1.5, sy: 1.5, sz: 1.5,
+        // Torus is rotated by π/2 about X so the ring lies in world XZ.
+        // After that rotation, the geo's local Z axis is world Y (height) —
+        // collapsing sz keeps the splash a flat ring on the water surface
+        // instead of a 3D balloon that puffs upward as it grows.
+        sx: 1.5, sy: 1.5, sz: 0.001,
         rotX: Math.PI / 2,
         life: 0.6, peakOpacity: 1, growth: 5, side: THREE.DoubleSide,
       });

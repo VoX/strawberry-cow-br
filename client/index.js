@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { CH } from './config.js';
 import S from './state.js';
 import { sfx, tickMusic, updateMusicMood, updateAudioListener } from './audio.js';
-import { scene, cam, ren, sun, sky, cloudPlanes, vmScene, vmCam } from './renderer.js';
+import { scene, cam, ren, sun, sky, cloudPlanes, vmScene, vmCam, vmDebugGroup } from './renderer.js';
 import { getTerrainHeight } from './terrain.js';
 import { setVmGroupRef } from './input.js';
 import { connect, send, setMessageHandler } from './network.js';
@@ -123,11 +123,6 @@ function loop(ts) {
     setCurrentInput(curMx, curMz, curWalking, curAim);
     if (!S.mePredicted) initPrediction();
     predictStep(dt);
-    // Repeat jump while space is held — re-trigger when landing
-    if (S._spaceHeld && S.mePredicted && S.mePredicted.onGround) {
-      send({ type: 'jump' });
-      S.mePredicted.vz = 230; S.mePredicted.onGround = false;
-    }
   } else {
     // Drop any stale prediction state so the next spawn re-initializes.
     S.mePredicted = null;
@@ -160,7 +155,7 @@ function loop(ts) {
     // up/lerpFactor — way above the cow). X/Z get direct assignment first
     // so their offset is one-shot per frame.
     let upOff = 0;
-    if (S.cameraMode === 'third') {
+    if (S.cameraMode === 'third' && !S.adsActive) {
       const sinY = Math.sin(S.yaw), cosY = Math.cos(S.yaw);
       const back = 95, right = 22;
       upOff = 22;
@@ -349,7 +344,18 @@ function loop(ts) {
 
   ren.render(scene, cam);
   const vmGroup = getVmGroup();
-  if (vmGroup && S.state === 'playing' && me && me.alive && S.cameraMode !== 'third') {
+  // Viewmodel guides ride the same render pass as the gun so they're
+  // pinned to the camera. Toggled with P (S.debugMode).
+  vmDebugGroup.visible = S.debugMode && S.state === 'playing';
+  if (vmGroup && S.state === 'playing' && me && me.alive && (S.cameraMode !== 'third' || S.adsActive)) {
+    ren.autoClear = false;
+    ren.clearDepth();
+    ren.render(vmScene, vmCam);
+    ren.autoClear = true;
+  } else if (vmDebugGroup.visible) {
+    // Player isn't seeing their viewmodel right now (3rd person, dead, etc.)
+    // — still render the guides on top so they can debug positions while in
+    // OTS mode. Skip the gun render itself (vg.visible may be false).
     ren.autoClear = false;
     ren.clearDepth();
     ren.render(vmScene, vmCam);

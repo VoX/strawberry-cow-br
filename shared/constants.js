@@ -12,7 +12,6 @@ const TICK_RATE = 40;
 // with identical numbers.
 const PLAYER_BASE_SPEED = 108;          // server/game.js movement formula base
 const PLAYER_WALK_MULT = 0.5;           // walking/crouching speed multiplier
-const MUD_SPEED_MULT = 0.5;             // mud patch slowdown
 const GRAVITY = 800;                    // z-axis gravity units/s^2
 const BARRICADE_HEIGHT = 55;            // barricades are 55 units tall
 const PLAYER_WALL_INFLATE = 8;          // AABB inflation matching capsule radius
@@ -54,11 +53,12 @@ const MAG_SIZES = { normal: 10, burst: 20, shotgun: 6, bolty: 5, aug: 30, mp5k: 
 const EXT_MAG_SIZES = { normal: 13, burst: 25, shotgun: 8, bolty: 7, aug: 38, mp5k: 38, thompson: 25, sks: 13, akm: 38, python: 8, minigun: 400, m249: 150 };
 
 // Weapons with a speed penalty when held. Applied in shared/movement.js.
-const HEAVY_WEAPON_SPEED = { minigun: 0.5, m249: 0.5 };
-// Minigun while fully spun adds extra slow on top — total 80% reduction
-// at full spin (interpolated from HEAVY_WEAPON_SPEED.minigun based on the
-// 0..1 spin level so partial spin = partial penalty).
+const HEAVY_WEAPON_SPEED = { minigun: 0.5, m249: 0.75 };
+// Minigun slow when spinning. Applies as a step function once the spin
+// timer crosses MINIGUN_SLOW_DELAY_S — so quick taps of RMB don't punish
+// movement, and the slow snaps in cleanly after the grace window.
 const MINIGUN_SPUN_SPEED_MULT = 0.2;
+const MINIGUN_SLOW_DELAY_S = 0.2;
 
 // Client input types that carry a monotonic seq number for CSP reconciliation.
 // The client stamps seq on every stateful send; the server tracks the highest
@@ -107,12 +107,12 @@ const WEAPON_TYPES = ['shotgun','burst','bolty','shotgun','burst','bolty','cowta
 
 module.exports = {
   MAP_W, MAP_H, TICK_RATE,
-  PLAYER_BASE_SPEED, PLAYER_WALK_MULT, MUD_SPEED_MULT, GRAVITY,
+  PLAYER_BASE_SPEED, PLAYER_WALK_MULT, GRAVITY,
   BARRICADE_HEIGHT, PLAYER_WALL_INFLATE, JUMP_VZ,
   KNIFE_SPEED_MULT, HIT_SLOW_MULT, HIT_SLOW_DURATION_MS,
   SPEED_MULT_MIN, SPEED_MULT_MAX,
   KNIFE_MELEE_RANGE, KNIFE_MELEE_CONE_COS, KNIFE_MELEE_DAMAGE, KNIFE_MELEE_CD_MS,
   STATEFUL_INPUT_TYPES, BURST_FAMILY, DUAL_WIELD_FAMILY, MAG_SIZES, EXT_MAG_SIZES,
-  HEAVY_WEAPON_SPEED, MINIGUN_SPUN_SPEED_MULT, WEAPON_CALIBER,
+  HEAVY_WEAPON_SPEED, MINIGUN_SPUN_SPEED_MULT, MINIGUN_SLOW_DELAY_S, WEAPON_CALIBER,
   COLORS, FOOD_TYPES, WEAPON_TYPES,
 };

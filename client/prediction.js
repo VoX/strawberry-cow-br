@@ -140,7 +140,6 @@ function snapshotPlayer(p) {
     // semantics only care that spawnProtection > 0.
     spawnProtection: p.spawnProt ? 1 : 0,
     foodEaten: p.foodEaten || 0,
-    _portalCooldown: p._portalCooldown || 0,
     perks: p.perks || buildPredictedPerks(p),
     isBot: false,
     // Heavy-weapon slow inputs — shared/movement.js reads these to decide
@@ -165,12 +164,10 @@ export function initPrediction() {
 // Module-level scratch objects so the 40 Hz predict loop doesn't allocate
 // new world/input/prev objects every step. Field-by-field reuse: zero
 // short-lived allocations on the hot path.
-const _world = { walls: null, barricades: null, mudPatches: null, portals: null, zone: null };
+const _world = { walls: null, barricades: null, zone: null };
 function refreshWorld() {
   _world.walls = S.mapFeatures.walls || [];
   _world.barricades = S.barricades || [];
-  _world.mudPatches = S.mapFeatures.mud || [];
-  _world.portals = S.mapFeatures.portals || [];
   _world.zone = S.serverZone;
   return _world;
 }
@@ -214,8 +211,33 @@ function computeLocalSpeedMult() {
   return mult;
 }
 
+// Refresh server-authoritative scalars the integrator reads but doesn't
+// itself produce — weapon swaps, minigun spinup, food intake, perk
+// pickups. Without this, S.mePredicted stays frozen at whatever
+// initPrediction snapshotted, so the SERVER applies (e.g.) the m249 slow
+// while the CLIENT keeps predicting full speed → every ack snaps the
+// camera. Symptom: heavy rubberband / inchworm.
+function mirrorServerScalars() {
+  const sm = S.me, mp = S.mePredicted;
+  mp.weapon = sm.weapon || 'normal';
+  mp.minigunSpin = sm.minigunSpin || 0;
+  mp.foodEaten = sm.foodEaten || 0;
+  mp.stunTimer = sm.stunTimer || 0;
+  // spawnProt is broadcast as a boolean. The integrator decrements
+  // spawnProtection toward zero, so mirroring 1 every step would keep the
+  // player frozen forever — only refresh when the server says it's still
+  // active. Once spawnProt drops to false, leave the integrator's local
+  // decay alone (it's effectively zero by then anyway).
+  if (sm.spawnProt) mp.spawnProtection = 1;
+  if (mp.perks) {
+    mp.perks.speedMult = sm.speedMult != null ? sm.speedMult : 1;
+    mp.perks.sizeMult = sm.sizeMult != null ? sm.sizeMult : 1;
+  }
+}
+
 export function predictStep(frameDt) {
   if (!S.mePredicted || !S.me) return;
+  mirrorServerScalars();
   accumulator += frameDt;
   // Cap catch-up so a backgrounded tab doesn't spiral seconds of pending work.
   if (accumulator > 0.25) accumulator = 0.25;

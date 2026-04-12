@@ -119,6 +119,40 @@ vmScene.add(new THREE.AmbientLight(0xffffff, 1));
 export const vmCam = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 100);
 vmCam.position.set(0, 0, 0);
 
+// Viewmodel debug guides — toggled by S.debugMode in the render loop.
+// Axes at the vmCam origin (X red, Y green, Z blue per three.js convention,
+// with the gun sitting in front of the camera at -Z). The grid is a 40-unit
+// XZ floor placed below the viewmodel rest position so unit spacing is
+// readable without overlapping the gun mesh.
+export const vmDebugGroup = new THREE.Group();
+vmDebugGroup.visible = false;
+const vmAxes = new THREE.AxesHelper(20);
+// Three's AxesHelper renders one segment per axis with vertex colors
+// (red/green/blue). Crank the line width hint and disable depth so the
+// guides stay visible through any mesh.
+vmAxes.material.depthTest = false;
+vmAxes.material.depthWrite = false;
+vmAxes.renderOrder = 999;
+vmDebugGroup.add(vmAxes);
+const vmGrid = new THREE.GridHelper(40, 40, 0x888888, 0x444444);
+vmGrid.position.y = -10;
+vmGrid.material.depthTest = false;
+vmGrid.material.depthWrite = false;
+vmGrid.renderOrder = 998;
+vmDebugGroup.add(vmGrid);
+// Axis labels — small colored cubes at the +tip of each axis so it's
+// obvious which arm is X/Y/Z when the gun mesh occludes the line origins.
+const _tipGeo = new THREE.BoxGeometry(1.2, 1.2, 1.2);
+function _tip(color, x, y, z) {
+  const m = new THREE.Mesh(_tipGeo, new THREE.MeshBasicMaterial({ color, depthTest: false }));
+  m.position.set(x, y, z); m.renderOrder = 999;
+  return m;
+}
+vmDebugGroup.add(_tip(0xff0000, 20, 0, 0)); // +X red
+vmDebugGroup.add(_tip(0x00ff00, 0, 20, 0)); // +Y green
+vmDebugGroup.add(_tip(0x0000ff, 0, 0, 20)); // +Z blue
+vmScene.add(vmDebugGroup);
+
 addEventListener('resize', () => {
   cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix();
   vmCam.aspect = innerWidth / innerHeight; vmCam.updateProjectionMatrix();
