@@ -115,8 +115,8 @@ Large snapshots exceeding ~1400 bytes are fragmented across multiple UDP packets
 | Reconciliation | Seq-based ring buffer + Bernier replay | Seq-based ring buffer + Bernier replay |
 | Entity interpolation | cl_interp buffer, 100ms default | SI library, 100ms buffer |
 | Lag compensation | Server-side position history + time rewind | Server-side position history + displayTick rewind |
-| Delta compression | Per-client ack-based field deltas | None (full state every tick, msgpack binary) |
+| Delta compression | Per-client ack-based field deltas | Per-client ack-based field deltas (same design) |
 | Error smoothing | cl_smooth / cl_smoothtime | Linear decay render offset, 150ms |
-| Wire format | Huffman + delta | MessagePack binary (WS), msgpack raw (geckos) |
+| Wire format | Huffman + delta | MessagePack binary (WS + geckos raw) |
 
 Key sources: Yahn Bernier's 2001 GDC paper "Latency Compensating Methods in Client/Server In-game Protocol Design and Optimization," Valve Developer Community wiki, Fabien Sanglard's Quake 3 network model reviews.

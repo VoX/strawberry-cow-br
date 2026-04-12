@@ -5,11 +5,18 @@ const { getTerrainHeight, getGroundHeight, WALL_HEIGHT } = require('./terrain');
 const ballistics = require('./ballistics');
 const weaponFire = require('./weapon-fire');
 const { applyHungerDelta, applyArmorDelta } = require('./player');
-const { MAG_SIZES, EXT_MAG_SIZES, DUAL_WIELD_FAMILY, KNIFE_MELEE_RANGE, KNIFE_MELEE_CONE_COS, KNIFE_MELEE_DAMAGE, KNIFE_MELEE_CD_MS } = require('../shared/constants');
+const { MAG_SIZES, EXT_MAG_SIZES, DUAL_WIELD_FAMILY, BURST_FAMILY, KNIFE_MELEE_RANGE, KNIFE_MELEE_CONE_COS, KNIFE_MELEE_DAMAGE, KNIFE_MELEE_CD_MS } = require('../shared/constants');
 // Lazy-require to avoid circular dependency (game.js requires combat.js).
 let _SI = null;
 function getSI() { if (!_SI) _SI = require('./game').SI; return _SI; }
 
+
+// Hitscan weapons — instant ray trace, no projectile entity.
+// All bullet weapons except cowtank (explosive projectile).
+const HITSCAN_WEAPONS = new Set([
+  'normal', 'burst', 'shotgun', 'bolty', 'mp5k', 'thompson',
+  'akm', 'sks', 'aug', 'python', 'm249', 'minigun',
+]);
 
 const BASE_EYE_HEIGHT = 35;
 function eyeHeight(p) {
@@ -63,6 +70,101 @@ function handleAttack(player, msg) {
     const dd = dirMap[player.dir] || [0,1];
     ax = dd[0]; ay = dd[1]; az = 0;
   } else { ax /= alen3d; ay /= alen3d; az /= alen3d; }
+
+  if (HITSCAN_WEAPONS.has(weapon)) {
+    const walkSpreadMult = player.walking ? 0.73 : 1;
+    const fireServerTime = typeof msg.serverTime === 'number' ? msg.serverTime : null;
+    // Use client camera position for hitscan ray origin if provided
+    const camPos = (typeof msg.camX === 'number' && typeof msg.camY === 'number' && typeof msg.camZ === 'number')
+      ? { x: msg.camX, y: msg.camY, z: msg.camZ } : null;
+    const hsOpts = {
+      dualWield, dmgMult, eyeHeight, walkSpreadMult, fireServerTime, camPos,
+    };
+
+    // Burst-family: respect fire mode (auto / semi / burst)
+    if (BURST_FAMILY.has(weapon)) {
+      const requestedMode = msg.fireMode === 'auto' ? 'auto' : msg.fireMode === 'semi' ? 'semi' : 'burst';
+      let effectiveMode = requestedMode;
+      if (effectiveMode === 'burst' && !stats.burstStepMs) effectiveMode = 'auto';
+      if (effectiveMode === 'semi' && !stats.semi) effectiveMode = 'auto';
+
+      if (effectiveMode === 'auto' && stats.auto) {
+        const a = stats.auto;
+        const autoCount = dualWield ? (a.dualPelletMult || 1) : 1;
+        const autoOpts = { ...hsOpts, walkSpreadMult: walkSpreadMult * (dualWield ? 1.5 : 1) };
+        const autoStats = { ...stats, ...a, spreadBase: a.spreadBase };
+        for (let ac = 0; ac < autoCount; ac++) {
+          weaponFire.fireHitscan(player, weapon, { ax, ay, az }, autoStats, autoOpts);
+        }
+        player.attackCooldown = a.cooldown * cdMult;
+        if (MAG_SIZES[weapon]) player.ammo = Math.max(0, player.ammo - autoCount);
+        return;
+      }
+      if (effectiveMode === 'semi' && stats.semi) {
+        const s = stats.semi;
+        const semiCount = dualWield ? (s.dualPelletMult || 1) : 1;
+        const semiStats = { ...stats, ...s, spreadBase: s.spreadBase };
+        for (let sc = 0; sc < semiCount; sc++) {
+          weaponFire.fireHitscan(player, weapon, { ax, ay, az }, semiStats, hsOpts);
+        }
+        player.attackCooldown = s.cooldown * cdMult;
+        if (MAG_SIZES[weapon]) player.ammo = Math.max(0, player.ammo - semiCount);
+        return;
+      }
+      // Burst mode — 3 rays with delayed damage, spread per round.
+      // Each scheduled shot re-samples yaw from player.aimAngle at fire time so
+      // mid-burst camera rotation steers each round (matches the visible recoil
+      // & sound stagger). Pitch is sticky from trigger time — move messages
+      // don't carry pitch, so we'd have nothing fresh to read anyway.
+      // Ammo gates scheduling, not just decrement: if the mag has fewer rounds
+      // than the burst (1 or 2 left), we only schedule what we can shoot.
+      const burstCount = stats.pellets || 3;
+      const volleys = dualWield ? 2 : 1;
+      const trigPitch = az;
+      const horizMag = Math.sqrt(Math.max(0, 1 - trigPitch * trigPitch));
+      const maxShots = burstCount * volleys;
+      const ammoCap = MAG_SIZES[weapon] ? Math.max(0, player.ammo) : maxShots;
+      const shotsToFire = Math.min(maxShots, ammoCap);
+      let scheduled = 0;
+      schedLoop:
+      for (let b = 0; b < burstCount; b++) {
+        for (let v = 0; v < volleys; v++) {
+          if (scheduled >= shotsToFire) break schedLoop;
+          const delay = b * stats.burstStepMs + v * 25;
+          gameState.scheduleRoundTimer(() => {
+            if (!player.alive || player.weapon !== weapon) return;
+            // Human players: yaw = atan2(fwdX, fwdZ) — see client/index.js:108.
+            // Inverse gives (aimX, aimY) = (sin(yaw), cos(yaw)).
+            // Bots use the opposite sign (atan2(-ax, ay)) but bots fire via
+            // fireBot, not handleAttack — this branch is human-only.
+            const yaw = player.aimAngle || 0;
+            const liveAx = Math.sin(yaw) * horizMag;
+            const liveAy = Math.cos(yaw) * horizMag;
+            weaponFire.fireHitscan(player, weapon, { ax: liveAx, ay: liveAy, az: trigPitch }, stats, hsOpts);
+          }, delay);
+          scheduled++;
+        }
+      }
+      player.attackCooldown = stats.cooldown * cdMult;
+      if (MAG_SIZES[weapon]) player.ammo = Math.max(0, player.ammo - shotsToFire);
+      return;
+    }
+
+    // Multi-pellet weapons (shotgun) fire simultaneous rays per shot.
+    // High-RPM weapons (minigun, etc) fire multiple shots per client attack
+    // message since the client caps at 20 attacks/sec.
+    const simultaneous = stats.volleyed ? (stats.pellets || 1) : 1;
+    const shotsPerAttack = Math.max(1, Math.round(0.05 / (stats.cooldown * cdMult)));
+    for (let shot = 0; shot < shotsPerAttack; shot++) {
+      if (MAG_SIZES[weapon] && player.ammo <= 0) break;
+      for (let i = 0; i < simultaneous; i++) {
+        weaponFire.fireHitscan(player, weapon, { ax, ay, az }, stats, hsOpts);
+      }
+      if (MAG_SIZES[weapon]) player.ammo = Math.max(0, player.ammo - 1);
+    }
+    player.attackCooldown = stats.cooldown * cdMult * shotsPerAttack;
+    return;
+  }
 
   const fired = weaponFire.fireWeapon(player, weapon, { ax, ay, az }, stats, {
     walkSpreadMult: player.walking ? 0.73 : 1,
@@ -155,14 +257,38 @@ function updateProjectiles(dt) {
     const { prevX, prevY, prevZ } = ballistics.integrateProjectile(pr, dt);
     // Step 2: analytical pre-scan for walls/barricades along this tick's segment.
     // Skip the scan entirely for near-stationary ticks — matches original behaviour.
-    const segDx = pr.x - prevX, segDy = pr.y - prevY;
+    // Cache the pre-clamp segment so the wall-piercing impact math can use
+    // the original direction even after we clamp pr.x/pr.y to just past the
+    // first wall.
+    const origEndX = pr.x, origEndY = pr.y, origEndZ = pr.z;
+    let segDx = pr.x - prevX, segDy = pr.y - prevY;
     const segDist = Math.hypot(segDx, segDy);
     let blockT = 1.01;
     let hitWallObj = null;
     let hitBarricade = null;
+    let pierceWall = null;
+    let pierceWallT = 0;
     if (segDist > 0.5) {
-      if (!pr.wallPiercing) {
-        const wres = ballistics.segVsWalls(prevX, prevY, prevZ, pr.x, pr.y, pr.z, walls, getTerrainHeight, WALL_HEIGHT);
+      const wres = ballistics.segVsWalls(prevX, prevY, prevZ, pr.x, pr.y, pr.z, walls, getTerrainHeight, WALL_HEIGHT);
+      if (pr.wallPiercing) {
+        // Piercing projectiles (L9) don't use wall blockT to limit the
+        // player/barricade scan — the bullet keeps going past the wall.
+        // We DO clamp the projectile to just past the wall so the next
+        // tick's segment starts after wall 1, which lets wall 2 (if any)
+        // be detected next tick instead of being skipped over by a single
+        // long-distance step. Without this clamp, fast bullets crossing
+        // two walls in one tick only registered the first.
+        if (wres.hitWall) {
+          pierceWall = wres.hitWall;
+          pierceWallT = wres.blockT;
+          const eps = 0.001;
+          const clampT = Math.min(1, wres.blockT + eps);
+          pr.x = prevX + segDx * clampT;
+          pr.y = prevY + segDy * clampT;
+          pr.z = prevZ + (pr.z - prevZ) * clampT;
+          segDx = pr.x - prevX; segDy = pr.y - prevY;
+        }
+      } else {
         blockT = wres.blockT;
         hitWallObj = wres.hitWall;
       }
@@ -284,20 +410,20 @@ function updateProjectiles(dt) {
       gameState.removeProjectileAt(i); continue;
     }
     // Use the analytical pre-scan result — no second stepped scan needed
-    if (hitWallObj && pr.wallPiercing) {
-      let impactX = prevX + segDx * blockT;
-      let impactY = prevY + segDy * blockT;
-      const impactZ = prevZ + (pr.z - prevZ) * blockT;
-      // segVsWalls inflates the AABB by PROJECTILE_RADIUS for collision;
-      // clamp back to the un-inflated surface so the decal sits flush.
-      const wxR = hitWallObj.x + Math.max(hitWallObj.w, 20);
-      const wyB = hitWallObj.y + Math.max(hitWallObj.h, 20);
-      impactX = Math.max(hitWallObj.x, Math.min(wxR, impactX));
-      impactY = Math.max(hitWallObj.y, Math.min(wyB, impactY));
-      broadcast({ type: 'wallImpact', x: impactX, y: impactY, z: impactZ, wallId: hitWallObj.id });
+    if (pierceWall) {
+      // pierceWallT was captured against the ORIGINAL (pre-clamp) segment,
+      // so reconstruct the impact from the cached origEnd* coords.
+      let impactX = prevX + (origEndX - prevX) * pierceWallT;
+      let impactY = prevY + (origEndY - prevY) * pierceWallT;
+      const impactZ = prevZ + (origEndZ - prevZ) * pierceWallT;
+      const wxR = pierceWall.x + Math.max(pierceWall.w, 20);
+      const wyB = pierceWall.y + Math.max(pierceWall.h, 20);
+      impactX = Math.max(pierceWall.x, Math.min(wxR, impactX));
+      impactY = Math.max(pierceWall.y, Math.min(wyB, impactY));
+      broadcast({ type: 'wallImpact', x: impactX, y: impactY, z: impactZ, wallId: pierceWall.id, ownerId: pr.ownerId });
       pr._wallHits = (pr._wallHits || 0) + 1;
       if (pr._wallHits >= 2) {
-        broadcast({ type: 'projectileHit', projectileId: pr.id, targetId: null, ownerId: pr.ownerId, wall: true, x: impactX, y: impactY, z: impactZ, wallId: hitWallObj.id });
+        broadcast({ type: 'projectileHit', projectileId: pr.id, targetId: null, ownerId: pr.ownerId, wall: true, x: impactX, y: impactY, z: impactZ, wallId: pierceWall.id });
         gameState.removeProjectileAt(i); continue;
       }
     } else if (hitWallObj || hitBarricade) {
@@ -489,4 +615,4 @@ function cancelReload(player) {
   if (player.reloadTimer) { clearTimeout(player.reloadTimer); player.reloadTimer = null; }
 }
 
-module.exports = { handleAttack, handleMelee, updateProjectiles, handleDash, handleReload, cancelReload, getMaxAmmo, placeBarricadeForPlayer, eyeHeight };
+module.exports = { handleAttack, handleMelee, updateProjectiles, handleDash, handleReload, cancelReload, getMaxAmmo, placeBarricadeForPlayer, eyeHeight, _buildRewoundPlayers };

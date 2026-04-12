@@ -1,85 +1,54 @@
 {
   "broadcasts": [
     {
-      "burst": true,
       "color": 16777215,
-      "id": 1,
-      "muzzle": 0,
+      "fromX": 1000,
+      "fromY": 1000,
+      "fromZ": 35,
+      "headshot": false,
+      "hit": null,
       "ownerId": 100,
-      "type": "projectile",
-      "vx": 3644.347906,
-      "vy": -3.01404,
-      "vz": 202.467265,
-      "x": 1039.950094,
-      "y": 1000,
-      "z": 35
+      "toX": 1000,
+      "toY": 3996.257017,
+      "toZ": 172.097585,
+      "travelTime": 0.411235,
+      "type": "tracer",
+      "weapon": "burst"
     },
     {
-      "burst": false,
       "color": 16777215,
-      "id": 2,
-      "muzzle": 0,
+      "fromX": 1000,
+      "fromY": 1000,
+      "fromZ": 35,
+      "headshot": false,
+      "hit": null,
       "ownerId": 100,
-      "type": "projectile",
-      "vx": 3648.348228,
-      "vy": -18.954447,
-      "vz": 183.472765,
-      "x": 1054.931379,
-      "y": 1000,
-      "z": 35
+      "toX": 1000,
+      "toY": 3996.257017,
+      "toZ": 172.097585,
+      "travelTime": 0.411235,
+      "type": "tracer",
+      "weapon": "burst"
     },
     {
-      "burst": false,
       "color": 16777215,
-      "id": 3,
-      "muzzle": 0,
+      "fromX": 1000,
+      "fromY": 1000,
+      "fromZ": 35,
+      "headshot": false,
+      "hit": null,
       "ownerId": 100,
-      "type": "projectile",
-      "vx": 3625.236684,
-      "vy": 7.271116,
-      "vz": 203.225525,
-      "x": 1069.912664,
-      "y": 1000,
-      "z": 35
+      "toX": 1000,
+      "toY": 3996.257017,
+      "toZ": 172.097585,
+      "travelTime": 0.411235,
+      "type": "tracer",
+      "weapon": "burst"
     }
   ],
   "mutations": {
     "ammo": 47,
     "attackCooldown": 0.8
   },
-  "projectiles": [
-    {
-      "dmg": 14,
-      "id": 1,
-      "ownerId": 100,
-      "vx": 3644.347906,
-      "vy": -3.01404,
-      "vz": 202.467265,
-      "x": 1039.950094,
-      "y": 1000,
-      "z": 35
-    },
-    {
-      "dmg": 14,
-      "id": 2,
-      "ownerId": 100,
-      "vx": 3648.348228,
-      "vy": -18.954447,
-      "vz": 183.472765,
-      "x": 1054.931379,
-      "y": 1000,
-      "z": 35
-    },
-    {
-      "dmg": 14,
-      "id": 3,
-      "ownerId": 100,
-      "vx": 3625.236684,
-      "vy": 7.271116,
-      "vz": 203.225525,
-      "x": 1069.912664,
-      "y": 1000,
-      "z": 35
-    }
-  ]
+  "projectiles": []
 }

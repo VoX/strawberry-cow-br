@@ -4,7 +4,7 @@ const { SnapshotInterpolation } = require('@geckos.io/snapshot-interpolation');
 // Server-side SI — creates timestamped snapshots and stores them in a vault
 // for lag-compensated hit detection (time rewind).
 const SI = new SnapshotInterpolation(TICK_RATE);
-SI.vault.setMaxSize(300); // 10 seconds at 30 FPS
+SI.vault.setMaxSize(400); // 10 seconds at 40 Hz
 const { stepPlayerMovement } = require('../shared/movement');
 const { broadcast, sendTo } = require('./network');
 const transport = require('./transport');
@@ -178,9 +178,14 @@ function gameTick() {
     // Apply deferred jump at drain time so it's in sync with the client
     // prediction cadence. Checked AFTER queue drain so it fires on the
     // same tick as the move that was active when Space was pressed.
-    if (p._pendingJump && p.onGround) {
-      p.vz = JUMP_VZ;
-      p.onGround = false;
+    // Minigun blocks jump entirely (heavy weapon — too cumbersome to leap
+    // with). Pending flag is still cleared so a later weapon swap doesn't
+    // hold a stale jump.
+    if (p._pendingJump) {
+      if (p.onGround && p.weapon !== 'minigun') {
+        p.vz = JUMP_VZ;
+        p.onGround = false;
+      }
       p._pendingJump = false;
     }
 

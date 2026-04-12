@@ -18,8 +18,15 @@
 
 const gameState = require('./game-state');
 const { broadcast } = require('./network');
-// applyHungerDelta removed — firing no longer drains milk (ammo system replaces it).
 const { BURST_FAMILY, MAG_SIZES } = require('../shared/constants');
+const ballistics = require('./ballistics');
+const { getTerrainHeight, WALL_HEIGHT } = require('./terrain');
+
+// Bullet gravity — lower than player gravity (600) because real bullets
+// experience less relative drop. 150 gives ~3 unit drop at 500 range
+// for the slowest weapons, noticeable at long range but not distracting.
+const BULLET_GRAVITY = 150;
+const MAX_HITSCAN_RANGE = 3000; // max ray length in units
 
 // --- Player base stats ----------------------------------------------------
 // Every cost/gate has the shape (minFloor, base) so `Math.max(minFloor, base - hungerDiscount)`
@@ -28,27 +35,27 @@ const { BURST_FAMILY, MAG_SIZES } = require('../shared/constants');
 const PLAYER_STATS_BASE = {
   normal: {
     hungerGate: [1, 3], hungerCost: [1, 2],
-    cooldown: 0.15, dmg: 9, speed: 1294, spreadBase: 0.0286, pellets: 1, spawnOffset: 40,
+    cooldown: 0.15, dmg: 9, speed: 2588, spreadBase: 0.0286, pellets: 1, spawnOffset: 40,
   },
   burst: {
     hungerGate: [2, 6], hungerCost: [2, 5],
     // Burst-cycle cooldown (time between 3-round bursts, not between rounds
     // inside a burst — that's the 92 ms delay hardcoded in the burst loop).
     // 92 ms intra-burst = ~650 RPM, which is +30% over the auto rate by design.
-    cooldown: 0.8, dmg: 14, speed: 3643, spreadBase: 0, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
-    burstStepMs: 92,
-    auto: { hungerCost: [1, 2], cooldown: 0.12, dmg: 14, speed: 3312, spreadBase: 0.022, pellets: 1, dualPelletMult: 2 },
-    semi: { hungerCost: [1, 2], cooldown: 0.24, dmg: 14, speed: 3643, spreadBase: 0, pellets: 1, dualPelletMult: 2 },
+    cooldown: 0.8, dmg: 14, speed: 7286, spreadBase: 0, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
+    burstStepMs: 58,
+    auto: { hungerCost: [1, 2], cooldown: 0.075, dmg: 8.7, speed: 6624, spreadBase: 0.022, pellets: 1, dualPelletMult: 2 },
+    semi: { hungerCost: [1, 2], cooldown: 0.24, dmg: 14, speed: 7286, spreadBase: 0, pellets: 1, dualPelletMult: 2 },
   },
   shotgun: {
     hungerGate: [3, 10], hungerCost: [3, 9],
-    cooldown: 0.9, cooldownDualMult: 0.55 / 0.9, // dual benelli halves cooldown; matches original 0.55
-    dmg: 4, speed: 1380, spreadBase: 0.157, pellets: 10, spawnOffset: 40,
-    volleyed: true, broadcastTag: 'shotgun', vzSpreadBase: 0.2,
+    cooldown: 0.3, cooldownDualMult: 0.55 / 0.9, // dual benelli ratio preserved against original 0.9 baseline
+    dmg: 4, speed: 2760, spreadBase: 0.157, pellets: 10, spawnOffset: 40,
+    volleyed: true, broadcastTag: 'shotgun', vzSpreadBase: 0.2, gravityMult: 0.5,
   },
   bolty: {
     hungerGate: [3, 8], hungerCost: [3, 7],
-    cooldown: 2.5, dmg: 50, speed: 16800, spreadBase: 0, pellets: 1, spawnOffset: 40,
+    cooldown: 2.5, dmg: 50, speed: 33600, spreadBase: 0, pellets: 1, spawnOffset: 40,
     wallPiercing: true, broadcastTag: 'bolty',
   },
   cowtank: {
@@ -61,31 +68,30 @@ const PLAYER_STATS_BASE = {
   // 3-round burst with 92ms step). Faster cycle than LR in all modes.
   mp5k: {
     hungerGate: [2, 5], hungerCost: [1, 3],
-    cooldown: 0.6, dmg: 9, speed: 1424, spreadBase: 0.022, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
-    burstStepMs: 92, defaultMode: 'auto',
-    auto: { hungerCost: [1, 2], cooldown: 0.1, dmg: 9, speed: 1294, spreadBase: 0.044, pellets: 1, dualPelletMult: 2 },
+    cooldown: 0.6, dmg: 9, speed: 2848, spreadBase: 0.022, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
+    burstStepMs: 52, defaultMode: 'auto',
+    auto: { hungerCost: [1, 2], cooldown: 0.067, dmg: 6, speed: 2588, spreadBase: 0.044, pellets: 1, dualPelletMult: 2 },
   },
-  // Thompson — classic SMG. Full auto only, no burst/semi. Higher damage
-  // and spread than MP5K but slower fire rate (462 RPM). Cannot dual-wield.
+  // Thompson — 700 RPM full auto. Classic SMG.
   thompson: {
     hungerGate: [2, 5], hungerCost: [1, 3],
-    cooldown: 0.13, dmg: 8, speed: 1311, spreadBase: 0.0506, pellets: 1, spawnOffset: 40,
+    cooldown: 0.086, dmg: 5.3, speed: 2622, spreadBase: 0.0506, pellets: 1, spawnOffset: 40,
     autoOnly: true,
   },
   // AKM — assault rifle. Semi + full auto, no burst. Higher damage than
   // M16 family, more spread and recoil. 450 RPM. 30 round mag.
   akm: {
     hungerGate: [2, 6], hungerCost: [2, 5],
-    cooldown: 0.3, dmg: 13, speed: 2467, spreadBase: 0, pellets: 1, spawnOffset: 40,
-    auto: { hungerCost: [1, 3], cooldown: 0.133, dmg: 13, speed: 2467, spreadBase: 0.03, pellets: 1, dualPelletMult: 1 },
-    semi: { hungerCost: [1, 3], cooldown: 0.22, dmg: 13, speed: 2467, spreadBase: 0.008, pellets: 1, dualPelletMult: 1 },
+    cooldown: 0.3, dmg: 13, speed: 4934, spreadBase: 0, pellets: 1, spawnOffset: 40,
+    auto: { hungerCost: [1, 3], cooldown: 0.1, dmg: 9.8, speed: 4934, spreadBase: 0.03, pellets: 1, dualPelletMult: 1 },
+    semi: { hungerCost: [1, 3], cooldown: 0.22, dmg: 13, speed: 4934, spreadBase: 0.008, pellets: 1, dualPelletMult: 1 },
     defaultMode: 'auto',
   },
   // SKS — semi-auto marksman rifle. Higher damage + velocity than AUG,
   // lower spread. 340 RPM. Random per-shot recoil (no pattern).
   sks: {
     hungerGate: [2, 6], hungerCost: [1, 4],
-    cooldown: 0.176, dmg: 16, speed: 3381, spreadBase: 0.015, pellets: 1, spawnOffset: 40,
+    cooldown: 0.176, dmg: 16, speed: 6762, spreadBase: 0.015, pellets: 1, spawnOffset: 40,
     semiOnly: true,
   },
   // AUG — bullpup rifle with integrated 2x optic. Solo only (the
@@ -98,31 +104,29 @@ const PLAYER_STATS_BASE = {
   // Damage between AK (13) and L96 (50). High vertical recoil. Dual-wieldable.
   python: {
     hungerGate: [2, 6], hungerCost: [1, 4],
-    cooldown: 0.15, dmg: 30, speed: 5520, spreadBase: 0.015, pellets: 1, spawnOffset: 40,
+    cooldown: 0.15, dmg: 30, speed: 11040, spreadBase: 0.015, pellets: 1, spawnOffset: 40,
     semiOnly: true,
   },
   // M249 SAW — belt-fed LMG. 100 rounds, 600 RPM full auto.
   // 50% move speed penalty. 5.56 NATO damage. MP5K spread.
   m249: {
     hungerGate: [2, 6], hungerCost: [2, 5],
-    cooldown: 0.1, dmg: 14, speed: 3312, spreadBase: 0.044, pellets: 1, spawnOffset: 40,
+    cooldown: 0.071, dmg: 9.9, speed: 6624, spreadBase: 0.044, pellets: 1, spawnOffset: 40,
     autoOnly: true,
   },
   // Minigun — 300 rounds, 600 RPM full auto. 30% move speed.
-  // Double MP5K spread, MP5K damage. Extreme suppression weapon.
-  // Minigun: fires at 600 RPM internally but spawns 2 pellets per shot
-  // for visual 1200 RPM effect. 1.0s lifetime for shorter range.
+  // Minigun: 1200 RPM single pellet hitscan. No server cost per shot.
   minigun: {
     hungerGate: [2, 6], hungerCost: [2, 5],
-    cooldown: 0.1, dmg: 4.5, speed: 3312, spreadBase: 0.088, pellets: 2, spawnOffset: 40,
+    cooldown: 0.02, dmg: 1.8, speed: 6624, spreadBase: 0.088, pellets: 1, spawnOffset: 40,
     autoOnly: true, volleyed: true, vzSpreadBase: 0.08, life: 1.0,
   },
   aug: {
     hungerGate: [2, 6], hungerCost: [2, 5],
-    cooldown: 0.615, dmg: 14, speed: 4908, spreadBase: 0, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
-    burstStepMs: 92,
-    auto: { hungerCost: [1, 2], cooldown: 0.133, dmg: 14, speed: 4462, spreadBase: 0.022, pellets: 1, dualPelletMult: 1 },
-    semi: { hungerCost: [1, 2], cooldown: 0.266, dmg: 14, speed: 4908, spreadBase: 0, pellets: 1, dualPelletMult: 1 },
+    cooldown: 0.615, dmg: 14, speed: 9816, spreadBase: 0, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
+    burstStepMs: 68,
+    auto: { hungerCost: [1, 2], cooldown: 0.088, dmg: 9.3, speed: 8924, spreadBase: 0.022, pellets: 1, dualPelletMult: 1 },
+    semi: { hungerCost: [1, 2], cooldown: 0.266, dmg: 14, speed: 9816, spreadBase: 0, pellets: 1, dualPelletMult: 1 },
   },
 };
 
@@ -130,27 +134,27 @@ const PLAYER_STATS_BASE = {
 // Final values (no hungerDiscount). Kept separate so bot nerfs can diverge
 // from player numbers at will.
 const BOT_STATS = {
-  normal:  { hungerGate: 10, hungerCost: 3, cooldown: 0.3, dmg: 9,  speed: 1294, spreadBase: 0, pellets: 1, spawnOffset: 40 },
+  normal:  { hungerGate: 10, hungerCost: 3, cooldown: 0.3, dmg: 9,  speed: 2588, spreadBase: 0, pellets: 1, spawnOffset: 40 },
   burst:   {
-    hungerGate: 4, hungerCost: 5, cooldown: 0.8, dmg: 14, speed: 3643, spreadBase: 0, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
-    auto: { hungerCost: 1, cooldown: 0.1, dmg: 14, speed: 3312, spreadBase: 0.035, pellets: 1 },
+    hungerGate: 4, hungerCost: 5, cooldown: 0.8, dmg: 14, speed: 7286, spreadBase: 0, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
+    auto: { hungerCost: 1, cooldown: 0.1, dmg: 14, speed: 6624, spreadBase: 0.035, pellets: 1 },
   },
-  shotgun: { hungerGate: 7, hungerCost: 7, cooldown: 1.0, dmg: 4, speed: 1380, spreadBase: 0.2, pellets: 10, spawnOffset: 40, volleyed: true, broadcastTag: 'shotgun', vzSpreadBase: 0.2 },
-  bolty:   { hungerGate: 12, hungerCost: 8, cooldown: 2.5, dmg: 50, speed: 16800, spreadBase: 0, pellets: 1, spawnOffset: 40, broadcastTag: 'bolty' },
-  cowtank: { hungerGate: 6, hungerCost: 5, cooldown: 1.0, dmg: 38, speed: 2070, spreadBase: 0, pellets: 1, spawnOffset: 40, explosive: true, blastRadius: 180, broadcastTag: 'cowtank' },
-  thompson: { hungerGate: 4, hungerCost: 3, cooldown: 0.13, dmg: 8, speed: 1311, spreadBase: 0.0506, pellets: 1, spawnOffset: 40 },
+  shotgun: { hungerGate: 7, hungerCost: 7, cooldown: 0.3, dmg: 4, speed: 2760, spreadBase: 0.2, pellets: 10, spawnOffset: 40, volleyed: true, broadcastTag: 'shotgun', vzSpreadBase: 0.2, gravityMult: 0.5 },
+  bolty:   { hungerGate: 12, hungerCost: 8, cooldown: 2.5, dmg: 50, speed: 33600, spreadBase: 0, pellets: 1, spawnOffset: 40, broadcastTag: 'bolty' },
+  cowtank: { hungerGate: 6, hungerCost: 5, cooldown: 1.0, dmg: 38, speed: 4140, spreadBase: 0, pellets: 1, spawnOffset: 40, explosive: true, blastRadius: 180, broadcastTag: 'cowtank' },
+  thompson: { hungerGate: 4, hungerCost: 3, cooldown: 0.13, dmg: 8, speed: 2622, spreadBase: 0.0506, pellets: 1, spawnOffset: 40 },
   akm: {
-    hungerGate: 5, hungerCost: 4, cooldown: 0.3, dmg: 13, speed: 2467, spreadBase: 0, pellets: 1, spawnOffset: 40,
-    auto: { hungerCost: 2, cooldown: 0.133, dmg: 13, speed: 2467, spreadBase: 0.04, pellets: 1 },
+    hungerGate: 5, hungerCost: 4, cooldown: 0.3, dmg: 13, speed: 4934, spreadBase: 0, pellets: 1, spawnOffset: 40,
+    auto: { hungerCost: 2, cooldown: 0.133, dmg: 13, speed: 4934, spreadBase: 0.04, pellets: 1 },
   },
-  sks: { hungerGate: 5, hungerCost: 4, cooldown: 0.176, dmg: 3.9, speed: 2450, spreadBase: 0.015, pellets: 1, spawnOffset: 40 },
+  sks: { hungerGate: 5, hungerCost: 4, cooldown: 0.176, dmg: 3.9, speed: 4900, spreadBase: 0.015, pellets: 1, spawnOffset: 40 },
   mp5k: {
-    hungerGate: 4, hungerCost: 3, cooldown: 0.6, dmg: 4, speed: 1300, spreadBase: 0.022, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
-    auto: { hungerCost: 1, cooldown: 0.1, dmg: 2, speed: 1300, spreadBase: 0.055, pellets: 1 },
+    hungerGate: 4, hungerCost: 3, cooldown: 0.6, dmg: 4, speed: 2600, spreadBase: 0.022, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
+    auto: { hungerCost: 1, cooldown: 0.1, dmg: 2, speed: 2600, spreadBase: 0.055, pellets: 1 },
   },
-  python: { hungerGate: 5, hungerCost: 4, cooldown: 0.15, dmg: 25, speed: 5520, spreadBase: 0.015, pellets: 1, spawnOffset: 40 },
-  m249: { hungerGate: 5, hungerCost: 5, cooldown: 0.1, dmg: 12, speed: 3312, spreadBase: 0.044, pellets: 1, spawnOffset: 40 },
-  minigun: { hungerGate: 5, hungerCost: 5, cooldown: 0.1, dmg: 3.5, speed: 3312, spreadBase: 0.088, pellets: 2, spawnOffset: 40, volleyed: true, vzSpreadBase: 0.08, life: 1.0 },
+  python: { hungerGate: 5, hungerCost: 4, cooldown: 0.15, dmg: 25, speed: 11040, spreadBase: 0.015, pellets: 1, spawnOffset: 40 },
+  m249: { hungerGate: 5, hungerCost: 5, cooldown: 0.1, dmg: 12, speed: 6624, spreadBase: 0.044, pellets: 1, spawnOffset: 40 },
+  minigun: { hungerGate: 5, hungerCost: 5, cooldown: 0.1, dmg: 3.5, speed: 6624, spreadBase: 0.088, pellets: 2, spawnOffset: 40, volleyed: true, vzSpreadBase: 0.08, life: 1.0 },
 };
 
 // Extract cooldown / damage / hungerDiscount multipliers from a shooter's
@@ -223,6 +227,199 @@ function _spawnProjectile(shooter, posX, posY, posZ, dirX, dirY, dirZ, speed, dm
   };
   if (delayMs) gameState.scheduleRoundTimer(() => broadcast(bc), delayMs);
   else broadcast(bc);
+}
+
+// --- Hitscan fire -----------------------------------------------------------
+// Instant ray trace with analytical bullet drop. Damage delayed by travel time.
+// No projectile entity created. Broadcasts unreliable tracer for visuals.
+function fireHitscan(shooter, weapon, aim, stats, opts = {}) {
+  const { dualWield = false, dmgMult = 1, eyeHeight, fireServerTime = null, walkSpreadMult = 1, camPos = null } = opts;
+  const perkDmgMult = (shooter.perks && shooter.perks.damage) || 1;
+  // Use client camera position if provided (matches what the player sees).
+  // Falls back to cow head position for bots and legacy clients.
+  const eyeZ = camPos ? camPos.z : (shooter.z + (eyeHeight ? eyeHeight(shooter) : 0));
+  let ax = aim.ax, ay = aim.ay, az = aim.az;
+
+  // Apply spread
+  if (stats.spreadBase > 0) {
+    const spread = stats.spreadBase * walkSpreadMult * (dualWield ? 1.5 : 1);
+    ax += (Math.random() - 0.5) * spread * 2;
+    ay += (Math.random() - 0.5) * spread * 2;
+    az += (Math.random() - 0.5) * (stats.vzSpreadBase || spread) * 2;
+  }
+  const alen = Math.hypot(ax, ay, az);
+  if (alen > 0.01) { ax /= alen; ay /= alen; az /= alen; }
+
+  // Ray endpoints — use camera position if available
+  const fromX = camPos ? camPos.x : shooter.x;
+  const fromY = camPos ? camPos.y : shooter.y;
+  const fromZ = eyeZ;
+  const range = MAX_HITSCAN_RANGE;
+  // True 3D ray — direction × range, then apply gravity drop
+  const toX = fromX + ax * range;
+  const toY = fromY + ay * range;
+  const maxTravelTime = range / stats.speed;
+  // Per-weapon gravityMult lets buckshot drop less than rifle rounds
+  const maxDrop = 0.5 * BULLET_GRAVITY * (stats.gravityMult != null ? stats.gravityMult : 1) * maxTravelTime * maxTravelTime;
+  const toZ = fromZ + az * range - maxDrop;
+
+  // Lag compensation — rewind players for hit check
+  const players = gameState.getPlayers();
+  let playersForHit = players;
+  if (fireServerTime != null) {
+    let _SI = null;
+    try { _SI = require('./game').SI; } catch (e) {}
+    if (_SI) {
+      const siVault = _SI.vault;
+      const snapPair = siVault.get(fireServerTime);
+      if (snapPair && snapPair.older && snapPair.newer) {
+        const interp = _SI.interpolate(snapPair.older, snapPair.newer, fireServerTime, 'x y z');
+        if (interp && interp.state) {
+          const { _buildRewoundPlayers } = require('./combat');
+          if (_buildRewoundPlayers) playersForHit = _buildRewoundPlayers(interp.state, players);
+        }
+      }
+    }
+  }
+
+  // Check walls/barricades along the ray
+  const walls = gameState.getWalls();
+  const barricades = gameState.getBarricades();
+  let blockT = 1.01;
+  // Always run the first-wall scan. For non-piercing weapons it bounds blockT
+  // so player checks behind the wall fail. For wall-piercing (L9) we still
+  // need the first hit to broadcast wallImpact (visual + debug cube) AND we
+  // re-scan past it to find the SECOND wall, which becomes the new blockT —
+  // L9 punches through 1 wall, not 2.
+  const wres1 = ballistics.segVsWalls(fromX, fromY, fromZ, toX, toY, toZ, walls, getTerrainHeight, WALL_HEIGHT);
+  if (!stats.wallPiercing) {
+    blockT = wres1.blockT;
+  } else if (wres1.hitWall) {
+    const firstWall = wres1.hitWall;
+    const firstT = wres1.blockT;
+    const wxR = firstWall.x + Math.max(firstWall.w, 20);
+    const wyB = firstWall.y + Math.max(firstWall.h, 20);
+    let wallX = fromX + (toX - fromX) * firstT;
+    let wallY = fromY + (toY - fromY) * firstT;
+    const wallZ = fromZ + (toZ - fromZ) * firstT;
+    wallX = Math.max(firstWall.x, Math.min(wxR, wallX));
+    wallY = Math.max(firstWall.y, Math.min(wyB, wallY));
+    broadcast({ type: 'wallImpact', x: wallX, y: wallY, z: wallZ, wallId: firstWall.id, ownerId: shooter.id });
+    const wres2 = ballistics.segVsWalls(fromX, fromY, fromZ, toX, toY, toZ, walls, getTerrainHeight, WALL_HEIGHT, firstWall.id);
+    blockT = wres2.blockT;
+  }
+  const bres = ballistics.segVsBarricades(fromX, fromY, fromZ, toX, toY, toZ, barricades, blockT);
+  let hitBarricade = null;
+  if (bres.hitBarricade && bres.hitBarricade.hp > 0) {
+    blockT = bres.blockT;
+    hitBarricade = bres.hitBarricade;
+    // Apply damage to barricade
+    hitBarricade.hp -= Math.round(stats.dmg * perkDmgMult * dmgMult);
+    if (hitBarricade.hp <= 0) gameState.removeBarricade(hitBarricade.id);
+  }
+
+  // Check player hit
+  const hitPlayer = ballistics.findPlayerHit(fromX, fromY, fromZ, toX, toY, toZ, playersForHit, shooter.id, blockT, eyeHeight || (() => 40));
+
+  // Compute impact point
+  let impactX, impactY, impactZ;
+  let hitTargetId = null;
+  let headshot = false;
+  const dmg = stats.dmg * perkDmgMult * dmgMult;
+
+  if (hitPlayer) {
+    const p = hitPlayer._rewound ? players.get(hitPlayer.id) : hitPlayer;
+    if (p && p.alive) {
+      hitTargetId = p.id;
+      headshot = !!hitPlayer._wasHeadshot;
+      impactX = p.x; impactY = p.y; impactZ = p.z + 20;
+      const dist = Math.hypot(p.x - fromX, p.y - fromY);
+      const travelTime = dist / stats.speed;
+
+      // Damage dropoff for shotgun — full damage within 230u (~10m),
+      // linear falloff to 0 at 500u (~22m). Beyond that, no damage.
+      let dropoffMult = 1;
+      if (weapon === 'shotgun') {
+        const dropoffStart = 230, dropoffEnd = 500;
+        if (dist > dropoffEnd) { hitTargetId = null; } // too far, no damage
+        else if (dist > dropoffStart) {
+          dropoffMult = 1 - (dist - dropoffStart) / (dropoffEnd - dropoffStart);
+        }
+      }
+      if (!hitTargetId) { /* shotgun out of range, skip damage */ }
+      else {
+      // Delayed damage
+      const finalDmg = (headshot ? dmg * 1.8 : dmg) * dropoffMult;
+      const { applyHungerDelta, applyArmorDelta } = require('./player');
+      gameState.scheduleRoundTimer(() => {
+        const target = gameState.getPlayer(hitTargetId);
+        if (!target || !target.alive) return;
+        if (target.armor > 0) {
+          applyArmorDelta(target, -finalDmg * 0.5);
+          const remaining = finalDmg * 0.5;
+          applyHungerDelta(target, -remaining, shooter.id);
+        } else {
+          applyHungerDelta(target, -finalDmg, shooter.id);
+        }
+        target.lastAttacker = shooter.id;
+        target.stunTimer = Math.max(target.stunTimer || 0, 0.1);
+      }, travelTime * 1000);
+      } // end dropoff else
+    }
+  }
+
+  if (!impactX) {
+    // Hit wall/terrain/max range. Check terrain intersection by stepping
+    // along the ray and finding where Z drops below terrain height.
+    const t = Math.min(blockT, 1);
+    impactX = fromX + (toX - fromX) * t;
+    impactY = fromY + (toY - fromY) * t;
+    impactZ = fromZ + (toZ - fromZ) * t;
+    // Terrain collision — coarse scan then binary search refinement.
+    // Coarse scan at 32 steps to find the first below-ground segment,
+    // then bisect within that segment for precise ground intersection.
+    const coarseSteps = 32;
+    let hitStep = -1;
+    for (let s = 1; s <= coarseSteps; s++) {
+      const st = (s / coarseSteps) * t;
+      const sz = fromZ + (toZ - fromZ) * st;
+      const sx = fromX + (toX - fromX) * st;
+      const sy = fromY + (toY - fromY) * st;
+      if (sz < getTerrainHeight(sx, sy)) { hitStep = s; break; }
+    }
+    if (hitStep > 0) {
+      // Binary search between hitStep-1 and hitStep for precise intersection
+      let lo = ((hitStep - 1) / coarseSteps) * t;
+      let hi = (hitStep / coarseSteps) * t;
+      for (let iter = 0; iter < 6; iter++) {
+        const mid = (lo + hi) / 2;
+        const mx = fromX + (toX - fromX) * mid;
+        const my = fromY + (toY - fromY) * mid;
+        const mz = fromZ + (toZ - fromZ) * mid;
+        if (mz < getTerrainHeight(mx, my)) hi = mid;
+        else lo = mid;
+      }
+      const ft = (lo + hi) / 2;
+      impactX = fromX + (toX - fromX) * ft;
+      impactY = fromY + (toY - fromY) * ft;
+      impactZ = getTerrainHeight(impactX, impactY);
+    }
+  }
+
+  const dist = Math.hypot(impactX - fromX, impactY - fromY);
+  const travelTime = dist / stats.speed;
+
+  // Broadcast unreliable tracer
+  broadcast({
+    type: 'tracer',
+    fromX, fromY, fromZ,
+    toX: impactX, toY: impactY, toZ: impactZ,
+    weapon, ownerId: shooter.id, color: shooter.color,
+    travelTime,
+    hit: hitTargetId, headshot,
+  });
+
+  return true;
 }
 
 // Main entry point. `stats` is the resolved (post-perk) per-shot numbers.
@@ -433,4 +630,4 @@ function resetAfterCowtank(shooter) {
   // No broadcast — weapon change rides next tick's player state.
 }
 
-module.exports = { fireWeapon, resolvePlayerStats, extractShooterModifiers, BOT_STATS, resetAfterCowtank };
+module.exports = { fireWeapon, fireHitscan, resolvePlayerStats, extractShooterModifiers, BOT_STATS, resetAfterCowtank };

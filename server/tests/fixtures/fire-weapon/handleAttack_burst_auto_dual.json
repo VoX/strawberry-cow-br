@@ -2,57 +2,38 @@
   "broadcasts": [
     {
       "color": 16777215,
-      "id": 1,
-      "muzzle": 0,
+      "fromX": 1000,
+      "fromY": 1000,
+      "fromZ": 35,
+      "headshot": false,
+      "hit": null,
       "ownerId": 100,
-      "type": "projectile",
-      "vx": 3329.968218,
-      "vy": -11.30327,
-      "vz": 242.43959,
-      "x": 1040.217007,
-      "y": 999.863487,
-      "z": 35
+      "toX": 3989.409777,
+      "toY": 984.829428,
+      "toZ": 271.010404,
+      "travelTime": 0.451306,
+      "type": "tracer",
+      "weapon": "burst"
     },
     {
       "color": 16777215,
-      "id": 2,
-      "muzzle": 1,
+      "fromX": 1000,
+      "fromY": 1000,
+      "fromZ": 35,
+      "headshot": false,
+      "hit": null,
       "ownerId": 100,
-      "type": "projectile",
-      "vx": 3344.97025,
-      "vy": -71.08308,
-      "vz": 171.206304,
-      "x": 1040.398191,
-      "y": 999.141509,
-      "z": 35
+      "toX": 3994.488437,
+      "toY": 905.073836,
+      "toZ": 174.625976,
+      "travelTime": 0.452294,
+      "type": "tracer",
+      "weapon": "burst"
     }
   ],
   "mutations": {
     "ammo": 48,
-    "attackCooldown": 0.12
+    "attackCooldown": 0.075
   },
-  "projectiles": [
-    {
-      "dmg": 14,
-      "id": 1,
-      "ownerId": 100,
-      "vx": 3329.968218,
-      "vy": -11.30327,
-      "vz": 242.43959,
-      "x": 1040.217007,
-      "y": 999.863487,
-      "z": 35
-    },
-    {
-      "dmg": 14,
-      "id": 2,
-      "ownerId": 100,
-      "vx": 3344.97025,
-      "vy": -71.08308,
-      "vz": 171.206304,
-      "x": 1040.398191,
-      "y": 999.141509,
-      "z": 35
-    }
-  ]
+  "projectiles": []
 }

@@ -14,6 +14,8 @@ import { BURST_FAMILY, JUMP_VZ } from '../shared/constants.js';
 function predictJump() {
   const mp = S.mePredicted;
   if (!mp || !mp.onGround) return;
+  // Minigun is too heavy to jump with — server enforces the same gate.
+  if (mp.weapon === 'minigun') return;
   mp.vz = JUMP_VZ;
   mp.onGround = false;
 }
@@ -42,6 +44,8 @@ export function doAttack() {
     aimX: _inputDir.x, aimY: _inputDir.z, aimZ: _inputDir.y,
     fireMode: S.fireMode,
     serverTime: getServerTime(),
+    // Camera position for hitscan ray origin — matches what the player sees
+    camX: cam.position.x, camY: cam.position.z, camZ: cam.position.y,
   });
 }
 
@@ -66,7 +70,10 @@ export function toggleFullscreen() {
 // Fire mode toggle for LR-300
 S.fireMode = 'burst';
 let mouseDown = false, autoFireActive = false, nextFireTime = 0;
-const AUTO_FIRE_INTERVAL = 72; // ms between shots — slightly over server cooldown (67ms) to avoid rejected shots
+// Client auto-fire capped at 50ms (20/sec max) to avoid flooding the
+// network. The server fires multiple hitscan rays per attack for weapons
+// with RPM higher than 1200 (minigun, etc).
+function getAutoFireInterval() { return 50; }
 
 function autoFireLoop() {
   if (!autoFireActive) return;
@@ -77,7 +84,7 @@ function autoFireLoop() {
   const now = performance.now();
   if (now >= nextFireTime) {
     doAttack();
-    nextFireTime = now + AUTO_FIRE_INTERVAL;
+    nextFireTime = now + getAutoFireInterval();
   }
   requestAnimationFrame(autoFireLoop);
 }
@@ -165,6 +172,9 @@ document.addEventListener('mouseup', e => {
     if (me && me.alive && me.weapon === 'minigun') {
       send({ type: 'minigunSpin', spinning: false });
     }
+    // L96 bolt-action: if a shot is in flight and we're still ADS'd, the
+    // game will forceUnADS at +100ms — don't let the player bail early.
+    if (S.adsLocked) return;
     S.adsActive = false;
     cam.fov = 75; cam.updateProjectionMatrix();
     document.getElementById('scopeOverlay').style.display = 'none';
@@ -232,7 +242,7 @@ if (isMobile) {
     const now = performance.now();
     if (now >= nextFireTime) {
       doAttack();
-      nextFireTime = now + AUTO_FIRE_INTERVAL;
+      nextFireTime = now + getAutoFireInterval();
     }
     requestAnimationFrame(touchAutoLoop);
   }
@@ -241,7 +251,7 @@ if (isMobile) {
     e.preventDefault();
     doAttack();
     _touchFiring = true;
-    if (nextFireTime < performance.now()) nextFireTime = performance.now() + AUTO_FIRE_INTERVAL;
+    if (nextFireTime < performance.now()) nextFireTime = performance.now() + getAutoFireInterval();
     touchAutoLoop();
   }, { passive: false });
   shootBtn.addEventListener('touchend', e => { _touchFiring = false; }, { passive: true });
@@ -253,6 +263,7 @@ if (isMobile) {
     send({ type: 'reload' });
     if (S.adsActive) {
       S.adsActive = false;
+      S.adsLocked = false;
       cam.fov = 75; cam.updateProjectionMatrix();
       document.getElementById('scopeOverlay').style.display = 'none';
       document.getElementById('augScopeOverlay').style.display = 'none';
@@ -276,7 +287,8 @@ if (isMobile) {
       if (!me || !me.alive) return;
       if (S._boltRacking || me.reloading) return;
       if (S.adsActive) {
-        // Un-ADS
+        // Un-ADS (blocked when L96 fire-lock is engaged)
+        if (S.adsLocked) return;
         S.adsActive = false;
         cam.fov = 75; cam.updateProjectionMatrix();
         document.getElementById('scopeOverlay').style.display = 'none';
@@ -362,12 +374,15 @@ addEventListener('keydown', e => {
     }
   }
   if (e.code === 'KeyP') { S.debugMode = !S.debugMode; }
+  if (e.code === 'KeyH' && S.state === 'playing') { S.cameraMode = S.cameraMode === 'third' ? 'first' : 'third'; }
   if (e.code === 'KeyO') { toggleFullscreen(); }
   if (e.code === 'KeyR' && S.state === 'playing') {
     send({ type: 'reload' });
-    // Full un-ADS on reload — restore FOV, overlays, viewmodel
+    // Full un-ADS on reload — restore FOV, overlays, viewmodel.
+    // Reload is a game-forced un-ADS so it bypasses + clears the L96 fire-lock.
     if (S.adsActive) {
       S.adsActive = false;
+      S.adsLocked = false;
       cam.fov = 75; cam.updateProjectionMatrix();
       document.getElementById('scopeOverlay').style.display = 'none';
       document.getElementById('augScopeOverlay').style.display = 'none';

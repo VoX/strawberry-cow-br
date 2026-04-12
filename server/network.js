@@ -22,6 +22,7 @@ const UNRELIABLE_TYPES = new Set([
   // Temp entities — fire-and-forget visuals/audio:
   // projectile stays reliable — client needs it to create + step the visual
   // tracer entity. Converting to hitscan (CS-style) would eliminate this.
+  'tracer',  // hitscan visual — cosmetic, fire-and-forget
   'wallImpact', 'explosion',
   'meleeSwing', 'meleeHit', 'shieldHit',
   'mooTaunt', 'cowstrikeWarning', 'cowstrike',

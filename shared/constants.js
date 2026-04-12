@@ -15,7 +15,7 @@ const PLAYER_WALK_MULT = 0.5;           // walking/crouching speed multiplier
 const MUD_SPEED_MULT = 0.5;             // mud patch slowdown
 const GRAVITY = 800;                    // z-axis gravity units/s^2
 const BARRICADE_HEIGHT = 55;            // barricades are 55 units tall
-const PLAYER_WALL_INFLATE = 15;         // AABB inflation matching capsule radius
+const PLAYER_WALL_INFLATE = 8;          // AABB inflation matching capsule radius
 const JUMP_VZ = 230;                    // vertical velocity injected by jump
 
 // Client-authoritative speed multipliers — sent in each move's
@@ -46,7 +46,7 @@ const BURST_FAMILY = new Set(['burst', 'aug', 'mp5k', 'akm']);
 // Dual-wield: only lightweight weapons. M16 + Benelli disabled for now
 // (too heavy to dual-wield realistically). Re-enable by adding back
 // 'shotgun' and 'burst' to this set.
-const DUAL_WIELD_FAMILY = new Set(['normal', 'mp5k', 'python']);
+const DUAL_WIELD_FAMILY = new Set(['normal', 'python']);
 
 // Base magazine capacity by weapon. Single source of truth for hud.js,
 // server/weapon-fire.js, and server/combat.js reload/extMag math.
@@ -54,7 +54,11 @@ const MAG_SIZES = { normal: 10, burst: 20, shotgun: 6, bolty: 5, aug: 30, mp5k: 
 const EXT_MAG_SIZES = { normal: 13, burst: 25, shotgun: 8, bolty: 7, aug: 38, mp5k: 38, thompson: 25, sks: 13, akm: 38, python: 8, minigun: 400, m249: 150 };
 
 // Weapons with a speed penalty when held. Applied in shared/movement.js.
-const HEAVY_WEAPON_SPEED = { minigun: 0.3, m249: 0.5 };
+const HEAVY_WEAPON_SPEED = { minigun: 0.5, m249: 0.5 };
+// Minigun while fully spun adds extra slow on top — total 80% reduction
+// at full spin (interpolated from HEAVY_WEAPON_SPEED.minigun based on the
+// 0..1 spin level so partial spin = partial penalty).
+const MINIGUN_SPUN_SPEED_MULT = 0.2;
 
 // Client input types that carry a monotonic seq number for CSP reconciliation.
 // The client stamps seq on every stateful send; the server tracks the highest
@@ -109,6 +113,6 @@ module.exports = {
   SPEED_MULT_MIN, SPEED_MULT_MAX,
   KNIFE_MELEE_RANGE, KNIFE_MELEE_CONE_COS, KNIFE_MELEE_DAMAGE, KNIFE_MELEE_CD_MS,
   STATEFUL_INPUT_TYPES, BURST_FAMILY, DUAL_WIELD_FAMILY, MAG_SIZES, EXT_MAG_SIZES,
-  HEAVY_WEAPON_SPEED, WEAPON_CALIBER,
+  HEAVY_WEAPON_SPEED, MINIGUN_SPUN_SPEED_MULT, WEAPON_CALIBER,
   COLORS, FOOD_TYPES, WEAPON_TYPES,
 };

@@ -1,36 +1,50 @@
-// Client-side bullet hole decals. Spawned by the wallImpact + projectileHit
-// (wall:true) handlers in client/message-handlers.js when a projectile lands
-// on a wall, barricade, terrain, or world bound. Each hole is a tiny dark
-// sphere that sits at the impact point for 30 seconds, fading out the last
-// few seconds of life.
-//
-// Pool design: separate from the particle pool in client/particles.js because
-// holes have a 60× longer lifetime (30 s vs ~0.5 s) and would otherwise
-// starve the particle pool's 600-entry cap during sustained combat. Hard
-// MAX_HOLES cap with FIFO eviction so a 30-player full-auto rave can't
-// unbounded-grow the scene graph.
-//
-// Material is per-hole (not shared) so individual fade-out doesn't bleed
-// across siblings. Geometry IS shared — one tiny sphere geo for every hole.
+// Client-side bullet hole decals — canvas-generated dark circle.
+// Oriented to face the shooter (opposite of the incoming ray direction).
 
 import * as THREE from 'three';
-import { scene } from './renderer.js';
-import { markSharedGeometry } from './three-utils.js';
+import { scene, cam } from './renderer.js';
+import { getTerrainHeight } from './terrain.js';
 
-const HOLE_LIFE = 30;     // seconds before the hole disappears
-const HOLE_FADE = 4;      // seconds spent fading at the end of life
-const MAX_HOLES = 200;    // FIFO cap
-const HOLE_RADIUS = 2.5;  // sphere radius — needs to poke noticeably out
-                          // of whatever surface it's half-buried in
-const HOLE_PEAK_OPACITY = 0.9;
+const HOLE_LIFE = 30;
+const MAX_HOLES = 200;
+const HOLE_SIZE = 3;
 
-// Shared low-poly sphere — small enough that 200 of them is trivial.
-const _geo = markSharedGeometry(new THREE.SphereGeometry(HOLE_RADIUS, 6, 4));
+const _geo = new THREE.PlaneGeometry(HOLE_SIZE, HOLE_SIZE);
 
-// { mesh, mat, life, surfaceKey } for every active hole. surfaceKey ties
-// the hole to a wall or barricade so the wall/barricade-destroyed handlers
-// can remove decals when the surface they're sitting on vanishes.
+let _tex = null;
+function getTexture() {
+  if (_tex) return _tex;
+  const sz = 64;
+  const c = document.createElement('canvas');
+  c.width = sz; c.height = sz;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(sz/2, sz/2, 0, sz/2, sz/2, sz/2);
+  g.addColorStop(0, 'rgba(15,15,15,0.95)');
+  g.addColorStop(0.3, 'rgba(25,25,25,0.85)');
+  g.addColorStop(0.6, 'rgba(40,40,40,0.5)');
+  g.addColorStop(0.85, 'rgba(50,50,50,0.15)');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, sz, sz);
+  ctx.strokeStyle = 'rgba(20,20,20,0.6)';
+  ctx.lineWidth = 1.5;
+  for (let i = 0; i < 5; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const len = 8 + Math.random() * 16;
+    ctx.beginPath();
+    ctx.moveTo(sz/2, sz/2);
+    ctx.lineTo(sz/2 + Math.cos(angle) * len, sz/2 + Math.sin(angle) * len);
+    ctx.stroke();
+  }
+  _tex = new THREE.CanvasTexture(c);
+  _tex.minFilter = THREE.LinearFilter;
+  return _tex;
+}
+
 const _holes = [];
+
+// Temp vector for lookAt computation
+const _tmpLook = new THREE.Vector3();
 
 export function spawnBulletHole(gameX, gameY, gameZ, surfaceKey) {
   if (typeof gameX !== 'number' || typeof gameY !== 'number' || typeof gameZ !== 'number') return;
@@ -39,22 +53,43 @@ export function spawnBulletHole(gameX, gameY, gameZ, surfaceKey) {
     scene.remove(old.mesh);
     old.mat.dispose();
   }
+
   const mat = new THREE.MeshBasicMaterial({
-    color: 0x111111,
+    map: getTexture(),
     transparent: true,
-    opacity: HOLE_PEAK_OPACITY,
     depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
+    side: THREE.DoubleSide,
   });
+
   const mesh = new THREE.Mesh(_geo, mat);
-  // Game coords (x, y, z=up) → three coords (x, y=up, z).
+
+  // Three.js coords: (gameX, gameZ_vertical, gameY_horizontal)
   mesh.position.set(gameX, gameZ, gameY);
+
+  const terrH = getTerrainHeight(gameX, gameY);
+  const isGround = Math.abs(gameZ - terrH) < 3;
+
+  if (isGround) {
+    // Ground — lay flat, face up
+    mesh.rotation.set(-Math.PI / 2, 0, Math.random() * Math.PI * 2);
+    mesh.position.y = terrH + 0.05;
+  } else {
+    // Wall/barricade — face toward the camera (the shooter).
+    // This gives correct orientation regardless of surface angle.
+    _tmpLook.copy(cam.position);
+    // Only use horizontal direction (keep decal vertical on walls)
+    _tmpLook.y = mesh.position.y;
+    mesh.lookAt(_tmpLook);
+    mesh.rotation.z = Math.random() * Math.PI * 2;
+  }
+
   scene.add(mesh);
   _holes.push({ mesh, mat, life: HOLE_LIFE, surfaceKey: surfaceKey || null });
 }
 
-// Drop every hole tied to a given surface key. Called from the
-// wallDestroyed / barricadeDestroyed handlers — without this, decals
-// keep floating in mid-air after the surface they were on vanishes.
 export function removeBulletHolesBySurfaceKey(surfaceKey) {
   if (!surfaceKey) return;
   for (let i = _holes.length - 1; i >= 0; i--) {
@@ -74,16 +109,10 @@ export function updateBulletHoles(dt) {
       scene.remove(h.mesh);
       h.mat.dispose();
       _holes.splice(i, 1);
-      continue;
-    }
-    if (h.life < HOLE_FADE) {
-      h.mat.opacity = (h.life / HOLE_FADE) * HOLE_PEAK_OPACITY;
     }
   }
 }
 
-// Round-reset hook — drop every active hole when a new round starts so the
-// scene doesn't carry impacts across rounds. Called from the start handler.
 export function clearBulletHoles() {
   for (const h of _holes) {
     scene.remove(h.mesh);

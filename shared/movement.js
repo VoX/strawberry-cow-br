@@ -40,6 +40,7 @@
 const {
   PLAYER_BASE_SPEED, PLAYER_WALK_MULT, MUD_SPEED_MULT, GRAVITY,
   BARRICADE_HEIGHT, PLAYER_WALL_INFLATE,
+  HEAVY_WEAPON_SPEED, MINIGUN_SPUN_SPEED_MULT,
 } = require('./constants');
 const { pushOutOfWalls } = require('./collision');
 
@@ -84,7 +85,20 @@ function stepPlayerMovement(p, dt, world, input, terrain) {
     // simulation matches the client's predicted simulation tick-for-tick
     // without needing to know about the effect itself. Defaults to 1.
     const inputSpeedMult = input.speedMult != null ? input.speedMult : 1;
-    const speed = PLAYER_BASE_SPEED * sizeSlowdown * p.perks.speedMult * mudSlow * walkMult * inputSpeedMult;
+    // Heavy-weapon slow — applied here so server enforces it independently of
+    // the client-trusted speedMult. m249 = flat 50%. minigun lerps from no
+    // slow (spin=0) through 50% (any spin) up to 80% (full spin). Spin level
+    // lives on `p._minigunSpinTime` server-side and is mirrored to
+    // `p.minigunSpin` on the client predicted player.
+    let heavyMult = 1;
+    if (p.weapon === 'minigun') {
+      const spin = p._minigunSpinTime != null ? p._minigunSpinTime : (p.minigunSpin || 0);
+      const t = Math.max(0, Math.min(1, spin));
+      heavyMult = HEAVY_WEAPON_SPEED.minigun + (MINIGUN_SPUN_SPEED_MULT - HEAVY_WEAPON_SPEED.minigun) * t;
+    } else if (HEAVY_WEAPON_SPEED[p.weapon]) {
+      heavyMult = HEAVY_WEAPON_SPEED[p.weapon];
+    }
+    const speed = PLAYER_BASE_SPEED * sizeSlowdown * p.perks.speedMult * mudSlow * walkMult * inputSpeedMult * heavyMult;
     p.x += nx * speed * dt;
     p.y += ny * speed * dt;
     if (Math.abs(nx) > Math.abs(ny)) p.dir = nx > 0 ? 'east' : 'west';

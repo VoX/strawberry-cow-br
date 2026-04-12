@@ -12,7 +12,7 @@ import * as THREE from 'three';
 import S from './state.js';
 import { sfx, sfxShoot, sfxBolty, sfxShotgun, sfxRocket, sfxLR, sfxExplosion, sfxHit, sfxEat, sfxLevelUp, sfxDeath, sfxEmptyMag, sfxReloadLR, sfxReloadBolty, sfxShellLoad, sfxMoo, sfxMeleeSwing, sfxMeleeHit, setMusicPlaying, resetMusic, getAudioCtx, startMenuMusic, stopMenuMusic, initAudio } from './audio.js';
 import { scene, cam, setNightMode } from './renderer.js';
-import { getVmGroup } from './weapons-view.js';
+import { getVmGroup, notifyShotFired, resetBarrelHeat } from './weapons-view.js';
 import { getTerrainHeight, rebuildTerrain } from './terrain.js';
 import { send, closeActive as closeActiveTransport } from './network.js';
 import { showPerkMenu } from './ui.js';
@@ -32,6 +32,36 @@ import { spawnBulletHole, clearBulletHoles, removeBulletHolesBySurfaceKey } from
 // Reusable temp vector for the projectile muzzle-offset transform.
 const _tmpDir = new THREE.Vector3();
 
+// Play a sound file with slight pitch + volume randomization to reduce
+// repetitiveness. Games use ±5-10% pitch variation per shot.
+// Preloaded audio cache — prevents network fetch stutter on first shot.
+// Each file is loaded once, then cloneNode'd for concurrent playback.
+const _audioCache = {};
+function _preload(file) {
+  if (_audioCache[file]) return;
+  const a = new Audio(file);
+  a.preload = 'auto';
+  a.load();
+  _audioCache[file] = a;
+}
+// Preload all weapon sounds at module init
+['mp5sd-shot.ogg', 'python-shot.ogg', 'thompson-shot.ogg', 'ak-shot.ogg',
+ 'm16-shot.ogg', 'aug-shot.ogg', 'headshot.mp3', 'hitmarker.mp3',
+ 'weapon-pickup.mp3', 'shield-pickup.mp3',
+ 'minigunA.ogg', 'minigunB.ogg', 'minigunC.ogg', 'minigunD.ogg',
+ 'LRA.ogg', 'LRB.ogg', 'LRC.ogg', 'LRD.ogg',
+].forEach(_preload);
+
+function playSfx(file, baseVol = 0.3) {
+  const cached = _audioCache[file];
+  const snd = cached ? cached.cloneNode() : new Audio(file);
+  if (!cached) _preload(file); // cache for next time
+  const vol = (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5) * baseVol;
+  snd.volume = vol * (0.9 + Math.random() * 0.2);
+  snd.playbackRate = 0.93 + Math.random() * 0.14;
+  snd.play().catch(() => {});
+}
+
 // Pending L96 laser origins — keyed by projectile ID. When the bolty
 // fires we stash the muzzle position; when projectileHit arrives we
 // draw a laser line from origin to impact.
@@ -42,6 +72,7 @@ const _pendingBoltyOrigins = {};
 function forceUnADS() {
   if (!S.adsActive) return;
   S.adsActive = false;
+  S.adsLocked = false; // game-forced un-ADS clears the bolty fire-lock
   cam.fov = 75; cam.updateProjectionMatrix();
   const sO = document.getElementById('scopeOverlay'); if (sO) sO.style.display = 'none';
   const aO = document.getElementById('augScopeOverlay'); if (aO) aO.style.display = 'none';
@@ -378,6 +409,12 @@ export const handlers = {
     if (me && S.mePredicted) {
       S.mePredicted.stunTimer = me.stunTimer || 0;
       S.mePredicted.spawnProtection = me.spawnProt ? 1 : 0;
+      // Mirror weapon + spin so the shared movement integrator can apply the
+      // heavy-weapon slow on the client predicted step too. Without this the
+      // CSP step ran at full speed even with the minigun spinning, then
+      // every server reconcile yanked the player backwards.
+      S.mePredicted.weapon = me.weapon || S.mePredicted.weapon;
+      S.mePredicted.minigunSpin = me.minigunSpin || 0;
     }
 
     // Feed reconstructed full state to SI for remote player interpolation.
@@ -469,6 +506,14 @@ export const handlers = {
       iw.lastMeX = S.me.x;
       iw.lastMeY = S.me.y;
     }
+    // Weapon pickup/armor pickup sound — detect changes on local player
+    if (S.me && S.me.weapon && S._lastWeapon && S.me.weapon !== S._lastWeapon && S.me.weapon !== 'normal') {
+      playSfx('weapon-pickup.mp3', 0.4);
+    }
+    if (S.me && S._lastArmor !== undefined && S.me.armor > S._lastArmor) {
+      playSfx('shield-pickup.mp3', 0.4);
+    }
+    if (S.me) { S._lastWeapon = S.me.weapon; S._lastArmor = S.me.armor || 0; }
     if (msg.zone) S.serverZone = msg.zone;
     if (S.pingLast > 0) { const pd = performance.now() - S.pingLast; if (pd < 2000) S.pingVal = S.pingVal * 0.7 + pd * 0.3; S.pingLast = 0; }
   },
@@ -502,6 +547,8 @@ export const handlers = {
       // Visual muzzle offset per weapon, in vmScene coordinates:
       // x = right, y = up, z = forward(-)/back(+). These are approximate tip positions.
       const myWep = S.me ? S.me.weapon : 'normal';
+      // Bump heat + queue muzzle flash for the local shot
+      notifyShotFired(myWep);
       const MUZZLES = {
         normal:  { x: 2.0, y: -2.8, z: -13 },
         shotgun: { x: 2.0, y: -0.8, z: -24 },
@@ -755,6 +802,19 @@ export const handlers = {
     // sweep it later.
     const wallKey = msg.wallId != null ? 'wall:' + msg.wallId : null;
     spawnBulletHole(msg.x, msg.y, impactZ, wallKey);
+    // Debug: blue cube on the FIRST wall an L9 round hits (wallImpact only
+    // fires from the L9 wall-piercing path now). Scoped to the local player
+    // since debugMode visualizations are first-person diagnostic only.
+    if (S.debugMode && msg.ownerId === S.myId) {
+      const dbgGeo = new THREE.BoxGeometry(3, 3, 3);
+      const dbgMat = new THREE.MeshBasicMaterial({ color: 0x3388ff, transparent: true, opacity: 0.8 });
+      const dbgCube = new THREE.Mesh(dbgGeo, dbgMat);
+      // Same coord swap the projectileHit red cube uses: server x,y,z →
+      // three.js x, server-z, server-y.
+      dbgCube.position.set(msg.x, impactZ, msg.y);
+      scene.add(dbgCube);
+      setTimeout(() => { scene.remove(dbgCube); dbgGeo.dispose(); dbgMat.dispose(); }, 4000);
+    }
   },
 
   projectileHit(msg) {
@@ -819,14 +879,15 @@ export const handlers = {
           gy: onGround ? 60 : 0,
         });
       }
-      // Smoke puff — a single growing translucent sphere. Walls only;
-      // grass clippings already read as a "splash" without the smoke.
+      // Smoke puff — a single growing opaque sphere. Walls only; grass
+      // clippings already read as a "splash" without the smoke. noFade so
+      // it pops out of existence at end-of-life instead of dissolving.
       if (!onGround) {
         spawnParticle({
           geo: PGEO_SPHERE_LO, color: 0xbbbbbb,
           x: msg.x, y: z, z: msg.y,
           sx: 2,
-          life: 0.5, peakOpacity: 0.5,
+          life: 0.5, peakOpacity: 1, noFade: true,
           growth: 4,
           vy: 12,
         });
@@ -834,12 +895,13 @@ export const handlers = {
     }
     // Hitmarker for attacker — overlays the crosshair without disturbing its layout
     if (msg.targetId && msg.ownerId === S.myId && msg.targetId !== S.myId) {
-      sfx(600, 0.06, 'square', 0.07);
+      const snd = new Audio(msg.headshot ? 'headshot.mp3' : 'hitmarker.mp3');
+      snd.volume = (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5) * 0.5;
+      snd.play().catch(() => {});
       const hm = document.getElementById('hitMarker');
       if (hm) {
         hm.classList.toggle('head', !!msg.headshot);
         hm.classList.add('show');
-        if (msg.headshot) { sfx(1200, 0.15, 'sine', 0.08); sfx(1800, 0.1, 'sine', 0.06); }
         clearTimeout(window._hitMarkerTimer);
         window._hitMarkerTimer = setTimeout(() => { hm.classList.remove('show'); }, msg.headshot ? 260 : 160);
       }
@@ -913,6 +975,251 @@ export const handlers = {
     }
   },
 
+  // Hitscan tracer — cosmetic visual from shooter to impact point.
+  // Animated at bullet speed, auto-disposes on arrival.
+  tracer(msg) {
+    const fromX = msg.fromX, fromY = msg.fromY, fromZ = msg.fromZ;
+    let toX = msg.toX, toY = msg.toY, toZ = msg.toZ;
+    const travelTime = (msg.travelTime || 0.1) * 1000; // ms
+
+    // Own shots: offset from to muzzle position
+    let spawnX = fromX, spawnY = fromY, spawnZ = fromZ;
+    if (msg.ownerId === S.myId) {
+      const wep = S.me ? S.me.weapon : 'normal';
+      // Bump the clientside heat meter + queue a muzzle flash for this shot.
+      // Burst weapons hit this 3× per burst (one tracer per scheduled hitscan).
+      notifyShotFired(wep);
+      const MUZZLES = {
+        normal: { x: 2, y: -2.8, z: -13 }, shotgun: { x: 2, y: -0.8, z: -24 },
+        burst: { x: 3.5, y: -2.6, z: -22 }, bolty: { x: 0, y: -4, z: -26 },
+        cowtank: { x: 2, y: -3, z: -22 }, aug: { x: 3.5, y: -2.6, z: -22 },
+        mp5k: { x: 2, y: -2.8, z: -16 }, thompson: { x: 2, y: -2.5, z: -18 },
+        sks: { x: 2.5, y: -2.6, z: -22 }, akm: { x: 2.5, y: -2.6, z: -20 },
+        python: { x: 2, y: -2.8, z: -10 }, m249: { x: 3, y: -2.5, z: -22 },
+        minigun: { x: 0, y: -3, z: -24 },
+      };
+      const m = MUZZLES[wep] || MUZZLES.normal;
+      // Skip muzzle offset at steep pitch angles — the muzzle position
+      // diverges too much from the server's ray origin, causing the
+      // tracer to fly flat instead of downward. At steep angles the
+      // player is looking at the ground, not their gun, so the visual
+      // difference is negligible.
+      const pitchSteep = Math.abs(S.pitch) > 0.6;
+      if (pitchSteep) {
+        spawnX = cam.position.x;
+        spawnZ = cam.position.y;
+        spawnY = cam.position.z;
+      } else {
+        const mDir = new THREE.Vector3(m.x, m.y, m.z).applyQuaternion(cam.quaternion);
+        spawnX = cam.position.x + mDir.x;
+        spawnZ = cam.position.y + mDir.y;
+        spawnY = cam.position.z + mDir.z;
+      }
+      // Own weapon sound
+      if (wep === 'bolty') { sfxBolty(); if (S.adsActive) S.adsLocked = true; setTimeout(() => { forceUnADS(); S._boltRacking = true; }, 100); setTimeout(() => { S._boltRacking = false; }, 2500); }
+      else if (wep === 'shotgun') sfxShotgun(0.1);
+      else if (wep === 'mp5k') {
+        playSfx('mp5sd-shot.ogg', 0.12);
+      }
+      else if (wep === 'python') {
+        playSfx('python-shot.ogg', 0.4);
+      }
+      else if (wep === 'thompson') {
+        playSfx('thompson-shot.ogg', 0.3);
+      }
+      else if (wep === 'akm' || wep === 'sks') {
+        playSfx('ak-shot.ogg', 0.35);
+      }
+      else if (wep === 'burst') playSfx('m16-shot.ogg', 0.35);
+      else if (wep === 'aug') playSfx('aug-shot.ogg', 0.35);
+      else if (wep === 'm249') playSfx(['LRA.ogg','LRB.ogg','LRC.ogg','LRD.ogg'][Math.random()*4|0], 0.3);
+      else if (wep === 'minigun') playSfx(['minigunA.ogg','minigunB.ogg','minigunC.ogg','minigunD.ogg'][Math.random()*4|0], 0.25);
+      else if (BURST_FAMILY.has(wep)) sfxLR(0.1);
+      else sfxShoot();
+
+      // Apply recoil — per-weapon default kick values
+      const HITSCAN_RECOIL = {
+        normal:  { p: 0.008, y: 0 }, minigun: { p: 0.005, y: 0 },
+        m249:    { p: 0.015, y: 0.003 }, python: { p: 0.04, y: 0 },
+        thompson:{ p: 0.016, y: 0.002 }, mp5k: { p: 0.014, y: -0.005 },
+        burst:   { p: 0.012, y: 0.003 }, aug: { p: 0.012, y: 0.003 },
+        akm:     { p: 0.018, y: 0.004 }, sks: { p: 0.015, y: 0 },
+        bolty:   { p: 0.05, y: 0.005 }, shotgun: { p: 0.03, y: 0 },
+      };
+      if (S.me) {
+        const r = HITSCAN_RECOIL[wep] || HITSCAN_RECOIL.normal;
+        const now = performance.now();
+        if (now - S.recoilTimer > 500) S.recoilIndex = 0;
+        S.recoilTimer = now;
+        const tacticowMod = S.me.recoilMult || 1;
+        const walkingMod = S.crouching ? 0.73 : 1;
+        const dualMod = S.me.dualWield ? 1.3 : 1;
+        const augHipMod = (wep === 'aug' && !S.adsActive) ? 2.25 : 1;
+        const recoilMult = tacticowMod * walkingMod * dualMod * augHipMod;
+        S.pitch += r.p * recoilMult;
+        S.yaw += (typeof r.y === 'number' ? r.y : (Math.random() - 0.5) * 0.006) * recoilMult;
+        S.pitch = Math.max(-1.2, Math.min(1.2, S.pitch));
+        S.recoilIndex++;
+      }
+    } else {
+      // Remote weapon sound
+      const th = getTerrainHeight(fromX, fromY);
+      const pos = { x: fromX, y: th + 50, z: fromY };
+      if (msg.weapon === 'bolty') sfxBolty(0.1, pos);
+      else if (msg.weapon === 'shotgun') sfxShotgun(0.1, pos);
+      else if (msg.weapon === 'mp5k') {
+        playSfx('mp5sd-shot.ogg', 0.15);
+      }
+      else if (msg.weapon === 'python') {
+        playSfx('python-shot.ogg', 0.2);
+      }
+      else if (msg.weapon === 'thompson') {
+        playSfx('thompson-shot.ogg', 0.15);
+      }
+      else if (msg.weapon === 'akm' || msg.weapon === 'sks') {
+        playSfx('ak-shot.ogg', 0.17);
+      }
+      else if (msg.weapon === 'burst') playSfx('m16-shot.ogg', 0.17);
+      else if (msg.weapon === 'aug') playSfx('aug-shot.ogg', 0.17);
+      else if (msg.weapon === 'm249') playSfx(['LRA.ogg','LRB.ogg','LRC.ogg','LRD.ogg'][Math.random()*4|0], 0.15);
+      else if (msg.weapon === 'minigun') playSfx(['minigunA.ogg','minigunB.ogg','minigunC.ogg','minigunD.ogg'][Math.random()*4|0], 0.12);
+      else if (BURST_FAMILY.has(msg.weapon)) sfxLR(0.1, pos);
+      else sfxShoot(0.07, pos);
+    }
+
+    // Create tracer mesh — elongated for visual speed effect.
+    // Bolty gets a larger, brighter tracer with extended glow trail.
+    const isBolty = msg.weapon === 'bolty';
+    const sz = isBolty ? 1.5 : 0.75;
+    const length = sz * (isBolty ? 16 : 12), radius = sz * 0.7;
+    const group = new THREE.Group();
+    const casingMat = new THREE.MeshBasicMaterial({ color: 0xaa7744 });
+    const casing = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, length * 0.6, 8), casingMat);
+    casing.rotation.x = Math.PI / 2; group.add(casing);
+    const tipMat = new THREE.MeshBasicMaterial({ color: 0xffdd88 });
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(radius, length * 0.4, 8), tipMat);
+    tip.rotation.x = Math.PI / 2; tip.position.z = length / 2; group.add(tip);
+    const glowColor = isBolty ? 0xffffcc : 0xffdd88;
+    const glowOpacity = isBolty ? 0.5 : 0.25;
+    const glowLen = isBolty ? length * 3 : length * 1.5;
+    const glow = new THREE.Mesh(new THREE.CylinderGeometry(radius * 2.4, radius * 0.6, glowLen, 6), new THREE.MeshBasicMaterial({ color: glowColor, transparent: true, opacity: glowOpacity }));
+    glow.rotation.x = Math.PI / 2; glow.position.z = -length * 0.6; group.add(glow);
+    group.position.set(spawnX, spawnZ, spawnY);
+    // Initial orientation toward the impact point
+    group.lookAt(toX, toZ, toY);
+    scene.add(group);
+
+    // Water-surface ripple: if the tracer's flight line crosses y=-30, spawn
+    // a torus ring at the crossing point synced to when the visual tracer
+    // gets there. Hitscan never spawned these — projectiles do via
+    // projectiles.js — so this is the path that closes the gap.
+    const WATER_Y = -30;
+    const startsAbove = spawnZ > WATER_Y;
+    const endsAbove = toZ > WATER_Y;
+    if (startsAbove !== endsAbove) {
+      const tCross = (WATER_Y - spawnZ) / (toZ - spawnZ);
+      const wxX = spawnX + (toX - spawnX) * tCross;
+      const wxY = spawnY + (toY - spawnY) * tCross;
+      // Only spawn if there's actually water (not solid ground) at this xy.
+      if (getTerrainHeight(wxX, wxY) < WATER_Y) {
+        setTimeout(() => {
+          spawnParticle({
+            geo: PGEO_TORUS, color: 0xffffff,
+            x: wxX, y: WATER_Y + 0.3, z: wxY,
+            sx: 1.5, sy: 1.5, sz: 1.5,
+            rotX: Math.PI / 2,
+            life: 0.6, peakOpacity: 1, growth: 5, side: THREE.DoubleSide,
+          });
+        }, tCross * travelTime);
+      }
+    }
+
+    const startT = performance.now();
+    const anim = () => {
+      const elapsed = performance.now() - startT;
+      const progress = Math.min(1, elapsed / travelTime);
+      const x = spawnX + (toX - spawnX) * progress;
+      const y = spawnY + (toY - spawnY) * progress;
+      const z = spawnZ + (toZ - spawnZ) * progress;
+      group.position.set(x, z, y);
+      // Bolty lingering trail — dense glowing particles along the path
+      if (isBolty && progress < 1) {
+        for (let ti = 0; ti < 4; ti++) {
+          spawnParticle({ geo: PGEO_SPHERE_LO, color: 0xffffcc,
+            x: x + (Math.random()-0.5)*2, y: z + (Math.random()-0.5)*2, z: y + (Math.random()-0.5)*2,
+            sx: 0.7 + Math.random()*0.5, life: 1.2, peakOpacity: 0.85, growth: -0.3,
+          });
+        }
+      }
+      // Look at the next point
+      const ahead = Math.min(1, progress + 0.05);
+      const ax = spawnX + (toX - spawnX) * ahead;
+      const ay = spawnY + (toY - spawnY) * ahead;
+      const az = spawnZ + (toZ - spawnZ) * ahead;
+      group.lookAt(ax, az, ay);
+      if (progress >= 1) {
+        scene.remove(group);
+        casingMat.dispose(); tipMat.dispose(); glow.material.dispose();
+        casing.geometry.dispose(); tip.geometry.dispose(); glow.geometry.dispose();
+        // Impact effects at arrival point
+        const impX = toX, impY = toY, impZ = toZ;
+        const isShotgun = msg.weapon === 'shotgun';
+        // Debug: red cube at impact location
+        if (S.debugMode && msg.ownerId === S.myId) {
+          const dbgGeo = new THREE.BoxGeometry(3, 3, 3);
+          const dbgMat = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.7 });
+          const dbgCube = new THREE.Mesh(dbgGeo, dbgMat);
+          dbgCube.position.set(impX, impZ || getTerrainHeight(impX, impY), impY);
+          scene.add(dbgCube);
+          setTimeout(() => { scene.remove(dbgCube); dbgGeo.dispose(); dbgMat.dispose(); }, 10000);
+        }
+        if (msg.hit) {
+          // Player hit — blood particles (fewer for shotgun pellets)
+          const target = S.serverPlayers.find(p => p.id === msg.hit);
+          if (target) {
+            const tz = (target.z || 0) + getTerrainHeight(target.x, target.y);
+            const impactY3d = msg.headshot ? tz + 36 : tz + 20;
+            const count = isShotgun ? 2 : (msg.headshot ? 18 : 8);
+            for (let i = 0; i < count; i++) {
+              spawnParticle({ geo: PGEO_SPHERE_LO, color: 0xff2222, x: target.x + (Math.random()-0.5)*8, y: impactY3d + (Math.random()-0.5)*8, z: target.y + (Math.random()-0.5)*8, sx: msg.headshot ? 1.2 : 0.8, life: 0.6, peakOpacity: 1, vx: (Math.random()-0.5)*60, vy: 10 + Math.random()*30, vz: (Math.random()-0.5)*60, gy: 80 });
+            }
+          }
+          // Hitmarker for attacker — use custom sound files
+          if (msg.ownerId === S.myId && msg.hit !== S.myId) {
+            const snd = new Audio(msg.headshot ? 'headshot.mp3' : 'hitmarker.mp3');
+            snd.volume = (typeof S.masterVol !== 'undefined' ? S.masterVol : 0.5) * 0.5;
+            snd.play().catch(() => {});
+            const hm = document.getElementById('hitMarker');
+            if (hm) { hm.style.display = 'block'; setTimeout(() => { hm.style.display = 'none'; }, msg.headshot ? 250 : 150); }
+          }
+          // Got hit
+          if (msg.hit === S.myId) {
+            sfxHit(); flashHit(0.5, 150); flashEdge('damageEdgeFlash');
+            const newEnd = performance.now() + HIT_SLOW_DURATION_MS;
+            if (newEnd > S.localHitSlowEndsAt) S.localHitSlowEndsAt = newEnd;
+          }
+        } else {
+          // Wall/terrain impact — sparks + bullet hole (fewer for shotgun pellets)
+          const terrH = getTerrainHeight(impX, impY);
+          const iz = impZ || terrH + 5;
+          spawnBulletHole(impX, impY, iz, null);
+          const onGround = Math.abs(iz - terrH) < 1.5;
+          const sparkColor = onGround ? 0x55cc33 : 0xffdd44;
+          const sparkCount = isShotgun ? 2 : (onGround ? 7 : 4);
+          for (let i = 0; i < sparkCount; i++) {
+            spawnParticle({ geo: PGEO_SPHERE_LO, color: sparkColor, x: impX + (Math.random()-0.5)*4, y: iz + (Math.random()-0.5)*4, z: impY + (Math.random()-0.5)*4, sx: 0.6, life: 0.4, peakOpacity: 1, vx: (Math.random()-0.5)*40, vy: 10 + Math.random()*20, vz: (Math.random()-0.5)*40, gy: 60 });
+          }
+          if (!onGround && !isShotgun) {
+            spawnParticle({ geo: PGEO_SPHERE_LO, color: 0xbbbbbb, x: impX, y: iz, z: impY, sx: 2, life: 0.5, peakOpacity: 0.5, growth: 4, vy: 12 });
+          }
+        }
+        return;
+      }
+      requestAnimationFrame(anim);
+    };
+    requestAnimationFrame(anim);
+  },
+
   explosion(msg) {
     const ex = msg.x, ey = msg.y, er = msg.radius || 120;
     const th = getTerrainHeight(ex, ey);
@@ -923,20 +1230,20 @@ export const handlers = {
       sx: er * 0.3,
       life: 0.5, peakOpacity: 0.6, growth: 3,
     });
-    // Lingering smoke cloud (16 drifting puffs)
+    // Lingering smoke cloud — stays at impact site, opaque, slow rise
     for (let sc = 0; sc < 16; sc++) {
       const smokeSize = 12 + Math.random() * 16;
       spawnParticle({
         geo: PGEO_SPHERE_MED, color: 0x2a2a2a,
-        x: ex + (Math.random() - 0.5) * er * 0.5,
-        y: th + 10 + Math.random() * 25,
-        z: ey + (Math.random() - 0.5) * er * 0.5,
+        x: ex + (Math.random() - 0.5) * er * 0.4,
+        y: th + 5 + Math.random() * 15,
+        z: ey + (Math.random() - 0.5) * er * 0.4,
         sx: smokeSize,
-        life: 6 + Math.random() * 1.5, peakOpacity: 0.85,
-        vx: (Math.random() - 0.5) * 8,
-        vy: 5 + Math.random() * 4,
-        vz: (Math.random() - 0.5) * 8,
-        growth: 0.7,
+        life: 6 + Math.random() * 1.5, peakOpacity: 1.0,
+        vx: (Math.random() - 0.5) * 2,
+        vy: 2 + Math.random() * 2,
+        vz: (Math.random() - 0.5) * 2,
+        growth: 0.3,
       });
     }
     // Shockwave ring

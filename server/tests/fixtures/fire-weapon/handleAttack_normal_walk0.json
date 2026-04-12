@@ -2,32 +2,23 @@
   "broadcasts": [
     {
       "color": 16777215,
-      "id": 1,
+      "fromX": 1000,
+      "fromY": 1000,
+      "fromZ": 35,
+      "headshot": false,
+      "hit": null,
       "ownerId": 100,
-      "type": "projectile",
-      "vx": 1299.868903,
-      "vy": -3.827367,
-      "vz": 90.707666,
-      "x": 1040.181419,
-      "y": 999.881689,
-      "z": 35
+      "toX": 3992.709333,
+      "toY": 991.18819,
+      "toZ": 143.057534,
+      "travelTime": 1.156384,
+      "type": "tracer",
+      "weapon": "normal"
     }
   ],
   "mutations": {
     "ammo": 49,
     "attackCooldown": 0.15
   },
-  "projectiles": [
-    {
-      "dmg": 9,
-      "id": 1,
-      "ownerId": 100,
-      "vx": 1299.868903,
-      "vy": -3.827367,
-      "vz": 90.707666,
-      "x": 1040.181419,
-      "y": 999.881689,
-      "z": 35
-    }
-  ]
+  "projectiles": []
 }

@@ -1,35 +1,24 @@
 {
   "broadcasts": [
     {
-      "bolty": true,
       "color": 16777215,
-      "id": 1,
+      "fromX": 1000,
+      "fromY": 1000,
+      "fromZ": 15.75,
+      "headshot": false,
+      "hit": null,
       "ownerId": 100,
-      "type": "projectile",
-      "vx": 16779.039293,
-      "vy": 0,
-      "vz": 838.951965,
-      "x": 1039.950094,
-      "y": 1000,
-      "z": 15.75
+      "toX": 3996.257017,
+      "toY": 1000,
+      "toZ": 164.964955,
+      "travelTime": 0.089174,
+      "type": "tracer",
+      "weapon": "bolty"
     }
   ],
   "mutations": {
     "ammo": 49,
     "attackCooldown": 2.5
   },
-  "projectiles": [
-    {
-      "dmg": 50,
-      "id": 1,
-      "ownerId": 100,
-      "vx": 16779.039293,
-      "vy": 0,
-      "vz": 838.951965,
-      "wallPiercing": true,
-      "x": 1039.950094,
-      "y": 1000,
-      "z": 15.75
-    }
-  ]
+  "projectiles": []
 }
