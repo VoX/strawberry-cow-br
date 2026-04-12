@@ -135,7 +135,7 @@
     "_lastChatT": 1,
     "aimAngle": -1.570796,
     "ammo": 49,
-    "attackCooldown": 1,
+    "attackCooldown": 0.3,
     "botActionTimer": 0.300276
   },
   "projectiles": [

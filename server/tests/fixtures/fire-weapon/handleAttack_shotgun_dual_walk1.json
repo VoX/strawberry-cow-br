@@ -10,7 +10,7 @@
       "ownerId": 100,
       "toX": 3949.662743,
       "toY": 949.257804,
-      "toZ": 472.038426,
+      "toZ": 516.343719,
       "travelTime": 1.068877,
       "type": "tracer",
       "weapon": "shotgun"
@@ -25,7 +25,7 @@
       "ownerId": 100,
       "toX": 3978.527143,
       "toY": 684.966815,
-      "toZ": 97.814983,
+      "toZ": 142.120276,
       "travelTime": 1.085196,
       "type": "tracer",
       "weapon": "shotgun"
@@ -40,7 +40,7 @@
       "ownerId": 100,
       "toX": 3931.136854,
       "toY": 1136.535412,
-      "toZ": 551.474922,
+      "toZ": 595.780215,
       "travelTime": 1.063158,
       "type": "tracer",
       "weapon": "shotgun"
@@ -55,7 +55,7 @@
       "ownerId": 100,
       "toX": 3928.304347,
       "toY": 745.473286,
-      "toZ": 527.347546,
+      "toZ": 571.652839,
       "travelTime": 1.06498,
       "type": "tracer",
       "weapon": "shotgun"
@@ -68,10 +68,10 @@
       "headshot": false,
       "hit": null,
       "ownerId": 100,
-      "toX": 1165.593091,
-      "toY": 989.855901,
+      "toX": 1196.23146,
+      "toY": 987.979019,
       "toZ": 0,
-      "travelTime": 0.06011,
+      "travelTime": 0.071232,
       "type": "tracer",
       "weapon": "shotgun"
     },
@@ -85,7 +85,7 @@
       "ownerId": 100,
       "toX": 3980.667791,
       "toY": 1191.438856,
-      "toZ": 208.15665,
+      "toZ": 252.461943,
       "travelTime": 1.082177,
       "type": "tracer",
       "weapon": "shotgun"
@@ -100,7 +100,7 @@
       "ownerId": 100,
       "toX": 3927.727746,
       "toY": 964.484942,
-      "toZ": 580.705728,
+      "toZ": 625.011021,
       "travelTime": 1.060849,
       "type": "tracer",
       "weapon": "shotgun"
@@ -113,10 +113,10 @@
       "headshot": false,
       "hit": null,
       "ownerId": 100,
-      "toX": 1081.632491,
-      "toY": 1003.06867,
+      "toX": 1088.856605,
+      "toY": 1003.340234,
       "toZ": 0,
-      "travelTime": 0.029598,
+      "travelTime": 0.032217,
       "type": "tracer",
       "weapon": "shotgun"
     },
@@ -128,10 +128,10 @@
       "headshot": false,
       "hit": null,
       "ownerId": 100,
-      "toX": 1140.474279,
-      "toY": 976.95943,
+      "toX": 1162.085706,
+      "toY": 973.414727,
       "toZ": 0,
-      "travelTime": 0.051577,
+      "travelTime": 0.059511,
       "type": "tracer",
       "weapon": "shotgun"
     },
@@ -143,17 +143,17 @@
       "headshot": false,
       "hit": null,
       "ownerId": 100,
-      "toX": 1100.991039,
-      "toY": 1000.960886,
+      "toX": 1111.162798,
+      "toY": 1001.057666,
       "toZ": 0,
-      "travelTime": 0.036593,
+      "travelTime": 0.040278,
       "type": "tracer",
       "weapon": "shotgun"
     }
   ],
   "mutations": {
     "ammo": 49,
-    "attackCooldown": 0.9
+    "attackCooldown": 0.3
   },
   "projectiles": []
 }

@@ -14,6 +14,8 @@ import { BURST_FAMILY, JUMP_VZ } from '../shared/constants.js';
 function predictJump() {
   const mp = S.mePredicted;
   if (!mp || !mp.onGround) return;
+  // Minigun is too heavy to jump with — server enforces the same gate.
+  if (mp.weapon === 'minigun') return;
   mp.vz = JUMP_VZ;
   mp.onGround = false;
 }
@@ -170,6 +172,9 @@ document.addEventListener('mouseup', e => {
     if (me && me.alive && me.weapon === 'minigun') {
       send({ type: 'minigunSpin', spinning: false });
     }
+    // L96 bolt-action: if a shot is in flight and we're still ADS'd, the
+    // game will forceUnADS at +100ms — don't let the player bail early.
+    if (S.adsLocked) return;
     S.adsActive = false;
     cam.fov = 75; cam.updateProjectionMatrix();
     document.getElementById('scopeOverlay').style.display = 'none';
@@ -258,6 +263,7 @@ if (isMobile) {
     send({ type: 'reload' });
     if (S.adsActive) {
       S.adsActive = false;
+      S.adsLocked = false;
       cam.fov = 75; cam.updateProjectionMatrix();
       document.getElementById('scopeOverlay').style.display = 'none';
       document.getElementById('augScopeOverlay').style.display = 'none';
@@ -281,7 +287,8 @@ if (isMobile) {
       if (!me || !me.alive) return;
       if (S._boltRacking || me.reloading) return;
       if (S.adsActive) {
-        // Un-ADS
+        // Un-ADS (blocked when L96 fire-lock is engaged)
+        if (S.adsLocked) return;
         S.adsActive = false;
         cam.fov = 75; cam.updateProjectionMatrix();
         document.getElementById('scopeOverlay').style.display = 'none';
@@ -367,12 +374,15 @@ addEventListener('keydown', e => {
     }
   }
   if (e.code === 'KeyP') { S.debugMode = !S.debugMode; }
+  if (e.code === 'KeyH' && S.state === 'playing') { S.cameraMode = S.cameraMode === 'third' ? 'first' : 'third'; }
   if (e.code === 'KeyO') { toggleFullscreen(); }
   if (e.code === 'KeyR' && S.state === 'playing') {
     send({ type: 'reload' });
-    // Full un-ADS on reload — restore FOV, overlays, viewmodel
+    // Full un-ADS on reload — restore FOV, overlays, viewmodel.
+    // Reload is a game-forced un-ADS so it bypasses + clears the L96 fire-lock.
     if (S.adsActive) {
       S.adsActive = false;
+      S.adsLocked = false;
       cam.fov = 75; cam.updateProjectionMatrix();
       document.getElementById('scopeOverlay').style.display = 'none';
       document.getElementById('augScopeOverlay').style.display = 'none';

@@ -78,6 +78,7 @@ export function spawnParticle(opts) {
     gy: opts.gy || 0,
     growth: opts.growth || 0,
     peakOpacity: opts.peakOpacity != null ? opts.peakOpacity : 1,
+    noFade: !!opts.noFade,
     rotVx: opts.rotVx || 0,
     rotVz: opts.rotVz || 0,
   });
@@ -100,7 +101,7 @@ export function updateParticles(dt) {
     if (p.growth) { const g = 1 + p.growth * dt; m.scale.x *= g; m.scale.y *= g; m.scale.z *= g; }
     if (p.rotVx) m.rotation.x += p.rotVx * dt;
     if (p.rotVz) m.rotation.z += p.rotVz * dt;
-    p.entry.mat.opacity = Math.max(0, p.peakOpacity * (p.life / p.lifeMax));
+    if (!p.noFade) p.entry.mat.opacity = Math.max(0, p.peakOpacity * (p.life / p.lifeMax));
   }
 }
 

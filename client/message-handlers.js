@@ -12,7 +12,7 @@ import * as THREE from 'three';
 import S from './state.js';
 import { sfx, sfxShoot, sfxBolty, sfxShotgun, sfxRocket, sfxLR, sfxExplosion, sfxHit, sfxEat, sfxLevelUp, sfxDeath, sfxEmptyMag, sfxReloadLR, sfxReloadBolty, sfxShellLoad, sfxMoo, sfxMeleeSwing, sfxMeleeHit, setMusicPlaying, resetMusic, getAudioCtx, startMenuMusic, stopMenuMusic, initAudio } from './audio.js';
 import { scene, cam, setNightMode } from './renderer.js';
-import { getVmGroup } from './weapons-view.js';
+import { getVmGroup, notifyShotFired, resetBarrelHeat } from './weapons-view.js';
 import { getTerrainHeight, rebuildTerrain } from './terrain.js';
 import { send, closeActive as closeActiveTransport } from './network.js';
 import { showPerkMenu } from './ui.js';
@@ -72,6 +72,7 @@ const _pendingBoltyOrigins = {};
 function forceUnADS() {
   if (!S.adsActive) return;
   S.adsActive = false;
+  S.adsLocked = false; // game-forced un-ADS clears the bolty fire-lock
   cam.fov = 75; cam.updateProjectionMatrix();
   const sO = document.getElementById('scopeOverlay'); if (sO) sO.style.display = 'none';
   const aO = document.getElementById('augScopeOverlay'); if (aO) aO.style.display = 'none';
@@ -408,6 +409,12 @@ export const handlers = {
     if (me && S.mePredicted) {
       S.mePredicted.stunTimer = me.stunTimer || 0;
       S.mePredicted.spawnProtection = me.spawnProt ? 1 : 0;
+      // Mirror weapon + spin so the shared movement integrator can apply the
+      // heavy-weapon slow on the client predicted step too. Without this the
+      // CSP step ran at full speed even with the minigun spinning, then
+      // every server reconcile yanked the player backwards.
+      S.mePredicted.weapon = me.weapon || S.mePredicted.weapon;
+      S.mePredicted.minigunSpin = me.minigunSpin || 0;
     }
 
     // Feed reconstructed full state to SI for remote player interpolation.
@@ -540,6 +547,8 @@ export const handlers = {
       // Visual muzzle offset per weapon, in vmScene coordinates:
       // x = right, y = up, z = forward(-)/back(+). These are approximate tip positions.
       const myWep = S.me ? S.me.weapon : 'normal';
+      // Bump heat + queue muzzle flash for the local shot
+      notifyShotFired(myWep);
       const MUZZLES = {
         normal:  { x: 2.0, y: -2.8, z: -13 },
         shotgun: { x: 2.0, y: -0.8, z: -24 },
@@ -793,6 +802,19 @@ export const handlers = {
     // sweep it later.
     const wallKey = msg.wallId != null ? 'wall:' + msg.wallId : null;
     spawnBulletHole(msg.x, msg.y, impactZ, wallKey);
+    // Debug: blue cube on the FIRST wall an L9 round hits (wallImpact only
+    // fires from the L9 wall-piercing path now). Scoped to the local player
+    // since debugMode visualizations are first-person diagnostic only.
+    if (S.debugMode && msg.ownerId === S.myId) {
+      const dbgGeo = new THREE.BoxGeometry(3, 3, 3);
+      const dbgMat = new THREE.MeshBasicMaterial({ color: 0x3388ff, transparent: true, opacity: 0.8 });
+      const dbgCube = new THREE.Mesh(dbgGeo, dbgMat);
+      // Same coord swap the projectileHit red cube uses: server x,y,z →
+      // three.js x, server-z, server-y.
+      dbgCube.position.set(msg.x, impactZ, msg.y);
+      scene.add(dbgCube);
+      setTimeout(() => { scene.remove(dbgCube); dbgGeo.dispose(); dbgMat.dispose(); }, 4000);
+    }
   },
 
   projectileHit(msg) {
@@ -857,14 +879,15 @@ export const handlers = {
           gy: onGround ? 60 : 0,
         });
       }
-      // Smoke puff — a single growing translucent sphere. Walls only;
-      // grass clippings already read as a "splash" without the smoke.
+      // Smoke puff — a single growing opaque sphere. Walls only; grass
+      // clippings already read as a "splash" without the smoke. noFade so
+      // it pops out of existence at end-of-life instead of dissolving.
       if (!onGround) {
         spawnParticle({
           geo: PGEO_SPHERE_LO, color: 0xbbbbbb,
           x: msg.x, y: z, z: msg.y,
           sx: 2,
-          life: 0.5, peakOpacity: 0.5,
+          life: 0.5, peakOpacity: 1, noFade: true,
           growth: 4,
           vy: 12,
         });
@@ -963,6 +986,9 @@ export const handlers = {
     let spawnX = fromX, spawnY = fromY, spawnZ = fromZ;
     if (msg.ownerId === S.myId) {
       const wep = S.me ? S.me.weapon : 'normal';
+      // Bump the clientside heat meter + queue a muzzle flash for this shot.
+      // Burst weapons hit this 3× per burst (one tracer per scheduled hitscan).
+      notifyShotFired(wep);
       const MUZZLES = {
         normal: { x: 2, y: -2.8, z: -13 }, shotgun: { x: 2, y: -0.8, z: -24 },
         burst: { x: 3.5, y: -2.6, z: -22 }, bolty: { x: 0, y: -4, z: -26 },
@@ -990,10 +1016,10 @@ export const handlers = {
         spawnY = cam.position.z + mDir.z;
       }
       // Own weapon sound
-      if (wep === 'bolty') { sfxBolty(); setTimeout(() => { forceUnADS(); S._boltRacking = true; }, 100); setTimeout(() => { S._boltRacking = false; }, 2500); }
+      if (wep === 'bolty') { sfxBolty(); if (S.adsActive) S.adsLocked = true; setTimeout(() => { forceUnADS(); S._boltRacking = true; }, 100); setTimeout(() => { S._boltRacking = false; }, 2500); }
       else if (wep === 'shotgun') sfxShotgun(0.1);
       else if (wep === 'mp5k') {
-        playSfx('mp5sd-shot.ogg', 0.3);
+        playSfx('mp5sd-shot.ogg', 0.12);
       }
       else if (wep === 'python') {
         playSfx('python-shot.ogg', 0.4);
@@ -1018,7 +1044,7 @@ export const handlers = {
         thompson:{ p: 0.016, y: 0.002 }, mp5k: { p: 0.014, y: -0.005 },
         burst:   { p: 0.012, y: 0.003 }, aug: { p: 0.012, y: 0.003 },
         akm:     { p: 0.018, y: 0.004 }, sks: { p: 0.015, y: 0 },
-        bolty:   { p: 0.05, y: 0.005 }, shotgun: { p: 0.06, y: 0 },
+        bolty:   { p: 0.05, y: 0.005 }, shotgun: { p: 0.03, y: 0 },
       };
       if (S.me) {
         const r = HITSCAN_RECOIL[wep] || HITSCAN_RECOIL.normal;
@@ -1082,6 +1108,31 @@ export const handlers = {
     // Initial orientation toward the impact point
     group.lookAt(toX, toZ, toY);
     scene.add(group);
+
+    // Water-surface ripple: if the tracer's flight line crosses y=-30, spawn
+    // a torus ring at the crossing point synced to when the visual tracer
+    // gets there. Hitscan never spawned these — projectiles do via
+    // projectiles.js — so this is the path that closes the gap.
+    const WATER_Y = -30;
+    const startsAbove = spawnZ > WATER_Y;
+    const endsAbove = toZ > WATER_Y;
+    if (startsAbove !== endsAbove) {
+      const tCross = (WATER_Y - spawnZ) / (toZ - spawnZ);
+      const wxX = spawnX + (toX - spawnX) * tCross;
+      const wxY = spawnY + (toY - spawnY) * tCross;
+      // Only spawn if there's actually water (not solid ground) at this xy.
+      if (getTerrainHeight(wxX, wxY) < WATER_Y) {
+        setTimeout(() => {
+          spawnParticle({
+            geo: PGEO_TORUS, color: 0xffffff,
+            x: wxX, y: WATER_Y + 0.3, z: wxY,
+            sx: 1.5, sy: 1.5, sz: 1.5,
+            rotX: Math.PI / 2,
+            life: 0.6, peakOpacity: 1, growth: 5, side: THREE.DoubleSide,
+          });
+        }, tCross * travelTime);
+      }
+    }
 
     const startT = performance.now();
     const anim = () => {

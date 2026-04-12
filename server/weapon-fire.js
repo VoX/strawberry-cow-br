@@ -49,9 +49,9 @@ const PLAYER_STATS_BASE = {
   },
   shotgun: {
     hungerGate: [3, 10], hungerCost: [3, 9],
-    cooldown: 0.9, cooldownDualMult: 0.55 / 0.9, // dual benelli halves cooldown; matches original 0.55
+    cooldown: 0.3, cooldownDualMult: 0.55 / 0.9, // dual benelli ratio preserved against original 0.9 baseline
     dmg: 4, speed: 2760, spreadBase: 0.157, pellets: 10, spawnOffset: 40,
-    volleyed: true, broadcastTag: 'shotgun', vzSpreadBase: 0.2,
+    volleyed: true, broadcastTag: 'shotgun', vzSpreadBase: 0.2, gravityMult: 0.5,
   },
   bolty: {
     hungerGate: [3, 8], hungerCost: [3, 7],
@@ -139,7 +139,7 @@ const BOT_STATS = {
     hungerGate: 4, hungerCost: 5, cooldown: 0.8, dmg: 14, speed: 7286, spreadBase: 0, pellets: 3, spawnOffset: 40, burstOffsetStep: 15,
     auto: { hungerCost: 1, cooldown: 0.1, dmg: 14, speed: 6624, spreadBase: 0.035, pellets: 1 },
   },
-  shotgun: { hungerGate: 7, hungerCost: 7, cooldown: 1.0, dmg: 4, speed: 2760, spreadBase: 0.2, pellets: 10, spawnOffset: 40, volleyed: true, broadcastTag: 'shotgun', vzSpreadBase: 0.2 },
+  shotgun: { hungerGate: 7, hungerCost: 7, cooldown: 0.3, dmg: 4, speed: 2760, spreadBase: 0.2, pellets: 10, spawnOffset: 40, volleyed: true, broadcastTag: 'shotgun', vzSpreadBase: 0.2, gravityMult: 0.5 },
   bolty:   { hungerGate: 12, hungerCost: 8, cooldown: 2.5, dmg: 50, speed: 33600, spreadBase: 0, pellets: 1, spawnOffset: 40, broadcastTag: 'bolty' },
   cowtank: { hungerGate: 6, hungerCost: 5, cooldown: 1.0, dmg: 38, speed: 4140, spreadBase: 0, pellets: 1, spawnOffset: 40, explosive: true, blastRadius: 180, broadcastTag: 'cowtank' },
   thompson: { hungerGate: 4, hungerCost: 3, cooldown: 0.13, dmg: 8, speed: 2622, spreadBase: 0.0506, pellets: 1, spawnOffset: 40 },
@@ -259,7 +259,8 @@ function fireHitscan(shooter, weapon, aim, stats, opts = {}) {
   const toX = fromX + ax * range;
   const toY = fromY + ay * range;
   const maxTravelTime = range / stats.speed;
-  const maxDrop = 0.5 * BULLET_GRAVITY * maxTravelTime * maxTravelTime;
+  // Per-weapon gravityMult lets buckshot drop less than rifle rounds
+  const maxDrop = 0.5 * BULLET_GRAVITY * (stats.gravityMult != null ? stats.gravityMult : 1) * maxTravelTime * maxTravelTime;
   const toZ = fromZ + az * range - maxDrop;
 
   // Lag compensation — rewind players for hit check
@@ -285,9 +286,27 @@ function fireHitscan(shooter, weapon, aim, stats, opts = {}) {
   const walls = gameState.getWalls();
   const barricades = gameState.getBarricades();
   let blockT = 1.01;
+  // Always run the first-wall scan. For non-piercing weapons it bounds blockT
+  // so player checks behind the wall fail. For wall-piercing (L9) we still
+  // need the first hit to broadcast wallImpact (visual + debug cube) AND we
+  // re-scan past it to find the SECOND wall, which becomes the new blockT —
+  // L9 punches through 1 wall, not 2.
+  const wres1 = ballistics.segVsWalls(fromX, fromY, fromZ, toX, toY, toZ, walls, getTerrainHeight, WALL_HEIGHT);
   if (!stats.wallPiercing) {
-    const wres = ballistics.segVsWalls(fromX, fromY, fromZ, toX, toY, toZ, walls, getTerrainHeight, WALL_HEIGHT);
-    blockT = wres.blockT;
+    blockT = wres1.blockT;
+  } else if (wres1.hitWall) {
+    const firstWall = wres1.hitWall;
+    const firstT = wres1.blockT;
+    const wxR = firstWall.x + Math.max(firstWall.w, 20);
+    const wyB = firstWall.y + Math.max(firstWall.h, 20);
+    let wallX = fromX + (toX - fromX) * firstT;
+    let wallY = fromY + (toY - fromY) * firstT;
+    const wallZ = fromZ + (toZ - fromZ) * firstT;
+    wallX = Math.max(firstWall.x, Math.min(wxR, wallX));
+    wallY = Math.max(firstWall.y, Math.min(wyB, wallY));
+    broadcast({ type: 'wallImpact', x: wallX, y: wallY, z: wallZ, wallId: firstWall.id, ownerId: shooter.id });
+    const wres2 = ballistics.segVsWalls(fromX, fromY, fromZ, toX, toY, toZ, walls, getTerrainHeight, WALL_HEIGHT, firstWall.id);
+    blockT = wres2.blockT;
   }
   const bres = ballistics.segVsBarricades(fromX, fromY, fromZ, toX, toY, toZ, barricades, blockT);
   let hitBarricade = null;

@@ -42,18 +42,34 @@ function initHudRefs() {
   // Create minigun spin bar dynamically
   const spinBar = document.createElement('div');
   spinBar.id = 'minigunSpinBar';
-  spinBar.style.cssText = 'position:fixed;bottom:120px;left:50%;transform:translateX(-50%);width:200px;height:12px;background:rgba(0,0,0,0.6);border:1px solid #666;display:none;border-radius:3px;';
+  spinBar.style.cssText = 'position:fixed;bottom:120px;left:50%;transform:translateX(-50%);width:200px;display:none;z-index:50;pointer-events:none;';
+  const spinTrack = document.createElement('div');
+  spinTrack.id = 'minigunSpinTrack';
+  spinTrack.style.cssText = 'width:100%;height:12px;background:rgba(0,0,0,0.6);border:1px solid #666;border-radius:3px;overflow:hidden;transition:box-shadow 0.15s;';
   const spinFill = document.createElement('div');
   spinFill.id = 'minigunSpinFill';
-  spinFill.style.cssText = 'height:100%;width:0%;background:linear-gradient(90deg,#ff4400,#ffaa00);border-radius:2px;transition:width 0.05s;';
-  spinBar.appendChild(spinFill);
+  spinFill.style.cssText = 'height:100%;width:0%;background:linear-gradient(90deg,#ff4400,#ffaa00);border-radius:2px;transition:width 0.08s linear,background 0.15s;';
+  spinTrack.appendChild(spinFill);
+  spinBar.appendChild(spinTrack);
   const spinLabel = document.createElement('div');
-  spinLabel.style.cssText = 'color:#ffaa00;font-size:10px;text-align:center;margin-top:2px;';
+  spinLabel.id = 'minigunSpinLabel';
+  spinLabel.style.cssText = 'color:#ffaa00;font-size:10px;text-align:center;margin-top:2px;letter-spacing:1px;font-weight:bold;text-shadow:0 0 3px rgba(0,0,0,0.8);transition:color 0.15s;';
   spinLabel.textContent = 'SPIN UP [RMB]';
   spinBar.appendChild(spinLabel);
+  // Inject the pulse keyframes once
+  if (!document.getElementById('minigunSpinKeys')) {
+    const style = document.createElement('style');
+    style.id = 'minigunSpinKeys';
+    style.textContent = '@keyframes minigunReadyPulse{0%,100%{box-shadow:0 0 4px rgba(0,255,68,0.5),inset 0 0 4px rgba(0,255,68,0.3);}50%{box-shadow:0 0 12px rgba(0,255,68,0.95),inset 0 0 6px rgba(0,255,68,0.5);}}';
+    document.head.appendChild(style);
+  }
   document.body.appendChild(spinBar);
   H.spinBar = spinBar;
+  H.spinTrack = spinTrack;
   H.spinFill = spinFill;
+  H.spinLabel = spinLabel;
+  H._spinPrev = 0;
+  H._spinState = 'idle';
 }
 
 export function updateHud(me, time, dt) {
@@ -84,9 +100,51 @@ export function updateHud(me, time, dt) {
     const showSpin = aliveHud && me.weapon === 'minigun';
     H.spinBar.style.display = showSpin ? 'block' : 'none';
     if (showSpin) {
-      const pct = Math.min(100, (me.minigunSpin || 0) * 100);
+      const spin = me.minigunSpin || 0;
+      const pct = Math.min(100, spin * 100);
       H.spinFill.style.width = pct + '%';
-      H.spinFill.style.background = pct >= 100 ? '#00ff44' : 'linear-gradient(90deg,#ff4400,#ffaa00)';
+      // Direction detection: ready (≥0.99), spinning up, spinning down, idle
+      const dSpin = spin - H._spinPrev;
+      let nextState;
+      if (spin >= 0.99) nextState = 'ready';
+      else if (spin <= 0.001) nextState = 'idle';
+      else if (dSpin > 0.0005) nextState = 'up';
+      else if (dSpin < -0.0005) nextState = 'down';
+      else nextState = H._spinState; // sticky if no movement
+      if (nextState !== H._spinState) {
+        H._spinState = nextState;
+        if (nextState === 'ready') {
+          H.spinFill.style.background = '#00ff44';
+          H.spinTrack.style.animation = 'minigunReadyPulse 0.6s ease-in-out infinite';
+          H.spinLabel.textContent = 'READY [LMB]';
+          H.spinLabel.style.color = '#00ff44';
+        } else if (nextState === 'down') {
+          H.spinFill.style.background = 'linear-gradient(90deg,#3399ff,#88ccff)';
+          H.spinTrack.style.animation = '';
+          H.spinTrack.style.boxShadow = '';
+          H.spinLabel.textContent = 'SPIN DOWN';
+          H.spinLabel.style.color = '#88ccff';
+        } else if (nextState === 'up') {
+          H.spinFill.style.background = 'linear-gradient(90deg,#ff4400,#ffaa00)';
+          H.spinTrack.style.animation = '';
+          H.spinTrack.style.boxShadow = '';
+          H.spinLabel.textContent = 'SPINNING UP...';
+          H.spinLabel.style.color = '#ffaa00';
+        } else { // idle
+          H.spinFill.style.background = 'linear-gradient(90deg,#ff4400,#ffaa00)';
+          H.spinTrack.style.animation = '';
+          H.spinTrack.style.boxShadow = '';
+          H.spinLabel.textContent = 'SPIN UP [RMB]';
+          H.spinLabel.style.color = '#ffaa00';
+        }
+      }
+      H._spinPrev = spin;
+    } else if (H._spinState !== 'idle') {
+      // Reset state when bar is hidden so next show starts clean
+      H._spinState = 'idle';
+      H._spinPrev = 0;
+      H.spinTrack.style.animation = '';
+      H.spinTrack.style.boxShadow = '';
     }
   }
 

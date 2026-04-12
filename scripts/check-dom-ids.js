@@ -27,6 +27,7 @@ const DYNAMIC_IDS = new Set([
   'hitMarker',      // null-guarded feedback overlay (silently absent if missing)
   'hostControls',   // null-guarded host-only panel
   'gameStatus',     // null-guarded lobby status line
+  'minigunSpinKeys',// hud.js injects @keyframes <style> on first init
 ]);
 
 function collectIdsFromHtml(file) {

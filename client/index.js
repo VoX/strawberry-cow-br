@@ -155,7 +155,19 @@ function loop(ts) {
     const predZ = rp ? rp.z + err.z : me.z;
     const targetZ = Math.max(localTerrainH, predZ || 0);
     const camLerpY = 1 - Math.pow(0.0001, dt);
-    cam.position.y += (dynCH + targetZ - cam.position.y) * camLerpY;
+    // Over-the-shoulder offset. Bake it into the lerp target so the Y axis
+    // converges (instead of stacking += each frame, which steady-states at
+    // up/lerpFactor — way above the cow). X/Z get direct assignment first
+    // so their offset is one-shot per frame.
+    let upOff = 0;
+    if (S.cameraMode === 'third') {
+      const sinY = Math.sin(S.yaw), cosY = Math.cos(S.yaw);
+      const back = 95, right = 22;
+      upOff = 22;
+      cam.position.x += sinY * back + cosY * right;
+      cam.position.z += cosY * back - sinY * right;
+    }
+    cam.position.y += (dynCH + targetZ + upOff - cam.position.y) * camLerpY;
   }
   if (!spectatingTarget) { _tmpEuler.set(S.pitch, S.yaw, 0, 'YXZ'); cam.quaternion.setFromEuler(_tmpEuler); }
   updateAudioListener(cam);
@@ -337,7 +349,7 @@ function loop(ts) {
 
   ren.render(scene, cam);
   const vmGroup = getVmGroup();
-  if (vmGroup && S.state === 'playing' && me && me.alive) {
+  if (vmGroup && S.state === 'playing' && me && me.alive && S.cameraMode !== 'third') {
     ren.autoClear = false;
     ren.clearDepth();
     ren.render(vmScene, vmCam);

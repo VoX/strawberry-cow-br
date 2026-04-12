@@ -1,12 +1,80 @@
 import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import S from './state.js';
-import { vmScene } from './renderer.js';
+import { vmScene, cam } from './renderer.js';
 import { disposeMeshTree, fbxLoadingManager } from './three-utils.js';
+import { spawnParticle, PGEO_SPHERE_LO } from './particles.js';
 
 import { getAudioCtx } from './audio.js';
 
 let vmGroup = null, vmType = null, vmDual = false;
+
+// Barrel-tip offsets in vmScene local coords (x=right, y=up, z=forward(-)/back(+)).
+// Used to anchor smoking-barrel puffs + muzzle flashes at the gun tip. The
+// tracer handler in message-handlers.js keeps its own copy with dual-wield/ADS
+// variants — not worth sharing since these effects don't need that precision.
+const MUZZLE_OFFSETS = {
+  normal:   { x: 2.0, y: -2.8, z: -13 },
+  shotgun:  { x: 2.0, y: -0.8, z: -24 },
+  burst:    { x: 3.5, y: -2.6, z: -22 },
+  bolty:    { x: 3.0, y: -3.5, z: -26 },
+  aug:      { x: 3.5, y: -2.6, z: -22 },
+  mp5k:     { x: 2.0, y: -2.8, z: -16 },
+  thompson: { x: 2.0, y: -2.5, z: -18 },
+  sks:      { x: 2.5, y: -2.6, z: -22 },
+  akm:      { x: 2.5, y: -2.6, z: -20 },
+  python:   { x: 2.0, y: -2.8, z: -16 },
+  m249:     { x: 2.5, y: -2.6, z: -22 },
+  minigun:  { x: 3.0, y: -2.8, z: -22 },
+  cowtank:  { x: 2.0, y: -3.0, z: -22 },
+};
+// Heat per shot tuned so high-RoF guns smoke fast and slow ones eventually do too.
+// Decay drains the meter when not firing. Smoke kicks in once heat passes
+// SMOKE_THRESHOLD and scales to full intensity at heat=1.
+const HEAT_PER_SHOT = {
+  normal: 0.08, shotgun: 0.18, burst: 0.07, bolty: 0.10,
+  aug: 0.07, mp5k: 0.05, thompson: 0.06, sks: 0.10,
+  akm: 0.08, python: 0.15, m249: 0.05, minigun: 0.04, cowtank: 0.20,
+};
+const HEAT_DECAY = 0.18; // per second when not firing
+const SMOKE_THRESHOLD = 0.2;
+const _muzzleTmp = new THREE.Vector3();
+let _barrelHeat = 0;
+let _smokeAccum = 0;
+let _lastSmokeT = 0;
+let _flashQueue = 0;
+let _resetHeatNext = false;
+// Persistent muzzle-flash mesh — parented to vmGroup so it always renders at
+// the muzzle regardless of camera turning. Built lazily and re-attached when
+// the viewmodel swaps. _flashUntil is a wall-clock timestamp; while now <
+// _flashUntil the mesh is visible.
+let _flashMesh = null;
+let _flashUntil = 0;
+let _flashOwnerVm = null;
+const FLASH_DURATION_MS = 60;
+
+// Called from message-handlers.js whenever the local player fires a shot
+// (one call per round — burst weapons call this 3× per burst since each
+// scheduled hitscan emits its own tracer). Bumps the heat meter and queues
+// a muzzle flash to render on the next viewmodel frame so the flash sits
+// at the up-to-date camera orientation/recoiled position.
+export function notifyShotFired(weapon) {
+  const add = HEAT_PER_SHOT[weapon] != null ? HEAT_PER_SHOT[weapon] : 0.08;
+  _barrelHeat = Math.min(1, _barrelHeat + add);
+  _flashQueue++;
+  _flashUntil = performance.now() + FLASH_DURATION_MS;
+}
+
+// Reset on death/respawn/weapon swap so a freshly-spawned weapon doesn't
+// inherit the previous gun's heat or queued flashes.
+export function resetBarrelHeat() {
+  _barrelHeat = 0;
+  _smokeAccum = 0;
+  _flashQueue = 0;
+  _flashUntil = 0;
+  if (_flashMesh) _flashMesh.visible = false;
+}
 
 // Minigun spin sound — persistent oscillator while barrels spin
 let _minigunOsc = null, _minigunGain = null;
@@ -34,31 +102,14 @@ function updateMinigunSound(spinPct) {
 
 export function getVmGroup() { return vmGroup; }
 
-// Left cow arm + hoof that grips the weapon forend — built in local coords so the root
-// can be placed at the forend attach point, with the arm extending back toward bottom-left of camera.
+// Cow arm + hoof — disabled per master's request, animations to be reworked.
+// Returns an empty Object3D so all the existing per-weapon hoof setup
+// (position/rotation/userData.restPos/reloadStyle) stays valid without NPEs,
+// and the reload animation block in updateViewmodel still mutates a
+// harmless, invisible placeholder. When animations get reworked, restore
+// the procedural mesh build here.
 function buildHoof() {
-  const g = new THREE.Group();
-  const furMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-  const hoofMat = new THREE.MeshBasicMaterial({ color: 0x2a1a10 });
-  const shadowMat = new THREE.MeshBasicMaterial({ color: 0x888888 });
-  // Hoof at origin (attach point — sits on the weapon forend)
-  const hoof = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.3, 2.0), hoofMat);
-  hoof.position.set(0, 0, 0);
-  g.add(hoof);
-  // Toe split
-  const split = new THREE.Mesh(new THREE.BoxGeometry(0.25, 1.35, 2.1), shadowMat);
-  g.add(split);
-  // Forearm — extends back-down-left from the hoof toward the camera's bottom-left
-  // Local axis: the arm points in -X, +Y positive (up) and angled via rotations set by caller
-  const arm = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 1.3, 8, 7), furMat);
-  arm.position.set(0, -4, 0); // extends downward 8 units in local space
-  g.add(arm);
-  // Dark edge on the arm for visibility
-  const armEdge = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.35, 8, 7), shadowMat);
-  armEdge.position.set(0.2, -4, 0.3);
-  armEdge.scale.set(0.5, 1, 0.5);
-  g.add(armEdge);
-  return g;
+  return new THREE.Object3D();
 }
 
 export function buildViewmodel(type, dual) {
@@ -85,8 +136,10 @@ export function buildViewmodel(type, dual) {
     const sight = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 0.4), metal);
     sight.position.set(0, 1, -5); vmGroup.add(sight);
   } else if (type === 'shotgun') {
-    // Helper to build a full benelli body at the given offset parent (vmGroup or duplicate group)
-    const buildBenelli = (parent, xOff) => {
+    // Procedural Benelli — used as fallback if GLTF load fails. Wrapped in
+    // a closure so we can call it from the loader's error path or skip it
+    // entirely once the real model loads.
+    const buildBenelliProc = (parent, xOff) => {
       const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 18, 8), dark);
       barrel.rotation.x = Math.PI / 2; barrel.position.set(xOff, 0.3, -10); parent.add(barrel);
       const tubeMag = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 14, 8), dark);
@@ -101,15 +154,35 @@ export function buildViewmodel(type, dual) {
       stock.rotation.x = Math.PI / 2; stock.position.set(xOff, -0.3, 3.5); parent.add(stock);
       const buttpad = new THREE.Mesh(new THREE.BoxGeometry(2, 2.5, 0.8), dark);
       buttpad.position.set(xOff, -0.3, 6.5); parent.add(buttpad);
-      return [barrel, tubeMag, receiver, forend, grip, stock, buttpad];
     };
-    buildBenelli(vmGroup, 0);
-    // Duplicate benelli to the left, only visible when dual-wielding
+    // Group the GLTF (and its dual-wield duplicate) into a sub-group so
+    // existing rotation/scale tweaks live on a single transform per gun.
+    const primary = new THREE.Group();
     const secondGroup = new THREE.Group();
-    buildBenelli(secondGroup, -12);
+    secondGroup.position.x = -12;
     secondGroup.visible = vmDual;
+    vmGroup.add(primary);
     vmGroup.add(secondGroup);
     vmGroup.userData.benelliSecond = secondGroup;
+    const gloader = new GLTFLoader(fbxLoadingManager);
+    gloader.load('models/PSX_Benelli.glb', gltf => {
+      const model = gltf.scene;
+      // PSX export — initial scale/orient/offset tuned to roughly match the
+      // procedural Benelli footprint. Master can dial these in.
+      // M16-style screen placement (right + low + forward) but the GLB is
+      // ~250× larger natively than the M16 FBX, and faces +Z instead of -Z,
+      // so scale and yaw differ from M16's literal numbers.
+      model.scale.set(40, 40, 40);
+      model.rotation.set(0, Math.PI, 0);
+      model.position.set(1.5, -3, -7);
+      primary.add(model);
+      const dup = model.clone(true);
+      secondGroup.add(dup);
+    }, undefined, () => {
+      // GLTF failed — fall back to the procedural cube benelli
+      buildBenelliProc(primary, 0);
+      buildBenelliProc(secondGroup, 0);
+    });
     const hoof = buildHoof();
     hoof.position.set(-0.5, -0.8, -9);
     hoof.rotation.set(-0.2, 0.1, 0.5);
@@ -321,36 +394,47 @@ export function buildViewmodel(type, dual) {
     vmGroup.add(hoof);
     vmGroup.userData.hoof = hoof;
   } else if (type === 'thompson') {
-    // Thompson SMG — boxy receiver, wooden furniture, vertical foregrip,
-    // distinctive compensator cuts on the barrel.
-    const woodMat = new THREE.MeshBasicMaterial({ color: 0x8B5A2B });
-    const steelMat = new THREE.MeshBasicMaterial({ color: 0x2a2a2a });
-    // Receiver
-    const recv = new THREE.Mesh(new THREE.BoxGeometry(2.2, 2.4, 9), steelMat);
-    recv.position.set(0, 0, -3); vmGroup.add(recv);
-    // Barrel with compensator slots
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 5, 6), steelMat);
-    barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.3, -10); vmGroup.add(barrel);
-    const comp = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 2, 8), steelMat);
-    comp.rotation.x = Math.PI / 2; comp.position.set(0, 0.3, -8.5); vmGroup.add(comp);
-    // Wooden stock
-    const stock = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.6, 6), woodMat);
-    stock.position.set(0, -0.5, 3.5); stock.rotation.x = 0.1; vmGroup.add(stock);
-    // Pistol grip
-    const grip = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.5, 1.2), woodMat);
-    grip.position.set(0, -2.2, -1); vmGroup.add(grip);
-    // Vertical foregrip
-    const fgrip = new THREE.Mesh(new THREE.BoxGeometry(0.8, 2.0, 0.8), woodMat);
-    fgrip.position.set(0, -2.0, -5.5); vmGroup.add(fgrip);
-    // Magazine — straight box mag
-    const mag = new THREE.Mesh(new THREE.BoxGeometry(1.0, 4.0, 1.6), steelMat);
-    mag.position.set(0, -3.0, -2.5); vmGroup.add(mag);
-    // Rear sight
-    const rSight = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.6, 0.4), metal);
-    rSight.position.set(0, 1.6, -0.5); vmGroup.add(rSight);
-    // Front sight
-    const fSight = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.8, 0.3), metal);
-    fSight.position.set(0, 1.6, -7); vmGroup.add(fSight);
+    // Procedural Thompson — used as fallback if GLTF load fails.
+    const buildThompsonProc = (parent) => {
+      const woodMat = new THREE.MeshBasicMaterial({ color: 0x8B5A2B });
+      const steelMat = new THREE.MeshBasicMaterial({ color: 0x2a2a2a });
+      const recv = new THREE.Mesh(new THREE.BoxGeometry(2.2, 2.4, 9), steelMat);
+      recv.position.set(0, 0, -3); parent.add(recv);
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 5, 6), steelMat);
+      barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.3, -10); parent.add(barrel);
+      const comp = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 2, 8), steelMat);
+      comp.rotation.x = Math.PI / 2; comp.position.set(0, 0.3, -8.5); parent.add(comp);
+      const stock = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.6, 6), woodMat);
+      stock.position.set(0, -0.5, 3.5); stock.rotation.x = 0.1; parent.add(stock);
+      const grip = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.5, 1.2), woodMat);
+      grip.position.set(0, -2.2, -1); parent.add(grip);
+      const fgrip = new THREE.Mesh(new THREE.BoxGeometry(0.8, 2.0, 0.8), woodMat);
+      fgrip.position.set(0, -2.0, -5.5); parent.add(fgrip);
+      const mag = new THREE.Mesh(new THREE.BoxGeometry(1.0, 4.0, 1.6), steelMat);
+      mag.position.set(0, -3.0, -2.5); parent.add(mag);
+      const rSight = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.6, 0.4), metal);
+      rSight.position.set(0, 1.6, -0.5); parent.add(rSight);
+      const fSight = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.8, 0.3), metal);
+      fSight.position.set(0, 1.6, -7); parent.add(fSight);
+    };
+    const primary = new THREE.Group();
+    vmGroup.add(primary);
+    const gloader = new GLTFLoader(fbxLoadingManager);
+    gloader.load('models/PSX_Thompson.gltf', gltf => {
+      const model = gltf.scene;
+      // Texture file isn't shipped — override with the same dark gray
+      // material the M16 viewmodel uses so the two long guns visually match.
+      const grayMat = new THREE.MeshBasicMaterial({ color: 0x1a1a1a });
+      model.traverse(o => { if (o.isMesh) o.material = grayMat; });
+      // PSX-style model — initial transform mirrors benelli pattern.
+      // Master can fine-tune.
+      model.scale.set(8, 8, 8);
+      model.rotation.set(0, 0, 0);
+      model.position.set(1.5, -2, -7);
+      primary.add(model);
+    }, undefined, () => {
+      buildThompsonProc(primary);
+    });
     const hoof = buildHoof();
     hoof.position.set(-0.3, -0.5, -7);
     hoof.rotation.set(-0.2, 0.1, 0.5);
@@ -482,6 +566,9 @@ export function buildViewmodel(type, dual) {
   vmGroup.rotation.set(0, 0.05, 0);
   vmScene.add(vmGroup);
   vmType = type;
+  // Different barrel = fresh heat. Swapping from a cooked mp5k to a bolty
+  // shouldn't have the bolty smoking on draw.
+  resetBarrelHeat();
 }
 
 let _throwAway = null; // { group, startT } — plays the LAW toss animation
@@ -589,5 +676,148 @@ export function updateViewmodel() {
         hoof.rotation.z += (restR.z - hoof.rotation.z) * 0.25;
       }
     }
+    _updateBarrelEffects(me);
+  } else {
+    _smokeAccum = 0;
+    _lastSmokeT = 0;
+    _flashQueue = 0;
   }
+}
+
+// Compute the world-space muzzle position for the current viewmodel by
+// transforming the local offset through the camera's orientation. Returns
+// null if there's no offset for the current weapon (e.g. melee, LAW).
+function _muzzleWorldPos(weapon) {
+  const offset = MUZZLE_OFFSETS[weapon];
+  if (!offset) return null;
+  _muzzleTmp.set(offset.x, offset.y, offset.z).applyQuaternion(cam.quaternion);
+  return {
+    x: cam.position.x + _muzzleTmp.x,
+    y: cam.position.y + _muzzleTmp.y,
+    z: cam.position.z + _muzzleTmp.z,
+  };
+}
+
+// Per-frame: decay the heat meter, drain the muzzle-flash queue, and emit
+// smoke particles when heat is above the threshold. Heat is purely
+// clientside — driven by notifyShotFired() rather than ammo state — so it
+// rises from sustained fire and drains while idle. Suppressed when the
+// player is dead so dying mid-spray doesn't leave a smoldering ghost gun.
+function _updateBarrelEffects(me) {
+  if (!me || !me.alive) {
+    _smokeAccum = 0;
+    _lastSmokeT = 0;
+    _flashQueue = 0;
+    _flashUntil = 0;
+    if (_flashMesh) _flashMesh.visible = false;
+    _barrelHeat = 0;
+    return;
+  }
+  // Skip all visual effects when ADS — the viewmodel is hidden / repositioned
+  // for the optic so a smoke plume + flash floating in the scope view looks
+  // wrong. Heat itself keeps decaying so the barrel "cools" while you're
+  // scoped, but flash queue is dropped (don't burst-spawn flashes when
+  // un-ADSing). Shots fired while ADS still bumped the heat meter via
+  // notifyShotFired — that's fine, the gun is still hot, just invisible.
+  if (S.adsActive) {
+    _smokeAccum = 0;
+    _flashQueue = 0;
+    _flashUntil = 0;
+    if (_flashMesh) _flashMesh.visible = false;
+    const now = performance.now();
+    const dt = _lastSmokeT ? Math.min(0.1, (now - _lastSmokeT) / 1000) : 0;
+    _lastSmokeT = now;
+    _barrelHeat = Math.max(0, _barrelHeat - HEAT_DECAY * dt);
+    return;
+  }
+  const wep = vmType;
+  const muzzle = _muzzleWorldPos(wep);
+  const now = performance.now();
+  const dt = _lastSmokeT ? Math.min(0.1, (now - _lastSmokeT) / 1000) : 0;
+  _lastSmokeT = now;
+
+  // Persistent muzzle flash — parented to vmGroup so it tracks the gun
+  // when the camera turns. Visible while now < _flashUntil; notifyShotFired
+  // refreshes the timer each shot so sustained fire keeps it lit.
+  _updateMuzzleFlashMesh(wep, now);
+  _flashQueue = 0;
+
+  // Heat decay — only when no shot was registered this frame
+  _barrelHeat = Math.max(0, _barrelHeat - HEAT_DECAY * dt);
+
+  if (!muzzle || _barrelHeat < SMOKE_THRESHOLD) {
+    _smokeAccum = 0;
+    return;
+  }
+  // Intensity 0..1 across the threshold..1.0 window
+  const intensity = Math.min(1, (_barrelHeat - SMOKE_THRESHOLD) / (1 - SMOKE_THRESHOLD));
+  // 1.5 puffs/sec at threshold, ~10 puffs/sec at full intensity
+  _smokeAccum += dt * (1.5 + intensity * 8.5);
+  while (_smokeAccum >= 1) {
+    _smokeAccum -= 1;
+    const size = 0.4 + intensity * 1.0;
+    // Grey wisps — darker at low heat, lighter as the gun cooks
+    const greyByte = 0x55 + ((Math.random() * 0x55) | 0);
+    const color = (greyByte << 16) | (greyByte << 8) | greyByte;
+    spawnParticle({
+      geo: PGEO_SPHERE_LO,
+      color,
+      x: muzzle.x, y: muzzle.y, z: muzzle.z,
+      sx: size, sy: size, sz: size,
+      vx: (Math.random() - 0.5) * 1.5,
+      vy: 1.5 + intensity * 3 + Math.random() * 1.5,
+      vz: (Math.random() - 0.5) * 1.5,
+      life: 0.45 + intensity * 0.85,
+      peakOpacity: 0.2 + intensity * 0.45,
+      growth: 1.2 + intensity * 1.5,
+    });
+  }
+}
+
+// Persistent muzzle flash — a bright white core wrapped in a warm orange
+// halo, both fully opaque. Built once and re-parented to whatever vmGroup
+// is current so it inherits the viewmodel's transform — that means the
+// flash always renders at the gun's muzzle, even while turning mid-shot.
+const FLASH_SCALE = {
+  shotgun: 1.6, bolty: 1.4, python: 1.2, akm: 1.1, sks: 1.1,
+  m249: 1.2, minigun: 1.1, cowtank: 1.8,
+};
+function _ensureFlashMesh() {
+  if (_flashMesh) return _flashMesh;
+  const grp = new THREE.Group();
+  const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffe0 });
+  const haloMat = new THREE.MeshBasicMaterial({ color: 0xffaa33 });
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.7, 8, 6), coreMat);
+  const halo = new THREE.Mesh(new THREE.SphereGeometry(1.4, 8, 6), haloMat);
+  grp.add(core);
+  grp.add(halo);
+  grp.visible = false;
+  _flashMesh = grp;
+  return grp;
+}
+function _updateMuzzleFlashMesh(weapon, now) {
+  const mesh = _ensureFlashMesh();
+  // Re-parent if the viewmodel was rebuilt (weapon swap).
+  if (vmGroup && _flashOwnerVm !== vmGroup) {
+    if (mesh.parent) mesh.parent.remove(mesh);
+    vmGroup.add(mesh);
+    _flashOwnerVm = vmGroup;
+  }
+  if (!vmGroup) {
+    mesh.visible = false;
+    return;
+  }
+  const off = MUZZLE_OFFSETS[weapon];
+  if (!off) {
+    mesh.visible = false;
+    return;
+  }
+  if (now >= _flashUntil) {
+    mesh.visible = false;
+    return;
+  }
+  mesh.position.set(off.x, off.y, off.z);
+  const sc = FLASH_SCALE[weapon] || 1.0;
+  mesh.scale.set(sc, sc, sc);
+  mesh.visible = true;
 }

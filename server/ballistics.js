@@ -19,7 +19,7 @@ const { pushOutOfWalls } = require('../shared/collision');
 
 // Shared constants — kept here so the file is self-contained. Exposed via module
 // exports so combat.js / bots.js can reuse the same values instead of hardcoding them.
-const PROJECTILE_RADIUS = 5;    // AABB inflate amount for wall collisions (halved)
+const PROJECTILE_RADIUS = 4;    // AABB inflate amount for wall collisions (halved)
 const WALL_MIN_SIZE = 20;       // walls thinner than this still collide at 20 units wide
 const PLAYER_BODY_RADIUS = 14;  // capsule body radius
 const PLAYER_HEAD_RADIUS = 10;  // capsule head radius
@@ -63,11 +63,12 @@ function integrateProjectile(pr, dt) {
 // projectile half-thickness). Walls have finite height (WALL_HEIGHT above
 // terrain) so we also do a vertical-plane check at the hit point.
 // Returns { blockT, hitWall } where blockT is >1 when nothing is hit.
-function segVsWalls(prevX, prevY, prevZ, curX, curY, curZ, walls, getTerrainHeight, wallHeight) {
+function segVsWalls(prevX, prevY, prevZ, curX, curY, curZ, walls, getTerrainHeight, wallHeight, skipWallId) {
   let blockT = 1.01;
   let hitWall = null;
   const segDx = curX - prevX, segDy = curY - prevY;
   for (const w of walls) {
+    if (skipWallId != null && w.id === skipWallId) continue;
     // Cache the effective width/height on the wall the first time we see it.
     // Walls are static after placement so this is a one-time cost per wall per round.
     if (w._collW === undefined) {

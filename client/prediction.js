@@ -26,7 +26,7 @@ import S from './state.js';
 import { stepPlayerMovement } from '../shared/movement.js';
 import { getTerrainHeight } from './terrain.js';
 import { send } from './network.js';
-import { KNIFE_SPEED_MULT, HIT_SLOW_MULT, TICK_RATE, HEAVY_WEAPON_SPEED } from '../shared/constants.js';
+import { KNIFE_SPEED_MULT, HIT_SLOW_MULT, TICK_RATE } from '../shared/constants.js';
 
 // Fixed timestep — imported from shared/constants so it stays in sync.
 const TICK_HZ = TICK_RATE;
@@ -143,6 +143,10 @@ function snapshotPlayer(p) {
     _portalCooldown: p._portalCooldown || 0,
     perks: p.perks || buildPredictedPerks(p),
     isBot: false,
+    // Heavy-weapon slow inputs — shared/movement.js reads these to decide
+    // whether to apply the minigun/m249 speed penalty.
+    weapon: p.weapon || 'normal',
+    minigunSpin: p.minigunSpin || 0,
   };
 }
 
@@ -202,7 +206,10 @@ function computeLocalSpeedMult() {
   const mp = S.mePredicted;
   let mult = 1;
   if (mp && mp.weapon === 'knife') mult *= KNIFE_SPEED_MULT;
-  if (mp && HEAVY_WEAPON_SPEED[mp.weapon]) mult *= HEAVY_WEAPON_SPEED[mp.weapon];
+  // Heavy-weapon slow (minigun/m249) used to live here, but is now applied
+  // inside shared/movement.js so the server enforces it independently of
+  // the client-trusted speedMult and a hacked client can't move full-speed
+  // while spun up.
   if (S.localHitSlowEndsAt > performance.now()) mult *= HIT_SLOW_MULT;
   return mult;
 }

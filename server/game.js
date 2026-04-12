@@ -178,9 +178,14 @@ function gameTick() {
     // Apply deferred jump at drain time so it's in sync with the client
     // prediction cadence. Checked AFTER queue drain so it fires on the
     // same tick as the move that was active when Space was pressed.
-    if (p._pendingJump && p.onGround) {
-      p.vz = JUMP_VZ;
-      p.onGround = false;
+    // Minigun blocks jump entirely (heavy weapon — too cumbersome to leap
+    // with). Pending flag is still cleared so a later weapon swap doesn't
+    // hold a stale jump.
+    if (p._pendingJump) {
+      if (p.onGround && p.weapon !== 'minigun') {
+        p.vz = JUMP_VZ;
+        p.onGround = false;
+      }
       p._pendingJump = false;
     }
 

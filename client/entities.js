@@ -358,7 +358,11 @@ export function updateCows(time, dt) {
   // remote player samples the same render point.
   const nowMs = performance.now();
   for (const p of S.serverPlayers) {
-    if (p.id === S.myId) continue;
+    // In first person, skip our own cow — the camera is inside its head.
+    // In third person, fall through and render it like any other cow so the
+    // OTS shot has a body to look at. We still need the build/update path
+    // to run for the local player in that mode.
+    if (p.id === S.myId && S.cameraMode !== 'third') continue;
     seen.add(String(p.id));
     const pid = String(p.id);
     if (!S.cowMeshes[pid]) {
@@ -393,12 +397,15 @@ export function updateCows(time, dt) {
     const cowObj = S.cowMeshes[pid];
     const cm = cowObj.mesh;
     // SI interpolation for smooth remote motion. Falls back to raw tick
-    // position if not enough snapshots have arrived yet.
-    const smooth = getInterpolatedEntity(p);
+    // position if not enough snapshots have arrived yet. Local cow in 3rd
+    // person uses mePredicted so the body sits where the camera + reticle
+    // expect, not 1-2 ticks behind.
+    const isLocal = (p.id === S.myId);
+    const pos = (isLocal && S.mePredicted) ? S.mePredicted : getInterpolatedEntity(p);
     if (!cowObj.isDead) {
-      cm.position.x = smooth.x;
-      cm.position.z = smooth.y;
-      cm.position.y = (smooth.z !== undefined ? smooth.z : getTerrainHeight(smooth.x, smooth.y));
+      cm.position.x = pos.x;
+      cm.position.z = pos.y;
+      cm.position.y = (pos.z !== undefined ? pos.z : getTerrainHeight(pos.x, pos.y));
       const sz = p.sizeMult || 1;
       const crouchY = p.crouching ? 0.5 : 1;
       cm.scale.set(sz, sz * crouchY, sz);
@@ -407,7 +414,7 @@ export function updateCows(time, dt) {
     if (!p.alive && !cowObj.isDead) {
       cowObj.isDead = true;
       cm.rotation.z = Math.PI / 2;
-      cm.position.y = (smooth.z !== undefined ? smooth.z : getTerrainHeight(smooth.x, smooth.y)) + 5;
+      cm.position.y = (pos.z !== undefined ? pos.z : getTerrainHeight(pos.x, pos.y)) + 5;
       // Nametag + hp bar are living-cows-only; leave them parented so
       // disposeMeshTree on round end still cleans them up.
       if (cowObj.nameSprite) cowObj.nameSprite.visible = false;
@@ -423,11 +430,16 @@ export function updateCows(time, dt) {
       if (cowObj.shieldBubble) { cm.remove(cowObj.shieldBubble); cowObj.shieldBubble.material.dispose(); cowObj.shieldBubble = null; }
       if (cowObj.spawnBubble) { cm.remove(cowObj.spawnBubble); cowObj.spawnBubble.material.dispose(); cowObj.spawnBubble = null; }
     }
-    if (smooth.aim !== undefined) {
+    if (isLocal) {
+      // Local cow follows the camera yaw exactly so its body snaps to where
+      // we're aiming. Cow forward is +Z in mesh space; camera forward at
+      // yaw=0 is -Z, so add π to align.
+      cm.rotation.y = S.yaw + Math.PI;
+    } else if (pos.aim !== undefined) {
       // Snap directly to the interpolated aim — the sampler already handles
       // the -π/+π shortest-arc wraparound so we don't need the per-frame
       // smoothing lerp here anymore (it was covering for the 40 Hz step).
-      cm.rotation.y = smooth.aim;
+      cm.rotation.y = pos.aim;
     }
     // Debug hitboxes — only shown for alive cows. Body height comes from scale.y
     // on a unit-tall shared cylinder, so the geometry is one singleton across

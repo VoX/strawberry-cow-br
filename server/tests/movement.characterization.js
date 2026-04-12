@@ -15,6 +15,7 @@
 const assert = require('assert');
 const { stepPlayerMovement } = require('../../shared/movement');
 const { pushOutOfWalls } = require('../ballistics');
+const { PLAYER_WALL_INFLATE } = require('../../shared/constants');
 
 // Flat terrain at z=0 so height physics is deterministic without needing
 // the real seeded heightmap. (The heightmap has its own regression test in
@@ -161,16 +162,16 @@ runCase('zone clamp keeps player inside boundary', () => {
 // ---- Case 10: wall push-out -----------------------------------------------
 runCase('wall collision pushes player out', () => {
   const p = makePlayer({ x: 1000, y: 750 });
-  // Wall inflates by 15 on each side, so a 40-wide wall at (985, 735) covers
-  // x:[970, 1040], y:[720, 790] after inflation. Player at (1000, 750) is
-  // inside. Nearest edge is 30 units to the right → p.x = 1040.
+  // Wall inflates by PLAYER_WALL_INFLATE on each side. With inflate=8 a
+  // 40-wide wall at (985, 735) covers x:[977, 1033], y:[727, 783] after
+  // inflation. Player at (1000, 750) starts inside; shallowest escape is
+  // 23 units left/up (tie).
   const w = makeWorld({
     walls: [{ id: 1, x: 985, y: 735, w: 40, h: 40, hp: 1 }],
   });
   stepPlayerMovement(p, DT, w, { dx: 0, dy: 0, walking: false }, terrain, pushOutOfWalls);
-  // Expect push-out to one of the four edges (whichever has minimum escape).
-  const insideX = p.x > 985 - 15 && p.x < 985 + 40 + 15;
-  const insideY = p.y > 735 - 15 && p.y < 735 + 40 + 15;
+  const insideX = p.x > 985 - PLAYER_WALL_INFLATE && p.x < 985 + 40 + PLAYER_WALL_INFLATE;
+  const insideY = p.y > 735 - PLAYER_WALL_INFLATE && p.y < 735 + 40 + PLAYER_WALL_INFLATE;
   assert(!(insideX && insideY), `player still inside wall: (${p.x}, ${p.y})`);
 });
 
@@ -197,10 +198,10 @@ runCase('bot aim updates from movement direction', () => {
 });
 
 // ---- Case 13: barricade OBB push-out (axis-aligned) -----------------------
-// Barricade at (1000, 750) with angle=0: local x is the "thin" axis (half=
-// b.h/2+15=19), local y is the "wide" axis (half=b.w/2+15=41). Player starts
-// exactly at center so both lx and ly are 0. Shallowest escape is along thin
-// → newLx=±19 → world p.x ends up ±19 from center.
+// Barricade at (1000, 750) with angle=0: local x is the "thin" axis
+// (half = b.h/2 + PLAYER_WALL_INFLATE), local y is the "wide" axis
+// (half = b.w/2 + PLAYER_WALL_INFLATE). Player starts at center so lx=ly=0.
+// Shallowest escape is along thin → newLx=±halfThin → world p.x = halfThin.
 runCase('barricade OBB push-out axis-aligned', () => {
   const p = makePlayer({ x: 1000, y: 750, z: 0 });
   const barricade = {
@@ -209,7 +210,8 @@ runCase('barricade OBB push-out axis-aligned', () => {
   };
   const w = makeWorld({ barricades: [barricade] });
   stepPlayerMovement(p, DT, w, { dx: 0, dy: 0, walking: false }, terrain, pushOutOfWalls);
-  assert.strictEqual(Math.abs(p.x - 1000), 19, `x push=${p.x - 1000}`);
+  const expected = barricade.h / 2 + PLAYER_WALL_INFLATE;
+  assert.strictEqual(Math.abs(p.x - 1000), expected, `x push=${p.x - 1000}`);
   assert.strictEqual(p.y, 750, 'y should not have moved');
 });
 
