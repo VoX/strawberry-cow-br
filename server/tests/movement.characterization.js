@@ -41,8 +41,6 @@ function makeWorld(overrides = {}) {
   return Object.assign({
     walls: [],
     barricades: [],
-    mudPatches: [],
-    portals: [],
     zone: { x: 0, y: 0, w: 2000, h: 1500 },
   }, overrides);
 }
@@ -112,42 +110,6 @@ runCase('spawn protection decrements and skips', () => {
   assert.strictEqual(p.x, 0);
   assert.strictEqual(p.y, 0);
   assert(p.spawnProtection < 1.5, 'spawnProtection did not decrement');
-});
-
-// ---- Case 6: mud slows to 50% ---------------------------------------------
-runCase('mud patch applies slowdown', () => {
-  const p = makePlayer({ x: 1000, y: 750 });
-  const w = makeWorld({ mudPatches: [{ x: 1000, y: 750, r: 100 }] });
-  stepPlayerMovement(p, DT, w, { dx: 0, dy: 1, walking: false }, terrain, pushOutOfWalls);
-  // 108 * 0.5 * 1/40 = 1.35
-  assert.strictEqual(Math.abs(p.y - 751.35) < 0.001, true, `y=${p.y}`);
-});
-
-// ---- Case 7: portal teleport ----------------------------------------------
-runCase('portal teleports to paired endpoint', () => {
-  const p = makePlayer({ x: 100, y: 100 });
-  const w = makeWorld({
-    portals: [{ x1: 100, y1: 100, x2: 1800, y2: 1400 }],
-  });
-  stepPlayerMovement(p, DT, w, { dx: 0, dy: 0, walking: false }, terrain, pushOutOfWalls);
-  assert.strictEqual(p.x, 1800);
-  assert.strictEqual(p.y, 1400);
-  // Portal sets cooldown to 2 then the same tick decrements by dt → 2 - 1/40.
-  assert(Math.abs(p._portalCooldown - (2 - DT)) < 1e-9, `cooldown=${p._portalCooldown}`);
-});
-
-// ---- Case 8: portal cooldown blocks re-teleport ---------------------------
-runCase('portal cooldown prevents immediate retrigger', () => {
-  const p = makePlayer({ x: 100, y: 100, _portalCooldown: 1.5 });
-  const w = makeWorld({
-    portals: [{ x1: 100, y1: 100, x2: 1800, y2: 1400 }],
-  });
-  stepPlayerMovement(p, DT, w, { dx: 0, dy: 0, walking: false }, terrain, pushOutOfWalls);
-  // Did not teleport
-  assert.strictEqual(p.x, 100);
-  assert.strictEqual(p.y, 100);
-  // Cooldown decremented
-  assert(p._portalCooldown < 1.5, 'portal cooldown did not decrement');
 });
 
 // ---- Case 9: zone clamp ---------------------------------------------------

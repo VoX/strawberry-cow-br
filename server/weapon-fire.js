@@ -603,6 +603,10 @@ function fireWeapon(shooter, weapon, aim, stats, opts = {}) {
   if (fireServerTime != null) extras.fireServerTime = fireServerTime;
   const broadcastExtras = {};
   if (stats.broadcastTag) broadcastExtras[stats.broadcastTag] = true;
+  // Tank cannon: extra flag so the client plays the LOUD multi-layer cannon
+  // sound (rocket whoosh + explosion thump). Plain cowtank pickups stay at the
+  // normal LAW volume — only the M1 Bradley's mounted cannon booms.
+  if (shooter.isTank && weapon === 'cowtank') broadcastExtras.tankCannon = true;
   _spawnProjectile(
     shooter,
     shooter.x + sax * stats.spawnOffset, shooter.y + say * stats.spawnOffset, eyeZ,

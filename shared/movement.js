@@ -8,17 +8,16 @@
 // Responsibilities:
 //   - stun timer decrement
 //   - spawn-protection early return (caller handles the skip)
-//   - movement delta (speed/walk/mud/size/perk applied to p.dx/p.dy input)
+//   - movement delta (speed/walk/size/perk applied to p.dx/p.dy input)
 //   - direction cardinal update
 //   - bot aim auto-orient
 //   - wall collision push-out (via ballistics.pushOutOfWalls, z-gated)
 //   - barricade OBB push-out (inline — uses cached _cosA/_sinA/_terrainH)
 //   - height physics (vz, gravity, ground clamp)
-//   - portal teleportation + cooldown
 //   - zone clamp
 //
 // NOT included (stays in gameTick, server-only):
-//   - hunger ticks (zone damage, heal ponds, drain)
+//   - hunger ticks (zone damage, drain)
 //   - cooldown ticks (dashCooldown, attackCooldown, pickupCooldown)
 //   - eat timer + food collision
 //   - level-up / XP
@@ -38,13 +37,13 @@
 // on the edge frame where protection drops to zero mid-call.
 
 const {
-  PLAYER_BASE_SPEED, PLAYER_WALK_MULT, MUD_SPEED_MULT, GRAVITY,
+  PLAYER_BASE_SPEED, PLAYER_WALK_MULT, GRAVITY,
   BARRICADE_HEIGHT, PLAYER_WALL_INFLATE,
-  HEAVY_WEAPON_SPEED, MINIGUN_SPUN_SPEED_MULT,
+  HEAVY_WEAPON_SPEED, MINIGUN_SPUN_SPEED_MULT, MINIGUN_SLOW_DELAY_S,
 } = require('./constants');
 const { pushOutOfWalls } = require('./collision');
 
-// `world`: { walls, barricades, mudPatches, portals, zone }
+// `world`: { walls, barricades, zone }
 // `input`: { dx, dy, walking } — usually just the player's own dx/dy/walking
 //          but split out so CSP can pass a specific input frame without
 //          mutating the player object first.
@@ -74,10 +73,6 @@ function stepPlayerMovement(p, dt, world, input, terrain) {
     const len = Math.hypot(ix, iy);
     const nx = ix / len, ny = iy / len;
     const sizeSlowdown = 1 - Math.min(0.3, p.foodEaten * 0.01);
-    let mudSlow = 1;
-    for (const m of world.mudPatches) {
-      if (Math.hypot(p.x - m.x, p.y - m.y) < m.r) { mudSlow = MUD_SPEED_MULT; break; }
-    }
     const walkMult = input.walking ? PLAYER_WALK_MULT : 1;
     // input.speedMult is client-authoritative for effects the client can
     // initiate locally (knife loadout = 1.2; future on-hit slowdown =
@@ -86,19 +81,21 @@ function stepPlayerMovement(p, dt, world, input, terrain) {
     // without needing to know about the effect itself. Defaults to 1.
     const inputSpeedMult = input.speedMult != null ? input.speedMult : 1;
     // Heavy-weapon slow — applied here so server enforces it independently of
-    // the client-trusted speedMult. m249 = flat 50%. minigun lerps from no
-    // slow (spin=0) through 50% (any spin) up to 80% (full spin). Spin level
-    // lives on `p._minigunSpinTime` server-side and is mirrored to
-    // `p.minigunSpin` on the client predicted player.
+    // the client-trusted speedMult. m249 = flat 75% (per HEAVY_WEAPON_SPEED).
+    // Minigun base = 50% (holding the heavy weapon). Once the spin timer
+    // crosses MINIGUN_SLOW_DELAY_S, the spin penalty stacks on top and drops
+    // movement to MINIGUN_SPUN_SPEED_MULT (20%). Step function past the
+    // threshold so client/server can't drift on a ramp; the grace window
+    // means quick RMB taps don't punish movement.
     let heavyMult = 1;
     if (p.weapon === 'minigun') {
+      heavyMult = HEAVY_WEAPON_SPEED.minigun;
       const spin = p._minigunSpinTime != null ? p._minigunSpinTime : (p.minigunSpin || 0);
-      const t = Math.max(0, Math.min(1, spin));
-      heavyMult = HEAVY_WEAPON_SPEED.minigun + (MINIGUN_SPUN_SPEED_MULT - HEAVY_WEAPON_SPEED.minigun) * t;
+      if (spin >= MINIGUN_SLOW_DELAY_S) heavyMult = MINIGUN_SPUN_SPEED_MULT;
     } else if (HEAVY_WEAPON_SPEED[p.weapon]) {
       heavyMult = HEAVY_WEAPON_SPEED[p.weapon];
     }
-    const speed = PLAYER_BASE_SPEED * sizeSlowdown * p.perks.speedMult * mudSlow * walkMult * inputSpeedMult * heavyMult;
+    const speed = PLAYER_BASE_SPEED * sizeSlowdown * p.perks.speedMult * walkMult * inputSpeedMult * heavyMult;
     p.x += nx * speed * dt;
     p.y += ny * speed * dt;
     if (Math.abs(nx) > Math.abs(ny)) p.dir = nx > 0 ? 'east' : 'west';
@@ -142,20 +139,6 @@ function stepPlayerMovement(p, dt, world, input, terrain) {
   if (p.z <= groundH) { p.z = groundH; p.vz = 0; p.onGround = true; }
   else { p.onGround = false; }
 
-  // Portal teleportation + cooldown.
-  if (!p._portalCooldown || p._portalCooldown <= 0) {
-    for (const portal of world.portals) {
-      if (Math.hypot(p.x - portal.x1, p.y - portal.y1) < 35) {
-        p.x = portal.x2; p.y = portal.y2; p._portalCooldown = 2;
-        break;
-      }
-      if (Math.hypot(p.x - portal.x2, p.y - portal.y2) < 35) {
-        p.x = portal.x1; p.y = portal.y1; p._portalCooldown = 2;
-        break;
-      }
-    }
-  }
-  if (p._portalCooldown > 0) p._portalCooldown -= dt;
 
   // Zone clamp.
   const zone = world.zone;

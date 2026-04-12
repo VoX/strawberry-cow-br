@@ -114,8 +114,7 @@ function dispatchMessage(player, msg) {
         foods: gameState.getFoods().map(serializeFood),
         zone: gameState.getZone(),
         map: {
-          walls: gameState.getWalls(), mud: gameState.getMudPatches(),
-          ponds: gameState.getHealPonds(), portals: gameState.getPortals(),
+          walls: gameState.getWalls(),
           shelters: gameState.getShelters(), houses: gameState.getHouses(),
         },
         barricades: gameState.getBarricades(),
@@ -148,8 +147,7 @@ function dispatchMessage(player, msg) {
         foods: gameState.getFoods().map(serializeFood),
         zone: gameState.getZone(),
         map: {
-          walls: gameState.getWalls(), mud: gameState.getMudPatches(),
-          ponds: gameState.getHealPonds(), portals: gameState.getPortals(),
+          walls: gameState.getWalls(),
           shelters: gameState.getShelters(), houses: gameState.getHouses(),
         },
         barricades: gameState.getBarricades(),
@@ -201,6 +199,7 @@ function dispatchMessage(player, msg) {
       // (closePlayer defers the actual channel teardown to give the
       // reliable retransmit of `kicked` time to land).
       target._joined = false;
+      cancelReload(target);
       transport.closePlayer(target.ws);
       gameState.removePlayer(msg.targetId);
       broadcast({ type: 'lobby', players: getLobbyPlayers(), countdown: lobbyState.isReadyCountdownActive() ? lobbyState.getLobbyCountdown() : -1, allReady: checkAllReady() });
@@ -256,12 +255,6 @@ function dispatchMessage(player, msg) {
   }
   if (msg.type === 'dash') {
     handleDash(player);
-  }
-  // Jump is deferred to the next move-queue drain in gameTick so it
-  // applies at the same cadence as client prediction. Fixes Z-axis
-  // reconciliation mismatch that caused jump rubber-banding.
-  if (msg.type === 'jump' && player._joined && player.alive) {
-    player._pendingJump = true;
   }
   // Knife loadout slot — secondary weapon, always available, +20% move
   // speed while held. Pressing 2 stashes the primary on `_primaryWeapon`/

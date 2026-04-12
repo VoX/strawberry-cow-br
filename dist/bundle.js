@@ -35,11 +35,10 @@ var require_constants = __commonJS({
     var TICK_RATE2 = 40;
     var PLAYER_BASE_SPEED = 108;
     var PLAYER_WALK_MULT = 0.5;
-    var MUD_SPEED_MULT = 0.5;
     var GRAVITY = 800;
     var BARRICADE_HEIGHT = 55;
     var PLAYER_WALL_INFLATE = 8;
-    var JUMP_VZ2 = 230;
+    var JUMP_VZ = 230;
     var KNIFE_SPEED_MULT2 = 1.2;
     var HIT_SLOW_MULT2 = 0.5;
     var HIT_SLOW_DURATION_MS2 = 500;
@@ -53,8 +52,9 @@ var require_constants = __commonJS({
     var DUAL_WIELD_FAMILY2 = /* @__PURE__ */ new Set(["normal", "python"]);
     var MAG_SIZES2 = { normal: 10, burst: 20, shotgun: 6, bolty: 5, aug: 30, mp5k: 30, thompson: 20, sks: 10, akm: 30, python: 6, minigun: 300, m249: 100 };
     var EXT_MAG_SIZES2 = { normal: 13, burst: 25, shotgun: 8, bolty: 7, aug: 38, mp5k: 38, thompson: 25, sks: 13, akm: 38, python: 8, minigun: 400, m249: 150 };
-    var HEAVY_WEAPON_SPEED = { minigun: 0.5, m249: 0.5 };
+    var HEAVY_WEAPON_SPEED = { minigun: 0.5, m249: 0.75 };
     var MINIGUN_SPUN_SPEED_MULT = 0.2;
+    var MINIGUN_SLOW_DELAY_S = 0.2;
     var STATEFUL_INPUT_TYPES2 = /* @__PURE__ */ new Set([
       "move"
     ]);
@@ -103,11 +103,10 @@ var require_constants = __commonJS({
       TICK_RATE: TICK_RATE2,
       PLAYER_BASE_SPEED,
       PLAYER_WALK_MULT,
-      MUD_SPEED_MULT,
       GRAVITY,
       BARRICADE_HEIGHT,
       PLAYER_WALL_INFLATE,
-      JUMP_VZ: JUMP_VZ2,
+      JUMP_VZ,
       KNIFE_SPEED_MULT: KNIFE_SPEED_MULT2,
       HIT_SLOW_MULT: HIT_SLOW_MULT2,
       HIT_SLOW_DURATION_MS: HIT_SLOW_DURATION_MS2,
@@ -124,6 +123,7 @@ var require_constants = __commonJS({
       EXT_MAG_SIZES: EXT_MAG_SIZES2,
       HEAVY_WEAPON_SPEED,
       MINIGUN_SPUN_SPEED_MULT,
+      MINIGUN_SLOW_DELAY_S,
       WEAPON_CALIBER,
       COLORS,
       FOOD_TYPES,
@@ -195,7 +195,7 @@ var init_state = __esm({
       cowMeshes: {},
       mapBuilt: false,
       serverZone: { x: 0, y: 0, w: MW, h: MH },
-      mapFeatures: { walls: [], mud: [], ponds: [], portals: [], shelters: [], houses: [] },
+      mapFeatures: { walls: [], shelters: [], houses: [] },
       clientWeapons: [],
       pendingLevelUps: 0,
       perkMenuOpen: false,
@@ -2536,7 +2536,13 @@ function makeCloudTexture() {
   }
   return new THREE2.CanvasTexture(c);
 }
-var scene, cam, ren, ambient, sun, hemi, skyGeo, skyMat, sky, cloudPlanes, vmScene, vmCam;
+function _tip(color, x, y, z) {
+  const m = new THREE2.Mesh(_tipGeo, new THREE2.MeshBasicMaterial({ color, depthTest: false }));
+  m.position.set(x, y, z);
+  m.renderOrder = 999;
+  return m;
+}
+var scene, cam, ren, ambient, sun, hemi, skyGeo, skyMat, sky, cloudPlanes, vmScene, vmCam, vmDebugGroup, vmAxes, vmGrid, _tipGeo;
 var init_renderer = __esm({
   "client/renderer.js"() {
     init_config();
@@ -2624,6 +2630,24 @@ var init_renderer = __esm({
     vmScene.add(new THREE2.AmbientLight(16777215, 1));
     vmCam = new THREE2.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 100);
     vmCam.position.set(0, 0, 0);
+    vmDebugGroup = new THREE2.Group();
+    vmDebugGroup.visible = false;
+    vmAxes = new THREE2.AxesHelper(20);
+    vmAxes.material.depthTest = false;
+    vmAxes.material.depthWrite = false;
+    vmAxes.renderOrder = 999;
+    vmDebugGroup.add(vmAxes);
+    vmGrid = new THREE2.GridHelper(40, 40, 8947848, 4473924);
+    vmGrid.position.y = -10;
+    vmGrid.material.depthTest = false;
+    vmGrid.material.depthWrite = false;
+    vmGrid.renderOrder = 998;
+    vmDebugGroup.add(vmGrid);
+    _tipGeo = new THREE2.BoxGeometry(1.2, 1.2, 1.2);
+    vmDebugGroup.add(_tip(16711680, 20, 0, 0));
+    vmDebugGroup.add(_tip(65280, 0, 20, 0));
+    vmDebugGroup.add(_tip(255, 0, 0, 20));
+    vmScene.add(vmDebugGroup);
     addEventListener("resize", () => {
       cam.aspect = innerWidth / innerHeight;
       cam.updateProjectionMatrix();
@@ -5766,13 +5790,6 @@ var init_snapshot = __esm({
 
 // client/input.js
 import * as THREE4 from "three";
-function predictJump() {
-  const mp = state_default.mePredicted;
-  if (!mp || !mp.onGround) return;
-  if (mp.weapon === "minigun") return;
-  mp.vz = import_constants7.JUMP_VZ;
-  mp.onGround = false;
-}
 function setVmGroupRef(getter) {
   vmGroupRef = getter;
 }
@@ -5808,6 +5825,13 @@ function toggleFullscreen() {
   } else {
     document.documentElement.requestFullscreen().catch(() => {
     });
+  }
+}
+function clampFireMode(wep) {
+  const supported = FIRE_MODES[wep];
+  if (supported && !supported.includes(state_default.fireMode)) {
+    state_default.fireMode = supported[0];
+    stopAutoFire();
   }
 }
 function getAutoFireInterval() {
@@ -5867,7 +5891,7 @@ function closeChat(doSend) {
   chatInputWrap.style.display = "none";
   chatInput.blur();
 }
-var import_constants7, isMobile, vmGroupRef, _inputDir, mouseDown, autoFireActive, nextFireTime, chatInput, chatInputWrap;
+var import_constants7, isMobile, vmGroupRef, _inputDir, FIRE_MODES, mouseDown, autoFireActive, nextFireTime, chatInput, chatInputWrap;
 var init_input = __esm({
   "client/input.js"() {
     init_state();
@@ -5879,7 +5903,14 @@ var init_input = __esm({
     isMobile = "ontouchstart" in window || navigator.maxTouchPoints > 0;
     vmGroupRef = null;
     _inputDir = new THREE4.Vector3();
-    state_default.fireMode = "burst";
+    FIRE_MODES = {
+      burst: ["auto", "burst", "semi"],
+      aug: ["auto", "burst", "semi"],
+      mp5k: ["auto", "burst"],
+      akm: ["auto", "semi"],
+      thompson: ["auto"]
+    };
+    state_default.fireMode = "auto";
     mouseDown = false;
     autoFireActive = false;
     nextFireTime = 0;
@@ -6113,8 +6144,13 @@ var init_input = __esm({
       if (touchFireMode) touchFireMode.addEventListener("touchstart", (e) => {
         e.preventDefault();
         const myWep = state_default.me ? state_default.me.weapon : "";
-        if (myWep === "mp5k") state_default.fireMode = state_default.fireMode === "auto" ? "burst" : "auto";
-        else state_default.fireMode = state_default.fireMode === "burst" ? "auto" : state_default.fireMode === "auto" ? "semi" : "burst";
+        const supported = FIRE_MODES[myWep];
+        if (supported && supported.length > 1) {
+          clampFireMode(myWep);
+          const idx = supported.indexOf(state_default.fireMode);
+          state_default.fireMode = supported[(idx + 1) % supported.length];
+          stopAutoFire();
+        }
       }, { passive: false });
       const touchADS = document.getElementById("touchADS");
       if (touchADS) {
@@ -6190,12 +6226,6 @@ var init_input = __esm({
         }
       }
       if ((e.code === "ShiftLeft" || e.code === "ShiftRight") && state_default.state === "playing") doDash();
-      if (e.code === "Space") {
-        e.preventDefault();
-        state_default._spaceHeld = true;
-        send({ type: "jump" });
-        predictJump();
-      }
       if (e.code === "KeyQ" && state_default.state === "playing") send({ type: "dropWeapon" });
       if (e.code === "KeyV" && !e.repeat && state_default.state === "playing" && state_default.me && state_default.me.alive) send({ type: "moo" });
       if (e.code === "KeyF" && state_default.state === "playing" && state_default.mePredicted) {
@@ -6233,18 +6263,18 @@ var init_input = __esm({
       }
       if (e.code === "KeyX" && state_default.state === "playing") {
         const myWep = state_default.me ? state_default.me.weapon : "";
-        if (myWep === "mp5k") {
-          state_default.fireMode = state_default.fireMode === "auto" ? "burst" : "auto";
-        } else if (myWep === "akm") {
-          state_default.fireMode = state_default.fireMode === "auto" ? "semi" : "auto";
-        } else {
-          state_default.fireMode = state_default.fireMode === "burst" ? "auto" : state_default.fireMode === "auto" ? "semi" : "burst";
+        const supported = FIRE_MODES[myWep];
+        if (supported && supported.length > 1) {
+          clampFireMode(myWep);
+          const idx = supported.indexOf(state_default.fireMode);
+          state_default.fireMode = supported[(idx + 1) % supported.length];
+          stopAutoFire();
+          const wepLabel = { mp5k: "MP5K", aug: "AUG", akm: "AK" }[myWep] || "M16A2";
+          state_default.chatLog.push({ name: "", color: "", text: wepLabel + ": " + state_default.fireMode.toUpperCase() + " mode", t: 2, system: true });
+          if (state_default.chatLog.length > 10) state_default.chatLog.shift();
         }
-        const wepLabel = { mp5k: "MP5K", aug: "AUG", akm: "AK" }[myWep] || "M16A2";
-        state_default.chatLog.push({ name: "", color: "", text: wepLabel + ": " + state_default.fireMode.toUpperCase() + " mode", t: 2, system: true });
-        if (state_default.chatLog.length > 10) state_default.chatLog.shift();
       }
-      if (e.code === "KeyC" && state_default.state === "playing") {
+      if (e.code === "KeyC" && !e.repeat && state_default.state === "playing") {
         const meC = state_default.me;
         if (meC && meC.alive) state_default.crouching = !state_default.crouching;
       }
@@ -6265,7 +6295,6 @@ var init_input = __esm({
     });
     addEventListener("keyup", (e) => {
       state_default.keys[e.code] = false;
-      if (e.code === "Space") state_default._spaceHeld = false;
     });
   }
 });
@@ -6875,10 +6904,10 @@ function buildCow(color, personality) {
   legR.position.set(4, 3, 0);
   g.add(legR);
   const hoof1 = new THREE7.Mesh(COW_GEO.hoof, COW_HOOF_MAT);
-  hoof1.position.set(-4, -1, 0);
+  hoof1.position.set(-4, -4, 0);
   g.add(hoof1);
   const hoof2 = new THREE7.Mesh(COW_GEO.hoof, COW_HOOF_MAT);
-  hoof2.position.set(4, -1, 0);
+  hoof2.position.set(4, -4, 0);
   g.add(hoof2);
   const udder = new THREE7.Mesh(COW_GEO.udder, COW_UDDER_MAT);
   udder.position.set(0, 13, 5.5);
@@ -6894,23 +6923,63 @@ function buildCow(color, personality) {
   g.add(teat2);
   const armL = new THREE7.Mesh(COW_GEO.arm, bodyMat);
   armL.position.set(-9, 20, 0);
+  armL.rotation.x = Math.PI;
   armL.rotation.z = 0.3;
   g.add(armL);
   const armR = new THREE7.Mesh(COW_GEO.arm, bodyMat);
   armR.position.set(9, 20, 0);
+  armR.rotation.x = Math.PI;
   armR.rotation.z = -0.3;
   g.add(armR);
+  return g;
+}
+function buildTank() {
+  const g = new THREE7.Group();
+  const treadL = new THREE7.Mesh(TANK_GEO.tread, TANK_TREAD_MAT);
+  treadL.position.set(-19, 6, 0);
+  treadL.castShadow = true;
+  g.add(treadL);
+  const treadR = new THREE7.Mesh(TANK_GEO.tread, TANK_TREAD_MAT);
+  treadR.position.set(19, 6, 0);
+  treadR.castShadow = true;
+  g.add(treadR);
+  const hull = new THREE7.Mesh(TANK_GEO.hull, TANK_HULL_MAT);
+  hull.position.set(0, 21, 0);
+  hull.castShadow = true;
+  g.add(hull);
+  const turret = new THREE7.Mesh(TANK_GEO.turret, TANK_TURRET_MAT);
+  turret.position.set(0, 36, -2);
+  turret.castShadow = true;
+  g.add(turret);
+  const hatch = new THREE7.Mesh(TANK_GEO.hatch, TANK_TURRET_MAT);
+  hatch.position.set(-6, 42.5, -4);
+  g.add(hatch);
+  const cBase = new THREE7.Mesh(TANK_GEO.cannonBase, TANK_TURRET_MAT);
+  cBase.position.set(0, 36, 14);
+  g.add(cBase);
+  const cannon = new THREE7.Mesh(TANK_GEO.cannon, TANK_BARREL_MAT);
+  cannon.rotation.x = Math.PI / 2;
+  cannon.position.set(0, 36, 36);
+  g.add(cannon);
+  const m249Mount = new THREE7.Mesh(TANK_GEO.m249Mount, TANK_TURRET_MAT);
+  m249Mount.position.set(6, 44, 4);
+  g.add(m249Mount);
+  const m249 = new THREE7.Mesh(TANK_GEO.m249, TANK_BARREL_MAT);
+  m249.rotation.x = Math.PI / 2;
+  m249.position.set(6, 45, 16);
+  g.add(m249);
+  g.userData.smokeOrigin = new THREE7.Vector3(0, 36, 58);
   return g;
 }
 function updateCows(time, dt) {
   const seen = /* @__PURE__ */ new Set();
   const nowMs = performance.now();
   for (const p of state_default.serverPlayers) {
-    if (p.id === state_default.myId && state_default.cameraMode !== "third") continue;
+    if (p.id === state_default.myId && (state_default.cameraMode !== "third" || state_default.adsActive)) continue;
     seen.add(String(p.id));
     const pid = String(p.id);
     if (!state_default.cowMeshes[pid]) {
-      const m = buildCow(p.color, p.personality);
+      const m = p.isTank ? buildTank() : buildCow(p.color, p.personality);
       scene.add(m);
       const nameStr = p.name || "Cow";
       if (!_nameMeasureCtx) _nameMeasureCtx = document.createElement("canvas").getContext("2d");
@@ -6940,9 +7009,11 @@ function updateCows(time, dt) {
       nsprite.position.set(0, 50, 0);
       nsprite.scale.set(40 * (cw / 256), 10, 1);
       m.add(nsprite);
-      const hatType = ["cowboy", "wizard", "party", "crown", "cap", "pompadour", "afro", "mohawk"][Math.abs(p.id || 0) % 8];
-      m.add(cloneHat(hatType));
-      state_default.cowMeshes[pid] = { mesh: m, nameSprite: nsprite };
+      if (!p.isTank) {
+        const hatType = ["cowboy", "wizard", "party", "crown", "cap", "pompadour", "afro", "mohawk"][Math.abs(p.id || 0) % 8];
+        m.add(cloneHat(hatType));
+      }
+      state_default.cowMeshes[pid] = { mesh: m, nameSprite: nsprite, isTank: !!p.isTank };
     }
     const cowObj = state_default.cowMeshes[pid];
     const cm = cowObj.mesh;
@@ -6989,6 +7060,9 @@ function updateCows(time, dt) {
     if (state_default.debugMode && p.alive) {
       const eh = 35 * (p.sizeMult || 1);
       const headBase = eh * 0.75;
+      const headSpanLocal = 20;
+      const headHeight = headSpanLocal * (2 / 3);
+      const headBottom = headBase + (headSpanLocal - headHeight);
       if (!cowObj.debugBody) {
         cowObj.debugBody = new THREE7.Mesh(DEBUG_BODY_GEO, DEBUG_BODY_MAT);
         cm.add(cowObj.debugBody);
@@ -7007,10 +7081,10 @@ function updateCows(time, dt) {
         cm.add(arrowGroup);
         cowObj.debugArrow = arrowGroup;
       }
-      cowObj.debugBody.position.set(0, headBase / 2, 0);
-      cowObj.debugBody.scale.y = headBase;
+      cowObj.debugBody.position.set(0, headBottom / 2, 0);
+      cowObj.debugBody.scale.y = headBottom;
       cowObj.debugBody.visible = true;
-      cowObj.debugHead.position.set(0, headBase + 10, 0);
+      cowObj.debugHead.position.set(0, headBottom + headHeight / 2, 0);
       cowObj.debugHead.visible = true;
       if (cowObj.debugArrow) cowObj.debugArrow.visible = true;
     } else if (cowObj.debugBody) {
@@ -7179,7 +7253,7 @@ function showChatBubble(playerId, text) {
   }, CHAT_BUBBLE_MS);
   cowObj.chatBubble = bubble;
 }
-var _wispTmpPos, COW_GEO, COW_SPOT_MAT, COW_UDDER_MAT, COW_HOOF_MAT, COW_EYE_MAT, COW_PUPIL_MAT, COW_MOUTH_MAT, COW_CIG_BODY_MAT, COW_CIG_FILTER_MAT, COW_CIG_EMBER_MAT, COW_CIG_EMBER_GLOW_MAT, _cowBodyMats, _HAT_TEMPLATES, SHIELD_BUBBLE_GEO, SPAWN_BUBBLE_GEO, DEBUG_BODY_GEO, DEBUG_HEAD_GEO, DEBUG_ARROW_SHAFT_GEO, DEBUG_ARROW_HEAD_GEO, DEBUG_BODY_MAT, DEBUG_HEAD_MAT, DEBUG_ARROW_MAT, CHAT_BUBBLE_MS, CHAT_BUBBLE_MAX_CHARS, CHAT_BUBBLE_FONT_PX, _measureCtx, _nameMeasureCtx, CHAT_BUBBLE_PAD_X, CHAT_BUBBLE_PAD_Y, CHAT_BUBBLE_TAIL, CHAT_BUBBLE_BG_RGBA, CHAT_BUBBLE_FG_RGBA, CHAT_BUBBLE_WORLD_PER_PX;
+var _wispTmpPos, COW_GEO, COW_SPOT_MAT, COW_UDDER_MAT, COW_HOOF_MAT, COW_EYE_MAT, COW_PUPIL_MAT, COW_MOUTH_MAT, COW_CIG_BODY_MAT, COW_CIG_FILTER_MAT, COW_CIG_EMBER_MAT, COW_CIG_EMBER_GLOW_MAT, _cowBodyMats, _HAT_TEMPLATES, SHIELD_BUBBLE_GEO, SPAWN_BUBBLE_GEO, DEBUG_BODY_GEO, DEBUG_HEAD_GEO, DEBUG_ARROW_SHAFT_GEO, DEBUG_ARROW_HEAD_GEO, DEBUG_BODY_MAT, DEBUG_HEAD_MAT, DEBUG_ARROW_MAT, TANK_GEO, TANK_HULL_MAT, TANK_TURRET_MAT, TANK_TREAD_MAT, TANK_BARREL_MAT, CHAT_BUBBLE_MS, CHAT_BUBBLE_MAX_CHARS, CHAT_BUBBLE_FONT_PX, _measureCtx, _nameMeasureCtx, CHAT_BUBBLE_PAD_X, CHAT_BUBBLE_PAD_Y, CHAT_BUBBLE_TAIL, CHAT_BUBBLE_BG_RGBA, CHAT_BUBBLE_FG_RGBA, CHAT_BUBBLE_WORLD_PER_PX;
 var init_entities = __esm({
   "client/entities.js"() {
     init_config();
@@ -7248,12 +7322,27 @@ var init_entities = __esm({
     SHIELD_BUBBLE_GEO = markSharedGeometry(new THREE7.SphereGeometry(24, 12, 12));
     SPAWN_BUBBLE_GEO = markSharedGeometry(new THREE7.SphereGeometry(25, 12, 12));
     DEBUG_BODY_GEO = markSharedGeometry(new THREE7.CylinderGeometry(14, 14, 1, 12));
-    DEBUG_HEAD_GEO = markSharedGeometry(new THREE7.CylinderGeometry(10, 10, 20, 12));
+    DEBUG_HEAD_GEO = markSharedGeometry(new THREE7.CylinderGeometry(10, 10, 20 * (2 / 3), 12));
     DEBUG_ARROW_SHAFT_GEO = markSharedGeometry(new THREE7.CylinderGeometry(0.8, 0.8, 30, 6));
     DEBUG_ARROW_HEAD_GEO = markSharedGeometry(new THREE7.ConeGeometry(2.5, 5, 6));
     DEBUG_BODY_MAT = markSharedMaterial(new THREE7.MeshBasicMaterial({ color: 65280, wireframe: true }));
     DEBUG_HEAD_MAT = markSharedMaterial(new THREE7.MeshBasicMaterial({ color: 16729156, wireframe: true }));
     DEBUG_ARROW_MAT = markSharedMaterial(new THREE7.MeshBasicMaterial({ color: 16768256, wireframe: true }));
+    TANK_GEO = {
+      hull: new THREE7.BoxGeometry(34, 18, 56),
+      turret: new THREE7.BoxGeometry(26, 12, 30),
+      cannon: new THREE7.CylinderGeometry(2, 2, 44, 8),
+      cannonBase: new THREE7.BoxGeometry(8, 8, 6),
+      m249: new THREE7.CylinderGeometry(0.9, 0.9, 18, 6),
+      m249Mount: new THREE7.BoxGeometry(4, 4, 6),
+      tread: new THREE7.BoxGeometry(8, 12, 56),
+      hatch: new THREE7.CylinderGeometry(4, 4, 1.5, 8)
+    };
+    for (const g of Object.values(TANK_GEO)) markSharedGeometry(g);
+    TANK_HULL_MAT = markSharedMaterial(new THREE7.MeshLambertMaterial({ color: 4872762 }));
+    TANK_TURRET_MAT = markSharedMaterial(new THREE7.MeshLambertMaterial({ color: 4214320 }));
+    TANK_TREAD_MAT = markSharedMaterial(new THREE7.MeshLambertMaterial({ color: 2236962 }));
+    TANK_BARREL_MAT = markSharedMaterial(new THREE7.MeshLambertMaterial({ color: 2763306 }));
     CHAT_BUBBLE_MS = 5e3;
     CHAT_BUBBLE_MAX_CHARS = 80;
     CHAT_BUBBLE_FONT_PX = 38;
@@ -7466,16 +7555,6 @@ function buildMap() {
     _wallXBeamIM.instanceMatrix.needsUpdate = true;
     scene.add(_wallXBeamIM);
   }
-  const pm = new THREE8.MeshBasicMaterial({ color: 13404415, transparent: true, opacity: 0.6 });
-  (state_default.mapFeatures.portals || []).forEach((p) => {
-    [[p.x1, p.y1], [p.x2, p.y2]].forEach(([px, pz]) => {
-      const th = getTerrainHeight(px, pz);
-      const mesh = new THREE8.Mesh(new THREE8.TorusGeometry(20, 3, 8, 16), pm);
-      mesh.position.set(px, th + 20, pz);
-      mesh.rotation.x = Math.PI / 2;
-      addMap(mesh);
-    });
-  });
   const barnWallMat = new THREE8.MeshLambertMaterial({ color: 8006182 });
   const barnRoofMat = new THREE8.MeshLambertMaterial({ color: 4861978 });
   const barnTrimMat = new THREE8.MeshLambertMaterial({ color: 13156520 });
@@ -9267,9 +9346,13 @@ function updateProjectiles(dt) {
         x: p.x,
         y: WATER_Y + 0.3,
         z: p.y,
+        // Torus is rotated by π/2 about X so the ring lies in world XZ.
+        // After that rotation, the geo's local Z axis is world Y (height) —
+        // collapsing sz keeps the splash a flat ring on the water surface
+        // instead of a 3D balloon that puffs upward as it grows.
         sx: 1.5,
         sy: 1.5,
-        sz: 1.5,
+        sz: 1e-3,
         rotX: Math.PI / 2,
         life: 0.6,
         peakOpacity: 1,
@@ -9517,46 +9600,73 @@ function updateHud(me, time, dt) {
   H.hungerTxt.textContent = "MILK " + Math.ceil(me.hunger) + "%";
   const wep = me.weapon || "normal";
   const wepNames = { shotgun: "XM1014", burst: "M16A2", bolty: "L96", cowtank: "M72 LAW", normal: "P250", aug: "AUG", mp5k: "MP5K", thompson: "Thompson", sks: "SKS", akm: "AK", knife: "Knife" };
-  let ammoTxt = "";
-  let reloadBlock = "";
+  let ammoText = "", ammoCls = "";
   if (wep === "cowtank") {
-    ammoTxt = " 1/1";
+    ammoText = "1/1";
   } else if (me.ammo >= 0) {
     const hasExt = (me.extMagMult || 1) > 1;
     const baseMag = (hasExt ? import_constants8.EXT_MAG_SIZES[wep] : import_constants8.MAG_SIZES[wep]) || 0;
     const dualMult = me.dualWield && import_constants8.DUAL_WIELD_FAMILY.has(wep) ? 2 : 1;
     const maxMag = baseMag * dualMult;
-    ammoTxt = " " + me.ammo + "/" + maxMag;
-    if (me.reloading) {
-      if (!state_default._reloadStart) {
-        state_default._reloadStart = performance.now();
-        const RELOAD_MS = { burst: 3e3, mp5k: 3e3, thompson: 3e3, sks: 2500, akm: 3e3, aug: 3500, bolty: 2500, normal: 2e3 };
-        const reloadMult = me.dualWield ? 2 : 1;
-        if (wep === "shotgun") state_default._reloadDuration = Math.max(750, (maxMag - me.ammo) * 750);
-        else state_default._reloadDuration = (RELOAD_MS[wep] || 2e3) * reloadMult;
+    ammoText = me.ammo + "/" + maxMag;
+    if (me.alive && me.ammo <= 0 && !me.reloading && wep !== "minigun" && maxMag > 0) {
+      const now = performance.now();
+      if (!state_default._autoReloadAt || now - state_default._autoReloadAt > 300) {
+        state_default._autoReloadAt = now;
+        send({ type: "reload" });
       }
-      const elapsed = performance.now() - state_default._reloadStart;
-      const pct = Math.min(100, elapsed / state_default._reloadDuration * 100);
-      reloadBlock = '<div style="color:#ffaa44;font-size:0.35em;margin-bottom:4px;line-height:1">RELOADING...</div><div style="width:260px;height:10px;background:rgba(0,0,0,0.6);border-radius:3px;margin:0 0 8px auto"><div style="height:100%;border-radius:3px;background:#ffaa44;width:' + pct + '%"></div></div>';
-    } else {
-      state_default._reloadStart = null;
-      state_default._reloadDuration = null;
     }
+    const ammoFrac = maxMag > 0 ? me.ammo / maxMag : 1;
+    ammoCls = ammoFrac <= 0.25 ? "ammoCrit" : ammoFrac <= 0.5 ? "ammoLow" : "";
   }
+  let reloadBlock = "";
+  if (me.ammo >= 0 && me.reloading) {
+    if (wep === "shotgun" && state_default._reloadLastAmmo != null && me.ammo !== state_default._reloadLastAmmo) {
+      state_default._reloadStart = null;
+    }
+    if (!state_default._reloadStart) {
+      state_default._reloadStart = performance.now();
+      const RELOAD_MS = { burst: 3e3, mp5k: 3e3, thompson: 3e3, sks: 2500, akm: 3e3, aug: 3500, bolty: 2500, normal: 2e3 };
+      const reloadMult = me.dualWield ? 2 : 1;
+      state_default._reloadDuration = wep === "shotgun" ? 750 : (RELOAD_MS[wep] || 2e3) * reloadMult;
+    }
+    state_default._reloadLastAmmo = me.ammo;
+    const elapsed = performance.now() - state_default._reloadStart;
+    const pct = Math.min(100, elapsed / state_default._reloadDuration * 100);
+    reloadBlock = '<div style="color:#ffaa44;font-size:0.35em;margin-bottom:4px;line-height:1">RELOADING...</div><div style="width:260px;height:10px;background:rgba(0,0,0,0.6);border-radius:3px;margin:0 0 8px auto"><div style="height:100%;border-radius:3px;background:#ffaa44;width:' + pct + '%"></div></div>';
+  } else {
+    state_default._reloadStart = null;
+    state_default._reloadDuration = null;
+    state_default._reloadLastAmmo = null;
+  }
+  clampFireMode(wep);
   let fireModeBlock = "";
-  if (import_constants8.BURST_FAMILY.has(wep)) {
-    let mode = state_default.fireMode;
-    if (wep === "akm" && mode === "burst") mode = "auto";
-    if (wep === "mp5k" && mode === "semi") mode = "auto";
-    if (wep === "thompson") mode = "auto";
-    const modeLabel = mode === "auto" ? "AUTO" : mode === "semi" ? "SEMI" : "BURST";
-    fireModeBlock = wep === "thompson" ? "" : "<div>" + modeLabel + "</div>";
+  if (import_constants8.BURST_FAMILY.has(wep) && wep !== "thompson") {
+    const modeLabel = state_default.fireMode === "auto" ? "AUTO" : state_default.fireMode === "semi" ? "SEMI" : "BURST";
+    fireModeBlock = "<div>" + modeLabel + "</div>";
   }
   const dualTag = me.dualWield ? " \xD72" : "";
-  const weaponSig = wep + "|" + ammoTxt + "|" + dualTag + "|" + fireModeBlock + "|" + reloadBlock;
-  if (state_default._weaponSig !== weaponSig) {
-    state_default._weaponSig = weaponSig;
-    H.weapon.innerHTML = reloadBlock + fireModeBlock + (wepNames[wep] || wep) + dualTag + ammoTxt;
+  if (!state_default._weaponDomReady) {
+    H.weapon.innerHTML = '<div data-slot="reload"></div><div data-slot="body"></div>';
+    state_default._weaponReloadEl = H.weapon.firstChild;
+    state_default._weaponBodyEl = H.weapon.lastChild;
+    state_default._weaponDomReady = true;
+    state_default._reloadHtml = "";
+    state_default._bodySig = "";
+  }
+  if (state_default._reloadHtml !== reloadBlock) {
+    state_default._reloadHtml = reloadBlock;
+    state_default._weaponReloadEl.innerHTML = reloadBlock;
+  }
+  const bodySig = wep + "|" + dualTag + "|" + fireModeBlock;
+  if (state_default._bodySig !== bodySig) {
+    state_default._bodySig = bodySig;
+    state_default._weaponBodyEl.innerHTML = fireModeBlock + (wepNames[wep] || wep) + dualTag + ' <span data-slot="ammo"></span>';
+    state_default._ammoSpan = state_default._weaponBodyEl.querySelector('[data-slot="ammo"]');
+  }
+  if (state_default._ammoSpan) {
+    if (state_default._ammoSpan.textContent !== ammoText) state_default._ammoSpan.textContent = ammoText;
+    if (state_default._ammoSpan.className !== ammoCls) state_default._ammoSpan.className = ammoCls;
   }
   const armorVal = me.armor || 0;
   H.armorBar.style.display = aliveHud && armorVal > 0 ? "block" : "none";
@@ -9707,6 +9817,7 @@ var init_hud = __esm({
     init_state();
     import_constants8 = __toESM(require_constants());
     init_network();
+    init_input();
     _escapeHtml = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     H = null;
   }
@@ -9872,7 +9983,6 @@ var require_messages = __commonJS({
       attack: "attack",
       reload: "reload",
       dash: "dash",
-      jump: "jump",
       placeBarricade: "placeBarricade",
       chat: "chat",
       dropWeapon: "dropWeapon",
@@ -9926,12 +10036,12 @@ var require_movement = __commonJS({
     var {
       PLAYER_BASE_SPEED,
       PLAYER_WALK_MULT,
-      MUD_SPEED_MULT,
       GRAVITY,
       BARRICADE_HEIGHT,
       PLAYER_WALL_INFLATE,
       HEAVY_WEAPON_SPEED,
-      MINIGUN_SPUN_SPEED_MULT
+      MINIGUN_SPUN_SPEED_MULT,
+      MINIGUN_SLOW_DELAY_S
     } = require_constants();
     var { pushOutOfWalls } = require_collision();
     function stepPlayerMovement2(p, dt, world, input, terrain2) {
@@ -9945,24 +10055,17 @@ var require_movement = __commonJS({
         const len = Math.hypot(ix, iy);
         const nx = ix / len, ny = iy / len;
         const sizeSlowdown = 1 - Math.min(0.3, p.foodEaten * 0.01);
-        let mudSlow = 1;
-        for (const m of world.mudPatches) {
-          if (Math.hypot(p.x - m.x, p.y - m.y) < m.r) {
-            mudSlow = MUD_SPEED_MULT;
-            break;
-          }
-        }
         const walkMult = input.walking ? PLAYER_WALK_MULT : 1;
         const inputSpeedMult = input.speedMult != null ? input.speedMult : 1;
         let heavyMult = 1;
         if (p.weapon === "minigun") {
+          heavyMult = HEAVY_WEAPON_SPEED.minigun;
           const spin = p._minigunSpinTime != null ? p._minigunSpinTime : p.minigunSpin || 0;
-          const t = Math.max(0, Math.min(1, spin));
-          heavyMult = HEAVY_WEAPON_SPEED.minigun + (MINIGUN_SPUN_SPEED_MULT - HEAVY_WEAPON_SPEED.minigun) * t;
+          if (spin >= MINIGUN_SLOW_DELAY_S) heavyMult = MINIGUN_SPUN_SPEED_MULT;
         } else if (HEAVY_WEAPON_SPEED[p.weapon]) {
           heavyMult = HEAVY_WEAPON_SPEED[p.weapon];
         }
-        const speed = PLAYER_BASE_SPEED * sizeSlowdown * p.perks.speedMult * mudSlow * walkMult * inputSpeedMult * heavyMult;
+        const speed = PLAYER_BASE_SPEED * sizeSlowdown * p.perks.speedMult * walkMult * inputSpeedMult * heavyMult;
         p.x += nx * speed * dt;
         p.y += ny * speed * dt;
         if (Math.abs(nx) > Math.abs(ny)) p.dir = nx > 0 ? "east" : "west";
@@ -10007,23 +10110,6 @@ var require_movement = __commonJS({
       } else {
         p.onGround = false;
       }
-      if (!p._portalCooldown || p._portalCooldown <= 0) {
-        for (const portal of world.portals) {
-          if (Math.hypot(p.x - portal.x1, p.y - portal.y1) < 35) {
-            p.x = portal.x2;
-            p.y = portal.y2;
-            p._portalCooldown = 2;
-            break;
-          }
-          if (Math.hypot(p.x - portal.x2, p.y - portal.y2) < 35) {
-            p.x = portal.x1;
-            p.y = portal.y1;
-            p._portalCooldown = 2;
-            break;
-          }
-        }
-      }
-      if (p._portalCooldown > 0) p._portalCooldown -= dt;
       const zone = world.zone;
       p.x = Math.max(zone.x + 20, Math.min(zone.x + zone.w - 20, p.x));
       p.y = Math.max(zone.y + 20, Math.min(zone.y + zone.h - 20, p.y));
@@ -10085,7 +10171,6 @@ function snapshotPlayer(p) {
     // semantics only care that spawnProtection > 0.
     spawnProtection: p.spawnProt ? 1 : 0,
     foodEaten: p.foodEaten || 0,
-    _portalCooldown: p._portalCooldown || 0,
     perks: p.perks || buildPredictedPerks(p),
     isBot: false,
     // Heavy-weapon slow inputs — shared/movement.js reads these to decide
@@ -10108,8 +10193,6 @@ function initPrediction() {
 function refreshWorld() {
   _world.walls = state_default.mapFeatures.walls || [];
   _world.barricades = state_default.barricades || [];
-  _world.mudPatches = state_default.mapFeatures.mud || [];
-  _world.portals = state_default.mapFeatures.portals || [];
   _world.zone = state_default.serverZone;
   return _world;
 }
@@ -10134,8 +10217,21 @@ function computeLocalSpeedMult() {
   if (state_default.localHitSlowEndsAt > performance.now()) mult *= import_constants9.HIT_SLOW_MULT;
   return mult;
 }
+function mirrorServerScalars() {
+  const sm = state_default.me, mp = state_default.mePredicted;
+  mp.weapon = sm.weapon || "normal";
+  mp.minigunSpin = sm.minigunSpin || 0;
+  mp.foodEaten = sm.foodEaten || 0;
+  mp.stunTimer = sm.stunTimer || 0;
+  if (sm.spawnProt) mp.spawnProtection = 1;
+  if (mp.perks) {
+    mp.perks.speedMult = sm.speedMult != null ? sm.speedMult : 1;
+    mp.perks.sizeMult = sm.sizeMult != null ? sm.sizeMult : 1;
+  }
+}
 function predictStep(frameDt) {
   if (!state_default.mePredicted || !state_default.me) return;
+  mirrorServerScalars();
   accumulator += frameDt;
   if (accumulator > 0.25) accumulator = 0.25;
   const world = refreshWorld();
@@ -10273,7 +10369,7 @@ var init_prediction = __esm({
     ERR_DEAD_ZONE = 0.05;
     predictRing = [];
     currentInput = { dx: 0, dy: 0, walking: false, aim: 0 };
-    _world = { walls: null, barricades: null, mudPatches: null, portals: null, zone: null };
+    _world = { walls: null, barricades: null, zone: null };
     _stepInput = { dx: 0, dy: 0, walking: false, speedMult: 1 };
     _predictErrorLogged = false;
     _prevPredicted = { x: 0, y: 0, z: 0, _set: false };
@@ -10657,13 +10753,6 @@ var init_message_handlers = __esm({
             }
           }
         }
-        const me = state_default.serverPlayers.find((p) => p.id === state_default.myId);
-        if (me && state_default.mePredicted) {
-          state_default.mePredicted.stunTimer = me.stunTimer || 0;
-          state_default.mePredicted.spawnProtection = me.spawnProt ? 1 : 0;
-          state_default.mePredicted.weapon = me.weapon || state_default.mePredicted.weapon;
-          state_default.mePredicted.minigunSpin = me.minigunSpin || 0;
-        }
         if (msg.snapshot) {
           const fullState = state_default.serverPlayers.map((p) => ({ ...p }));
           addSnapshot({ id: msg.snapshot.id, time: msg.snapshot.time, state: fullState });
@@ -10815,6 +10904,15 @@ var init_message_handlers = __esm({
           spawnX = cam.position.x + _tmpDir.x;
           spawnH = cam.position.y + _tmpDir.y;
           spawnZ = cam.position.z + _tmpDir.z;
+          if (state_default.cameraMode === "third" && !state_default.adsActive) {
+            const cm = state_default.cowMeshes[String(state_default.myId)] && state_default.cowMeshes[String(state_default.myId)].mesh;
+            if (cm) {
+              const cosY = Math.cos(state_default.yaw), sinY = Math.sin(state_default.yaw);
+              spawnX = cm.position.x + 9 * cosY;
+              spawnH = cm.position.y + 20;
+              spawnZ = cm.position.z - 9 * sinY;
+            }
+          }
         }
         if (msg.shotgun !== void 0) {
           vy3d += (Math.random() - 0.5) * 150;
@@ -10838,7 +10936,10 @@ var init_message_handlers = __esm({
         if (msg.ownerId !== state_default.myId) {
           const th = getTerrainHeight(msg.x, msg.y);
           const pos = { x: msg.x, y: th + 50, z: msg.y };
-          if (msg.bolty) sfxBolty(0.1, pos);
+          if (msg.tankCannon) {
+            sfxRocket(0.6, pos);
+            sfxExplosion(0.45, pos);
+          } else if (msg.bolty) sfxBolty(0.1, pos);
           else if (msg.cowtank) sfxRocket(0.12, pos);
           else if (msg.shotgun !== void 0) sfxShotgun(0.1, pos);
           else if (msg.burst !== void 0) sfxLR(0.1, pos);
@@ -11333,6 +11434,15 @@ var init_message_handlers = __esm({
             spawnZ = cam.position.y + mDir.y;
             spawnY = cam.position.z + mDir.z;
           }
+          if (state_default.cameraMode === "third" && !state_default.adsActive) {
+            const cm = state_default.cowMeshes[String(state_default.myId)] && state_default.cowMeshes[String(state_default.myId)].mesh;
+            if (cm) {
+              const cosY = Math.cos(state_default.yaw), sinY = Math.sin(state_default.yaw);
+              spawnX = cm.position.x + 9 * cosY;
+              spawnZ = cm.position.y + 20;
+              spawnY = cm.position.z - 9 * sinY;
+            }
+          }
           if (wep === "bolty") {
             sfxBolty();
             if (state_default.adsActive) state_default.adsLocked = true;
@@ -11445,9 +11555,10 @@ var init_message_handlers = __esm({
                 x: wxX,
                 y: WATER_Y + 0.3,
                 z: wxY,
+                // sz collapsed — see projectiles.js water-splash for the rotation/axis math.
                 sx: 1.5,
                 sy: 1.5,
-                sz: 1.5,
+                sz: 1e-3,
                 rotX: Math.PI / 2,
                 life: 0.6,
                 peakOpacity: 1,
@@ -12122,11 +12233,6 @@ var require_index = __commonJS({
         setCurrentInput(curMx, curMz, curWalking, curAim);
         if (!state_default.mePredicted) initPrediction();
         predictStep(dt);
-        if (state_default._spaceHeld && state_default.mePredicted && state_default.mePredicted.onGround) {
-          send({ type: "jump" });
-          state_default.mePredicted.vz = 230;
-          state_default.mePredicted.onGround = false;
-        }
       } else {
         state_default.mePredicted = null;
       }
@@ -12148,7 +12254,7 @@ var require_index = __commonJS({
         const targetZ = Math.max(localTerrainH, predZ || 0);
         const camLerpY = 1 - Math.pow(1e-4, dt);
         let upOff = 0;
-        if (state_default.cameraMode === "third") {
+        if (state_default.cameraMode === "third" && !state_default.adsActive) {
           const sinY = Math.sin(state_default.yaw), cosY = Math.cos(state_default.yaw);
           const back = 95, right = 22;
           upOff = 22;
@@ -12352,7 +12458,13 @@ var require_index = __commonJS({
       }
       ren.render(scene, cam);
       const vmGroup2 = getVmGroup();
-      if (vmGroup2 && state_default.state === "playing" && me && me.alive && state_default.cameraMode !== "third") {
+      vmDebugGroup.visible = state_default.debugMode && state_default.state === "playing";
+      if (vmGroup2 && state_default.state === "playing" && me && me.alive && (state_default.cameraMode !== "third" || state_default.adsActive)) {
+        ren.autoClear = false;
+        ren.clearDepth();
+        ren.render(vmScene, vmCam);
+        ren.autoClear = true;
+      } else if (vmDebugGroup.visible) {
         ren.autoClear = false;
         ren.clearDepth();
         ren.render(vmScene, vmCam);

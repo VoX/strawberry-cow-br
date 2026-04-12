@@ -35,6 +35,7 @@ function handleAttack(player, msg) {
   if (player.reloading > 0) {
     if (weapon === 'shotgun' && player.ammo > 0) {
       clearTimeout(player.reloadTimer);
+      player.reloadTimer = null;
       player.reloading = 0;
     } else {
       return;
@@ -510,8 +511,13 @@ function handleReload(player) {
     // Shell by shell reload — benelli keeps the same per-shell speed when dual-wielding
     const shellMs = 750;
     const loadShell = () => {
-      if (!player.alive || player.weapon !== 'shotgun' || player.ammo >= getMaxAmmo(player, 'shotgun')) {
+      // !player.reloading defends against an outside path (volley fire-
+      // interrupt, weapon swap, etc.) that zeroed reloading without
+      // actually clearing this in-flight timer — without the gate, the
+      // dangling callback would resurrect the reload by incrementing ammo.
+      if (!player.alive || !player.reloading || player.weapon !== 'shotgun' || player.ammo >= getMaxAmmo(player, 'shotgun')) {
         player.reloading = 0;
+        player.reloadTimer = null;
         sendTo(player.ws, { type: 'reloaded', playerId: player.id, weapon: 'shotgun' });
         return;
       }

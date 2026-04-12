@@ -23,7 +23,11 @@ const PROJECTILE_RADIUS = 4;    // AABB inflate amount for wall collisions (halv
 const WALL_MIN_SIZE = 20;       // walls thinner than this still collide at 20 units wide
 const PLAYER_BODY_RADIUS = 14;  // capsule body radius
 const PLAYER_HEAD_RADIUS = 10;  // capsule head radius
-const PLAYER_HEAD_SPAN = 20;    // head extends HEAD_SPAN above the head base
+const PLAYER_HEAD_SPAN = 20;    // head visual extends HEAD_SPAN above the head base
+// Head hitbox is only the TOP fraction of the visual head — the lower
+// portion is rolled into the body hitbox so headshots require aiming at
+// the actual top of the head rather than the neck/upper-shoulder area.
+const PLAYER_HEAD_HITBOX_FRAC = 2 / 3;
 // Shield bubble — egg-shaped ellipsoid mirroring the visual in
 // client/entities.js (sphere r=24 scaled (0.95, 1.55, 0.95) with the
 // 1.55 on the vertical axis, centered at +26 above the ground). Used
@@ -165,12 +169,16 @@ function findPlayerHit(prevX, prevY, prevZ, curX, curY, curZ, players, ownerId, 
     // model. eyeHeightFn already includes sizeMult.
     const sm = (p.perks && p.perks.sizeMult) || 1;
     const headSpan = PLAYER_HEAD_SPAN * sm;
+    // Head hitbox is the TOP fraction of the head span; body extends up to
+    // meet the new head bottom. Same boundary on both sides so there's no
+    // gap or overlap between body and head cylinders.
+    const headBoundary = headBase + headSpan * (1 - PLAYER_HEAD_HITBOX_FRAC);
     let bodyHit = false;
     // Body cylinder first, then head
     for (let hbIdx = 0; hbIdx < 2; hbIdx++) {
       const r = (hbIdx === 0 ? PLAYER_BODY_RADIUS : PLAYER_HEAD_RADIUS) * sm;
-      const zMin = hbIdx === 0 ? p.z - 3 : headBase;
-      const zMax = hbIdx === 0 ? headBase : headBase + headSpan;
+      const zMin = hbIdx === 0 ? p.z - 3 : headBoundary;
+      const zMax = hbIdx === 0 ? headBoundary : headBase + headSpan;
       const head = hbIdx === 1;
       const ox = prevX - p.x, oy = prevY - p.y;
       const a = dx * dx + dy * dy;

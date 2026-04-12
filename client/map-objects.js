@@ -199,14 +199,6 @@ export function buildMap() {
     _wallXBeamIM.instanceMatrix.needsUpdate = true;
     scene.add(_wallXBeamIM);
   }
-  const pm = new THREE.MeshBasicMaterial({ color: 0xcc88ff, transparent: true, opacity: 0.6 });
-  (S.mapFeatures.portals || []).forEach(p => {
-    [[p.x1, p.y1], [p.x2, p.y2]].forEach(([px, pz]) => {
-      const th = getTerrainHeight(px, pz);
-      const mesh = new THREE.Mesh(new THREE.TorusGeometry(20, 3, 8, 16), pm);
-      mesh.position.set(px, th + 20, pz); mesh.rotation.x = Math.PI / 2; addMap(mesh);
-    });
-  });
   const barnWallMat = new THREE.MeshLambertMaterial({ color: 0x7a2a26 });
   const barnRoofMat = new THREE.MeshLambertMaterial({ color: 0x4a301a });
   const barnTrimMat = new THREE.MeshLambertMaterial({ color: 0xc8c0a8 });
