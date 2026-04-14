@@ -11177,7 +11177,7 @@ var init_message_handlers = __esm({
               const walkingMod = state_default.crouching ? 0.73 : 1;
               const dualMod = state_default.me.dualWield ? wep === "shotgun" ? 1.1 : 1.3 : 1;
               const augHipMod = wep === "aug" && !state_default.adsActive ? 2.25 : 1;
-              const recoilMult = burstMod * tacticowMod * walkingMod * dualMod * augHipMod;
+              const recoilMult = burstMod * tacticowMod * walkingMod * dualMod * augHipMod * 4;
               const rp = typeof r.p === "function" ? r.p() : r.p;
               const ry = typeof r.y === "function" ? r.y() : r.y;
               state_default.pitch += rp * recoilMult;

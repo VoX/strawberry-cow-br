@@ -775,7 +775,7 @@ export const handlers = {
         const dualMod = S.me.dualWield ? (wep === 'shotgun' ? 1.1 : 1.3) : 1;
         // AUG hipfire penalty: 2.25x recoil when not scoped, 1x when ADS.
         const augHipMod = (wep === 'aug' && !S.adsActive) ? 2.25 : 1;
-        const recoilMult = burstMod * tacticowMod * walkingMod * dualMod * augHipMod;
+        const recoilMult = burstMod * tacticowMod * walkingMod * dualMod * augHipMod * 4;
         const rp = typeof r.p === 'function' ? r.p() : r.p;
         const ry = typeof r.y === 'function' ? r.y() : r.y;
         S.pitch += rp * recoilMult;
