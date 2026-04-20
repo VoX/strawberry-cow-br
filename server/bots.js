@@ -45,8 +45,8 @@ function spawnBots() {
   const availNames = (shuffled.length ? shuffled : BOT_NAMES).filter(n => !humanNames.has(n.toLowerCase()));
   for (let i = 0; i < botsNeeded; i++) {
     const botId = gameState.nextPlayerId();
-    // First spawned bot in a fresh round is the M1 Bradley. Only one per round.
-    const isTank = !hasTank && i === 0;
+    // M1 Bradley disabled for now
+    const isTank = false;
     if (isTank) hasTank = true;
     const name = isTank ? 'M1 Bradley' : (availNames[i % availNames.length] || ('Bot' + botId));
     const bot = {
