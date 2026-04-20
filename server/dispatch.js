@@ -101,7 +101,7 @@ function dispatchMessage(player, msg) {
     }
     sendTo(player.ws, {
       type: 'joined', id: player.id, color: player.color,
-      botsEnabled: false, botsFreeWill: gameState.isBotsFreeWill(),
+      botsEnabled: gameState.isBotsEnabled(), botsFreeWill: gameState.isBotsFreeWill(),
       nightMode: gameState.isNightMode(), hostId: lobbyState.getHostId(),
     });
     // Send full world state so client loads terrain + entities

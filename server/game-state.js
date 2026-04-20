@@ -217,6 +217,7 @@ class GameState {
     this._shelters.length = 0;
     this._houses.length = 0;
     this._cowstrikeActive = false;
+    this._debugScene = false;
   }
 }
 
